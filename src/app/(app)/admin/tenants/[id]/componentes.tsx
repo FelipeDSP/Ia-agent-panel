@@ -6,8 +6,11 @@ import {
   alternarSuspensaoTenant,
   conectarChatwoot,
   convidarAdminTenant,
+  editarNomeAdmin,
   editarTenantSuper,
   excluirTenant,
+  removerAdmin,
+  reenviarAcessoAdmin,
   type EstadoAcao,
 } from '../../acoes';
 import { Alert } from '@/components/ui/alert';
@@ -242,6 +245,132 @@ export function BotaoSuspensao({ tenantId, ativo }: { tenantId: string; ativo: b
           : 'Reativar volta a permitir que o agente responda.'}
       </p>
     </form>
+  );
+}
+
+// --- Gestão de admins do cliente --------------------------------------------
+
+type AdminResumo = { id: string; email: string; nome: string };
+
+export function GerenciarAdmins({
+  tenantId,
+  admins,
+}: {
+  tenantId: string;
+  admins: AdminResumo[];
+}) {
+  if (admins.length === 0) {
+    return <p className="text-sm text-muted-foreground">Nenhum admin vinculado ainda.</p>;
+  }
+  return (
+    <ul className="flex flex-col divide-y divide-border">
+      {admins.map((a) => (
+        <li key={a.id} className="py-3 first:pt-0 last:pb-0">
+          <LinhaAdmin tenantId={tenantId} admin={a} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function LinhaAdmin({ tenantId, admin }: { tenantId: string; admin: AdminResumo }) {
+  const [estadoEditar, acaoEditar] = useActionState<EstadoAcao, FormData>(editarNomeAdmin, {});
+  const [estadoLink, acaoLink] = useActionState<EstadoAcao, FormData>(reenviarAcessoAdmin, {});
+  const [estadoRemover, acaoRemover] = useActionState<EstadoAcao, FormData>(removerAdmin, {});
+  const [editando, setEditando] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <span className="font-medium">{admin.nome}</span>
+          <span className="ml-2 text-sm text-muted-foreground">{admin.email}</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => setEditando((v) => !v)}>
+            {editando ? 'Fechar' : 'Editar'}
+          </Button>
+          <form action={acaoLink}>
+            <input type="hidden" name="tenant_id" value={tenantId} />
+            <input type="hidden" name="user_id" value={admin.id} />
+            <SubmitButton variant="outline" size="sm" pendingLabel="Gerando…">
+              Reenviar link
+            </SubmitButton>
+          </form>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={() => setConfirmando(true)}
+          >
+            Remover
+          </Button>
+        </div>
+      </div>
+
+      {estadoEditar.erro ? <Alert variant="destructive">{estadoEditar.erro}</Alert> : null}
+      {estadoEditar.sucesso ? <Alert variant="success">{estadoEditar.sucesso}</Alert> : null}
+      {estadoRemover.erro ? <Alert variant="destructive">{estadoRemover.erro}</Alert> : null}
+      {estadoRemover.sucesso ? <Alert variant="success">{estadoRemover.sucesso}</Alert> : null}
+      {estadoLink.erro ? <Alert variant="destructive">{estadoLink.erro}</Alert> : null}
+
+      {editando ? (
+        <form action={acaoEditar} className="flex items-end gap-2">
+          <input type="hidden" name="tenant_id" value={tenantId} />
+          <input type="hidden" name="user_id" value={admin.id} />
+          <div className="flex flex-1 flex-col gap-1">
+            <Label htmlFor={`nome-${admin.id}`}>Nome</Label>
+            <Input id={`nome-${admin.id}`} name="nome" defaultValue={admin.nome} />
+            <ErroCampo msg={estadoEditar.errosCampo?.['nome']} />
+          </div>
+          <SubmitButton size="sm" pendingLabel="Salvando…">
+            Salvar
+          </SubmitButton>
+        </form>
+      ) : null}
+
+      {confirmando ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2">
+          <span className="text-sm">
+            Remover <b>{admin.email}</b>? Isso revoga o acesso dele imediatamente.
+          </span>
+          <form action={acaoRemover}>
+            <input type="hidden" name="tenant_id" value={tenantId} />
+            <input type="hidden" name="user_id" value={admin.id} />
+            <SubmitButton variant="destructive" size="sm" pendingLabel="Removendo…">
+              Confirmar remoção
+            </SubmitButton>
+          </form>
+          <Button type="button" variant="outline" size="sm" onClick={() => setConfirmando(false)}>
+            Cancelar
+          </Button>
+        </div>
+      ) : null}
+
+      {estadoLink.sucesso && estadoLink.linkConvite ? (
+        <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/50 p-3">
+          <p className="text-xs text-muted-foreground">
+            Envie este link ao admin para ele (re)definir a senha:
+          </p>
+          <div className="flex items-center gap-2">
+            <Input readOnly value={estadoLink.linkConvite} className="font-mono text-xs" />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void navigator.clipboard.writeText(estadoLink.linkConvite ?? '');
+                setCopiado(true);
+              }}
+            >
+              {copiado ? 'Copiado' : 'Copiar'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

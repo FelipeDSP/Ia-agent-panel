@@ -164,6 +164,136 @@ export async function convidarAdminTenant(
 }
 
 /**
+ * Confere que o usuário alvo é tenant_admin DESTE cliente antes de qualquer
+ * ação de gestão. A verificação é contra o banco (não contra o request), então
+ * o super admin nunca consegue mexer, por id forjado, num super_admin ou num
+ * admin de outro tenant. Devolve a linha ou null.
+ */
+async function carregarAdminDoTenant(
+  supabase: Awaited<ReturnType<typeof criarClienteServidor>>,
+  tenantId: string,
+  userId: string,
+) {
+  const { data } = await supabase
+    .from('usuarios_painel')
+    .select('id, email, nome, papel, tenant_id')
+    .eq('id', userId)
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if (!data || data.papel !== 'tenant_admin') return null;
+  return data;
+}
+
+/**
+ * Remove um admin de um cliente. Só super admin.
+ *
+ * Não há FK de usuarios_painel para auth.users e o login não olha a coluna
+ * `ativo` — a autorização vem do JWT. Então revogar acesso de verdade é apagar
+ * no Auth (mata a sessão e impede login) E apagar a linha da projeção. Uma não
+ * cascateia na outra. A remoção da linha passa pelo RLS (p_usuarios_delete =
+ * super_admin) e leva filtro explícito de tenant além do id.
+ */
+export async function removerAdmin(_estado: EstadoAcao, fd: FormData): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  const userId = String(fd.get('user_id') ?? '');
+  if (!tenantId || !userId) return { erro: 'Dados incompletos.' };
+
+  const supabase = await criarClienteServidor();
+  const alvo = await carregarAdminDoTenant(supabase, tenantId, userId);
+  if (!alvo) return { erro: 'Admin não encontrado neste cliente.' };
+
+  const admin = criarClienteAdmin();
+  const { error: erroAuth } = await admin.auth.admin.deleteUser(userId);
+  if (erroAuth) return { erro: `Não foi possível revogar o acesso: ${erroAuth.message}` };
+
+  const { error: erroLinha } = await supabase
+    .from('usuarios_painel')
+    .delete()
+    .eq('id', userId)
+    .eq('tenant_id', tenantId);
+
+  if (erroLinha) {
+    // Acesso já foi revogado no Auth; a linha órfã é inofensiva (login é por JWT),
+    // mas avisa para não parecer sucesso limpo.
+    return {
+      sucesso: `Acesso de ${alvo.email} revogado, mas a linha na tabela não saiu: ${erroLinha.message}`,
+    };
+  }
+
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  return { sucesso: `Admin ${alvo.email} removido.` };
+}
+
+/** Edita o nome de exibição de um admin. Só super admin. */
+export async function editarNomeAdmin(_estado: EstadoAcao, fd: FormData): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  const userId = String(fd.get('user_id') ?? '');
+  const nome = String(fd.get('nome') ?? '').trim();
+  if (!tenantId || !userId) return { erro: 'Dados incompletos.' };
+  if (!nome) return { errosCampo: { nome: 'Informe o nome.' } };
+
+  const supabase = await criarClienteServidor();
+  const alvo = await carregarAdminDoTenant(supabase, tenantId, userId);
+  if (!alvo) return { erro: 'Admin não encontrado neste cliente.' };
+
+  // Fonte da verdade do nome é o user_metadata no Auth; a projeção espelha.
+  const admin = criarClienteAdmin();
+  const { error: erroAuth } = await admin.auth.admin.updateUserById(userId, {
+    user_metadata: { nome },
+  });
+  if (erroAuth) return { erro: `Não foi possível atualizar: ${erroAuth.message}` };
+
+  await supabase
+    .from('usuarios_painel')
+    .update({ nome })
+    .eq('id', userId)
+    .eq('tenant_id', tenantId);
+
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  return { sucesso: 'Nome atualizado.' };
+}
+
+/**
+ * Gera um novo link para o admin (re)definir a senha. Só super admin.
+ *
+ * Útil quando o convidado perdeu o link, nunca definiu a senha, ou esqueceu.
+ * Mesmo formato de link corrigido do convite: aponta para /auth/confirmar com
+ * token_hash (fluxo do @supabase/ssr), não o action_link do GoTrue.
+ */
+export async function reenviarAcessoAdmin(_estado: EstadoAcao, fd: FormData): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  const userId = String(fd.get('user_id') ?? '');
+  if (!tenantId || !userId) return { erro: 'Dados incompletos.' };
+
+  const supabase = await criarClienteServidor();
+  const alvo = await carregarAdminDoTenant(supabase, tenantId, userId);
+  if (!alvo) return { erro: 'Admin não encontrado neste cliente.' };
+
+  const admin = criarClienteAdmin();
+  const { data: linkData, error } = await admin.auth.admin.generateLink({
+    type: 'recovery',
+    email: alvo.email,
+  });
+  if (error || !linkData) {
+    return { erro: `Não foi possível gerar o link: ${error?.message ?? 'desconhecido'}` };
+  }
+
+  const origem = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const linkConvite =
+    `${origem}/auth/confirmar` +
+    `?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}` +
+    `&type=recovery&proximo=${encodeURIComponent('/nova-senha')}`;
+
+  return { sucesso: `Novo link de acesso gerado para ${alvo.email}.`, linkConvite };
+}
+
+/**
  * Conecta o tenant ao Chatwoot. Valida o token com chamada real antes de
  * salvar — restrição obrigatória da Fase 3. Só super admin.
  */

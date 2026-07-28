@@ -18,6 +18,7 @@ import {
   FormChatwoot,
   FormConfigSuper,
   FormConvite,
+  GerenciarAdmins,
   ZonaPerigoExcluir,
 } from './componentes';
 
@@ -51,7 +52,7 @@ export default async function PaginaDetalheTenant({
       .order('criado_em', { ascending: false }),
     supabase
       .from('usuarios_painel')
-      .select('nome, email, ativo')
+      .select('id, nome, email')
       .eq('tenant_id', id),
     supabase
       .from('conversas')
@@ -155,18 +156,10 @@ export default async function PaginaDetalheTenant({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            {admins && admins.length > 0 ? (
-              <ul className="flex flex-col gap-1 text-sm">
-                {admins.map((a) => (
-                  <li key={a.email} className="flex items-center justify-between gap-2">
-                    <span>
-                      {a.nome} <span className="text-muted-foreground">· {a.email}</span>
-                    </span>
-                    {!a.ativo ? <Badge variant="secondary">inativo</Badge> : null}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <GerenciarAdmins
+              tenantId={tenant.id}
+              admins={(admins ?? []).map((a) => ({ id: a.id, email: a.email, nome: a.nome }))}
+            />
             <FormConvite tenantId={tenant.id} />
           </CardContent>
         </Card>
