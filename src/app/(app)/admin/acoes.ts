@@ -135,7 +135,6 @@ export async function convidarAdminTenant(
   const { data: linkData, error: erroLink } = await admin.auth.admin.generateLink({
     type: 'recovery',
     email,
-    options: { redirectTo: `${origem}/auth/confirmar?proximo=/nova-senha` },
   });
 
   if (erroLink || !linkData) {
@@ -144,10 +143,23 @@ export async function convidarAdminTenant(
     };
   }
 
+  /*
+   * Montamos o link para o NOSSO handler /auth/confirmar (fluxo token_hash do
+   * @supabase/ssr), não devolvemos o `action_link` do GoTrue. O action_link é o
+   * endpoint /verify, que entrega o token no fragmento `#access_token=...` — e o
+   * fragmento nunca chega ao servidor, então o handler veria token_hash vazio e
+   * cairia em link_invalido. `hashed_token` é justamente o valor que o
+   * verifyOtp espera como token_hash.
+   */
+  const linkConvite =
+    `${origem}/auth/confirmar` +
+    `?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}` +
+    `&type=recovery&proximo=${encodeURIComponent('/nova-senha')}`;
+
   revalidatePath(`/admin/tenants/${tenantId}`);
   return {
     sucesso: `Convite criado para ${email}.`,
-    linkConvite: linkData.properties.action_link,
+    linkConvite,
   };
 }
 
