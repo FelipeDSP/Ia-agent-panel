@@ -28,7 +28,8 @@ impactam os dois.
 
 ## Desenvolvimento local
 
-Pré-requisitos: Node 20+, um projeto Supabase com as migrações aplicadas.
+Pré-requisitos: Node 22+ (o `@supabase/supabase-js` descontinua Node 20), um
+projeto Supabase com as migrações aplicadas.
 
 ```bash
 npm install
