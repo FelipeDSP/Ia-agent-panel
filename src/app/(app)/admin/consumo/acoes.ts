@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { exigirSuperAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
+import { MODELOS_PRECIFICAVEIS } from '@/lib/tenants/schema';
 
 export type EstadoPreco = { erro?: string; sucesso?: string };
 
@@ -28,6 +29,9 @@ export async function adicionarPreco(
   const modelo = String(fd.get('modelo') ?? '').trim();
   const vigenteDesde = String(fd.get('vigente_desde') ?? '').trim();
   if (!modelo) return { erro: 'Informe o modelo.' };
+  if (!(MODELOS_PRECIFICAVEIS as readonly string[]).includes(modelo)) {
+    return { erro: 'Modelo não reconhecido. Selecione um dos modelos suportados.' };
+  }
   if (!vigenteDesde) return { erro: 'Informe a data de vigência.' };
 
   const entrada = numeroOuNull(fd.get('usd_entrada_por_1m'));

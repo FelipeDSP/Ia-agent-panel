@@ -91,6 +91,7 @@ export async function subirArquivo(
     await supabase
       .from('jobs_ingestao')
       .update({ status: 'erro', erro_msg: `Falha ao disparar processamento (HTTP ${r.status ?? '?'}).` })
+      .eq('tenant_id', usuario.tenantId)
       .eq('id', job.id);
     return { erro: 'Arquivo enviado, mas o processamento não iniciou. Tente reprocessar.' };
   }
@@ -114,7 +115,13 @@ export async function ingerirTexto(
 
   if (!titulo) return { erro: 'Dê um título para este conteúdo.' };
   if (texto.length < 20) return { erro: 'Texto muito curto para virar base de conhecimento.' };
-  if (texto.length > 500_000) return { erro: 'Texto muito longo. Suba como arquivo.' };
+  // Caminho síncrono: a Server Action espera a Edge Function terminar. Texto
+  // grande gera centenas de chunks (dezenas de chamadas à OpenAI) e estoura o
+  // timeout. Acima deste limite, o usuário sobe como .txt — que segue o caminho
+  // assíncrono (Storage + job + polling), sem prender a request.
+  if (texto.length > 50_000) {
+    return { erro: 'Texto muito longo para colar (máx. ~50 mil caracteres). Salve como .txt e use "Enviar arquivo".' };
+  }
 
   const supabase = await criarClienteServidor();
 
@@ -151,13 +158,14 @@ export async function ingerirTexto(
  * apaga os chunks antigos daquele origem e insere os novos.
  */
 export async function reprocessar(jobId: string): Promise<EstadoIngestao> {
-  await exigirTenantAdmin();
+  const usuario = await exigirTenantAdmin();
   const supabase = await criarClienteServidor();
 
-  // RLS ja escopa por tenant; conferimos que o job existe e e de arquivo.
+  // RLS ja escopa por tenant; ainda assim filtramos explicito por ele (regra 6).
   const { data: job } = await supabase
     .from('jobs_ingestao')
     .select('id, tipo, status')
+    .eq('tenant_id', usuario.tenantId)
     .eq('id', jobId)
     .maybeSingle();
 
@@ -211,12 +219,13 @@ export type JobStatus = {
 
 /** Jobs recentes do tenant, para o polling de progresso. */
 export async function listarStatusJobs(): Promise<JobStatus[]> {
-  await exigirTenantAdmin();
+  const usuario = await exigirTenantAdmin();
   const supabase = await criarClienteServidor();
 
   const { data } = await supabase
     .from('jobs_ingestao')
     .select('id, arquivo_nome, tipo, status, chunks_total, chunks_ok, erro_msg, criado_em')
+    .eq('tenant_id', usuario.tenantId)
     .order('criado_em', { ascending: false })
     .limit(20);
 

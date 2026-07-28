@@ -22,6 +22,17 @@ export const MODELOS_PERMITIDOS = [
 
 export type Modelo = (typeof MODELOS_PERMITIDOS)[number];
 
+/**
+ * Modelos que podem ter preço cadastrado em precos_modelo: os de chat acima
+ * mais o de embedding da ingestão. `adicionarPreco` valida contra esta lista —
+ * um modelo digitado errado nunca casaria no cálculo de custo (join por nome) e
+ * sairia custo 0 em silêncio.
+ */
+export const MODELOS_PRECIFICAVEIS = [
+  ...MODELOS_PERMITIDOS,
+  'text-embedding-3-small',
+] as const;
+
 export type ResultadoValidacao<T> =
   | { ok: true; valor: T }
   | { ok: false; erros: Record<string, string> };
@@ -47,15 +58,24 @@ export type DadosCriacaoTenant = {
 };
 
 /**
- * Campos que o tenant_admin pode editar. Espelha exatamente a whitelist do
- * trigger tenants_guard_colunas — se divergir, o trigger recusa e a UI mente.
+ * Campos que o tenant_admin pode editar na tela de Configurações. Espelha a
+ * whitelist do trigger tenants_guard_colunas. NÃO inclui system_prompt: o prompt
+ * é editado numa tela à parte (versionada) e não passa por este formulário —
+ * exigi-lo aqui fazia o "Salvar configurações" falhar sempre, calado.
  */
 export type DadosEdicaoTenantAdmin = {
-  system_prompt: string;
   agente_ativo: boolean;
   debounce_segundos: number;
   msg_midia_nao_suportada: string;
   msg_fora_escopo: string;
+};
+
+/** Campos que o super admin edita na config de um cliente (sem slug/prompt). */
+export type DadosConfigSuper = {
+  nome: string;
+  modelo: Modelo;
+  temperatura: number;
+  debounce_segundos: number;
 };
 
 function validarComuns(fd: FormData, erros: Record<string, string>) {
@@ -109,9 +129,6 @@ export function validarEdicaoTenantAdmin(
 ): ResultadoValidacao<DadosEdicaoTenantAdmin> {
   const erros: Record<string, string> = {};
 
-  const system_prompt = String(fd.get('system_prompt') ?? '').trim();
-  if (system_prompt.length < 1) erros['system_prompt'] = 'O prompt não pode ficar vazio.';
-
   const msg_midia = String(fd.get('msg_midia_nao_suportada') ?? '').trim();
   const msg_fora = String(fd.get('msg_fora_escopo') ?? '').trim();
 
@@ -124,11 +141,43 @@ export function validarEdicaoTenantAdmin(
   return {
     ok: true,
     valor: {
-      system_prompt,
       agente_ativo,
       debounce_segundos: debounce,
       msg_midia_nao_suportada: msg_midia,
       msg_fora_escopo: msg_fora,
     },
+  };
+}
+
+/**
+ * Validação da config de cliente pelo super admin: nome, modelo, temperatura e
+ * debounce. Não valida slug nem system_prompt — a tela de edição não mexe
+ * neles. Reusar validarCriacaoTenant aqui fazia o UPDATE falhar sempre (o slug
+ * dummy "_" normalizava para vazio e reprovava).
+ */
+export function validarConfigTenantSuper(
+  fd: FormData,
+): ResultadoValidacao<DadosConfigSuper> {
+  const erros: Record<string, string> = {};
+
+  const nome = String(fd.get('nome') ?? '').trim();
+  if (nome.length < 2) erros['nome'] = 'Informe o nome do cliente.';
+
+  const modelo = String(fd.get('modelo') ?? '') as Modelo;
+  if (!MODELOS_PERMITIDOS.includes(modelo)) erros['modelo'] = 'Modelo não reconhecido.';
+
+  const tempBruta = String(fd.get('temperatura') ?? '').trim().replace(',', '.');
+  const temperatura = tempBruta === '' ? NaN : Number(tempBruta);
+  if (Number.isNaN(temperatura) || temperatura < 0 || temperatura > 2) {
+    erros['temperatura'] = 'Temperatura deve estar entre 0 e 2.';
+  }
+
+  const { debounce } = validarComuns(fd, erros);
+
+  if (Object.keys(erros).length > 0) return { ok: false, erros };
+
+  return {
+    ok: true,
+    valor: { nome, modelo, temperatura, debounce_segundos: debounce },
   };
 }

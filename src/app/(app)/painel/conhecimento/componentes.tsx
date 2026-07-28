@@ -81,12 +81,13 @@ export function GestaoConhecimento({
     const timer = setInterval(async () => {
       const atuais = await listarStatusJobs();
       if (!vivo) return;
-      setJobs((anteriores) => {
-        const aindaAtivo = atuais.some((j) => ATIVO.has(j.status));
-        const eraAtivo = anteriores.some((j) => ATIVO.has(j.status));
-        if (eraAtivo && !aindaAtivo) router.refresh();
-        return atuais;
-      });
+      setJobs(atuais);
+      // Efeito colateral fora do updater de setState (rodar router.refresh
+      // dentro dele dispara duas vezes no strict mode). O efeito só está ativo
+      // quando havia job em andamento; quando nenhum resta, acabou de terminar
+      // → reidrata os documentos.
+      const aindaAtivo = atuais.some((j) => ATIVO.has(j.status));
+      if (!aindaAtivo) router.refresh();
     }, 2500);
     return () => {
       vivo = false;

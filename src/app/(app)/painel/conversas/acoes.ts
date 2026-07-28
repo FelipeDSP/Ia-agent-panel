@@ -31,16 +31,19 @@ export async function definirStatusConversa(
   }
 
   const supabase = await criarClienteServidor();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('conversas')
     .update({
       status: novoStatus,
       pausado_em: novoStatus === 'pausado' ? new Date().toISOString() : null,
     })
     .eq('tenant_id', usuario.tenantId)
-    .eq('conversation_id', conversationId);
+    .eq('conversation_id', conversationId)
+    .select('conversation_id');
 
   if (error) return { erro: `Não foi possível atualizar: ${error.message}` };
+  // 0 linhas = conversa não é deste tenant (ou não existe): não finge sucesso.
+  if (!data || data.length === 0) return { erro: 'Conversa não encontrada.' };
 
   revalidatePath('/painel/conversas');
   revalidatePath(`/painel/conversas/${conversationId}`);

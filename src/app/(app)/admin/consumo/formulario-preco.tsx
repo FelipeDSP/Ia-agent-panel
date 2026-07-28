@@ -6,7 +6,9 @@ import { adicionarPreco, type EstadoPreco } from './acoes';
 import { Alert } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { MODELOS_PRECIFICAVEIS } from '@/lib/tenants/schema';
 
 /**
  * Adiciona uma nova vigência de preço. Preços são config, não hardcode: mudou
@@ -24,7 +26,16 @@ export function FormularioPreco() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Label htmlFor="modelo">Modelo</Label>
-          <Input id="modelo" name="modelo" placeholder="gpt-4.1-mini" required />
+          <Select id="modelo" name="modelo" required defaultValue="">
+            <option value="" disabled>
+              Selecione…
+            </option>
+            {MODELOS_PRECIFICAVEIS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </Select>
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="vigente_desde">Vigente desde</Label>

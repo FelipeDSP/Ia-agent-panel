@@ -46,9 +46,6 @@ export function FormConfigSuper({
   return (
     <form action={acao} className="flex flex-col gap-4">
       <input type="hidden" name="tenant_id" value={tenantId} />
-      {/* slug não é editável aqui; mando o atual só para a validação passar */}
-      <input type="hidden" name="slug" value="_" />
-      <input type="hidden" name="system_prompt" value="_" />
 
       {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}

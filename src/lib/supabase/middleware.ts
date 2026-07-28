@@ -50,19 +50,34 @@ export async function atualizarSessao(request: NextRequest) {
     (p) => caminho === p || caminho.startsWith(`${p}/`),
   );
 
+  /*
+   * Redirect PRESERVANDO os cookies que o getUser() acabou de gravar em
+   * `resposta` (rotação do refresh token). Um NextResponse.redirect cru
+   * descartaria esses Set-Cookie: o browser ficaria com o token antigo, já
+   * invalidado pela rotação, e a sessão morreria na próxima request — o mesmo
+   * sintoma que o comentário abaixo alerta para o caminho sem redirect.
+   */
+  const redirecionar = (url: URL) => {
+    const resp = NextResponse.redirect(url);
+    for (const cookie of resposta.cookies.getAll()) {
+      resp.cookies.set(cookie);
+    }
+    return resp;
+  };
+
   if (!user && protegida) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     // Preserva o destino para voltar depois do login.
     url.searchParams.set('proximo', caminho);
-    return NextResponse.redirect(url);
+    return redirecionar(url);
   }
 
   if (user && deAutenticacao) {
     const url = request.nextUrl.clone();
     url.pathname = '/';
     url.search = '';
-    return NextResponse.redirect(url);
+    return redirecionar(url);
   }
 
   /*

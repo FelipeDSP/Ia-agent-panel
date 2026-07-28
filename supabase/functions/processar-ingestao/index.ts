@@ -33,15 +33,19 @@ const LOTE_EMBEDDING = 20; // chunks por request a OpenAI
 // Tamanho do chunk, em caracteres, com override por env para tunar sem
 // redeploy de codigo.
 //
-// O CLAUDE.md dizia "~800 tokens", mas os 12 chunks que o n8n ja gravou em
-// producao (origem atendimento_acqua_ariquemes) tem media de ~380 chars, ~100
-// tokens. Como o n8n e o segundo consumidor do MESMO banco, chunk muito maior
-// que o de producao quebra a paridade de recall do agente. O teste de recall
-// da Fase 4 confirmou: chunk grande dilui o topico e derruba a precisao.
-// Default alinhado a producao (~150 tokens), um pouco acima dela para dar
-// contexto sem diluir.
-const ALVO_CHARS = Number(Deno.env.get('CHUNK_ALVO_CHARS') ?? 600);
-const OVERLAP_CHARS = Number(Deno.env.get('CHUNK_OVERLAP_CHARS') ?? 120);
+// O CLAUDE.md fixa alvo ~450 chars (~120 tokens), overlap ~120. Os 12 chunks
+// que o n8n ja gravou em producao (origem atendimento_acqua_ariquemes) tem
+// media de ~380 chars; como o n8n le o MESMO banco, chunk muito maior quebra a
+// paridade de recall (teste da Fase 4: 3/5 com chunk grande vs 5/5 alinhado a
+// producao). Ao mexer nestes valores, re-rode o teste de recall.
+function envInt(nome: string, padrao: number): number {
+  const v = Number(Deno.env.get(nome));
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : padrao;
+}
+const ALVO_CHARS = envInt('CHUNK_ALVO_CHARS', 450);
+// OVERLAP sempre < ALVO: senao o passo do fatiador (ALVO - OVERLAP) fica <= 0 e
+// o while do chunker nunca avanca — loop infinito sob env mal configurada.
+const OVERLAP_CHARS = Math.min(envInt('CHUNK_OVERLAP_CHARS', 120), ALVO_CHARS - 1);
 
 type Job = {
   id: string;
@@ -302,11 +306,23 @@ async function processar(job: Job, textoColado?: string): Promise<void> {
 // HTTP
 // ---------------------------------------------------------------------------
 
+// Comparacao de tempo constante do segredo. Timing-attack pela rede e
+// impraticavel e o segredo tem alta entropia, mas comparar certo e barato.
+// Comparar so quando os tamanhos batem (o tamanho do segredo nao e sensivel).
+function segredoConfere(recebido: string | null): boolean {
+  if (recebido === null || recebido.length !== INGESTAO_SECRET.length) return false;
+  let diff = 0;
+  for (let i = 0; i < recebido.length; i++) {
+    diff |= recebido.charCodeAt(i) ^ INGESTAO_SECRET.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ erro: 'Use POST.' }, 405);
 
   // Portao: so o servidor do painel, que conhece o segredo compartilhado.
-  if (req.headers.get('x-ingestao-secret') !== INGESTAO_SECRET) {
+  if (!segredoConfere(req.headers.get('x-ingestao-secret'))) {
     return json({ erro: 'Nao autorizado.' }, 401);
   }
 

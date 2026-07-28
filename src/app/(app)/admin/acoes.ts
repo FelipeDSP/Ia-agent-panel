@@ -7,7 +7,7 @@ import { exigirSuperAdmin } from '@/lib/auth';
 import { validarCredencialChatwoot } from '@/lib/chatwoot';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { criarClienteServidor } from '@/lib/supabase/server';
-import { validarCriacaoTenant } from '@/lib/tenants/schema';
+import { validarConfigTenantSuper, validarCriacaoTenant } from '@/lib/tenants/schema';
 import { criarUsuario, ehEmailDuplicado } from '@/lib/supabase/admin-usuarios';
 
 export type EstadoAcao = {
@@ -247,11 +247,16 @@ export async function editarNomeAdmin(_estado: EstadoAcao, fd: FormData): Promis
   });
   if (erroAuth) return { erro: `Não foi possível atualizar: ${erroAuth.message}` };
 
-  await supabase
+  const { error: erroLinha } = await supabase
     .from('usuarios_painel')
     .update({ nome })
     .eq('id', userId)
     .eq('tenant_id', tenantId);
+  if (erroLinha) {
+    return {
+      sucesso: `Nome alterado no acesso, mas a projeção não sincronizou: ${erroLinha.message}`,
+    };
+  }
 
   revalidatePath(`/admin/tenants/${tenantId}`);
   return { sucesso: 'Nome atualizado.' };
@@ -305,7 +310,7 @@ export async function conectarChatwoot(
 
   const tenantId = String(fd.get('tenant_id') ?? '');
   const accountIdBruto = String(fd.get('chatwoot_account_id') ?? '').trim();
-  const token = String(fd.get('chatwoot_token') ?? '').trim();
+  let token = String(fd.get('chatwoot_token') ?? '').trim();
   const url = String(fd.get('chatwoot_url') ?? '').trim() || 'https://app.chatyou.chat';
 
   if (!tenantId) return { erro: 'Tenant não informado.' };
@@ -314,7 +319,21 @@ export async function conectarChatwoot(
   if (!Number.isInteger(accountId) || accountId < 1) {
     return { errosCampo: { chatwoot_account_id: 'account_id deve ser um número.' } };
   }
-  if (!token) return { errosCampo: { chatwoot_token: 'Informe o token.' } };
+
+  const supabase = await criarClienteServidor();
+
+  // Token em branco = "revalidar/ajustar sem redigitar": reaproveita o que já
+  // está salvo — é o que o placeholder do formulário promete. Só exige digitar
+  // quando ainda não há token guardado (primeira conexão).
+  if (!token) {
+    const { data: atual } = await supabase
+      .from('tenants')
+      .select('chatwoot_token')
+      .eq('id', tenantId)
+      .maybeSingle();
+    token = atual?.chatwoot_token ?? '';
+    if (!token) return { errosCampo: { chatwoot_token: 'Informe o token.' } };
+  }
 
   // A validação vem ANTES do save. Sem 200 aqui, nada é gravado.
   const validacao = await validarCredencialChatwoot({ url, accountId, token });
@@ -322,7 +341,6 @@ export async function conectarChatwoot(
     return { erro: validacao.motivo };
   }
 
-  const supabase = await criarClienteServidor();
   const { error } = await supabase
     .from('tenants')
     .update({ chatwoot_account_id: accountId, chatwoot_token: token, chatwoot_url: url })
@@ -440,7 +458,7 @@ export async function editarTenantSuper(
   const tenantId = String(fd.get('tenant_id') ?? '');
   if (!tenantId) return { erro: 'Tenant não informado.' };
 
-  const validado = validarCriacaoTenant(fd); // mesmos campos de config
+  const validado = validarConfigTenantSuper(fd);
   if (!validado.ok) return { errosCampo: validado.erros };
 
   const supabase = await criarClienteServidor();
