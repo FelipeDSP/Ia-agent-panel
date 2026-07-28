@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
 import { exigirSuperAdmin } from '@/lib/auth';
 import { validarCredencialChatwoot } from '@/lib/chatwoot';
@@ -224,6 +225,64 @@ export async function alternarSuspensaoTenant(
   revalidatePath('/admin/tenants');
   revalidatePath(`/admin/tenants/${tenantId}`);
   return { sucesso: suspender ? 'Cliente suspenso.' : 'Cliente reativado.' };
+}
+
+/**
+ * Exclui um cliente. Só super admin.
+ *
+ * Soft delete, nunca DELETE físico: grava `deletado_em` (regra do CLAUDE.md —
+ * o n8n lê o mesmo banco, e a exclusão precisa ser recuperável e auditável). A
+ * listagem e a tela de detalhe já filtram `deletado_em IS NULL`, então o cliente
+ * some da interface, mas o dado fica. Restauração é feita por SQL sob demanda
+ * (zerar `deletado_em`).
+ *
+ * Também põe `ativo=false`: cliente excluído não pode ter agente respondendo.
+ *
+ * Confirmação: o super admin precisa digitar o nome exato do cliente. A checagem
+ * é contra o nome vindo do banco, não contra um valor do request — o formulário
+ * não decide o que é o nome certo.
+ */
+export async function excluirTenant(
+  _estado: EstadoAcao,
+  fd: FormData,
+): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  const confirmacao = String(fd.get('confirmacao') ?? '').trim();
+  if (!tenantId) return { erro: 'Tenant não informado.' };
+
+  const supabase = await criarClienteServidor();
+
+  // Nome vem do banco (fonte da verdade da confirmação), e só entre os vivos.
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('id, nome')
+    .eq('id', tenantId)
+    .is('deletado_em', null)
+    .maybeSingle();
+
+  if (!tenant) return { erro: 'Cliente não encontrado ou já excluído.' };
+
+  if (confirmacao !== tenant.nome.trim()) {
+    return {
+      errosCampo: {
+        confirmacao: 'Digite o nome do cliente exatamente como aparece para confirmar.',
+      },
+    };
+  }
+
+  const { error } = await supabase
+    .from('tenants')
+    .update({ deletado_em: new Date().toISOString(), ativo: false })
+    .eq('id', tenantId)
+    .is('deletado_em', null); // idempotente: não re-exclui
+
+  if (error) return { erro: `Não foi possível excluir: ${error.message}` };
+
+  revalidatePath('/admin/tenants');
+  // A tela de detalhe filtra deletado_em IS NULL e daria 404; volta para a lista.
+  redirect('/admin/tenants');
 }
 
 /**

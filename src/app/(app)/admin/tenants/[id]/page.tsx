@@ -18,6 +18,7 @@ import {
   FormChatwoot,
   FormConfigSuper,
   FormConvite,
+  ZonaPerigoExcluir,
 } from './componentes';
 
 export default async function PaginaDetalheTenant({
@@ -220,6 +221,18 @@ export default async function PaginaDetalheTenant({
             ))}
           </CardContent>
         ) : null}
+      </Card>
+
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="text-destructive">Zona de perigo</CardTitle>
+          <CardDescription>
+            Excluir o cliente. Reversível (soft delete), mas trate como ação séria.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ZonaPerigoExcluir tenantId={tenant.id} nome={tenant.nome} />
+        </CardContent>
       </Card>
     </div>
   );

@@ -7,6 +7,7 @@ import {
   conectarChatwoot,
   convidarAdminTenant,
   editarTenantSuper,
+  excluirTenant,
   type EstadoAcao,
 } from '../../acoes';
 import { Alert } from '@/components/ui/alert';
@@ -240,6 +241,53 @@ export function BotaoSuspensao({ tenantId, ativo }: { tenantId: string; ativo: b
           ? 'Suspenso, o agente para de responder (api_n8n filtra por ativo).'
           : 'Reativar volta a permitir que o agente responda.'}
       </p>
+    </form>
+  );
+}
+
+// --- Excluir cliente (zona de perigo) ---------------------------------------
+
+export function ZonaPerigoExcluir({ tenantId, nome }: { tenantId: string; nome: string }) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(excluirTenant, {});
+  const [confirmacao, setConfirmacao] = useState('');
+
+  // Habilita o botão só quando o texto bate com o nome. O servidor revalida
+  // isso de qualquer forma; aqui é só para evitar clique acidental.
+  const podeExcluir = confirmacao.trim() === nome.trim();
+
+  return (
+    <form action={acao} className="flex flex-col gap-3">
+      <input type="hidden" name="tenant_id" value={tenantId} />
+
+      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+
+      <p className="text-sm text-muted-foreground">
+        Excluir remove o cliente da lista e desliga o agente. É reversível
+        (soft delete — o dado fica no banco), mas a restauração é feita pela
+        agência sob demanda. Não apaga conversas nem documentos.
+      </p>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="confirmacao">
+          Para confirmar, digite o nome do cliente:{' '}
+          <span className="font-medium text-foreground">{nome}</span>
+        </Label>
+        <Input
+          id="confirmacao"
+          name="confirmacao"
+          autoComplete="off"
+          value={confirmacao}
+          onChange={(e) => setConfirmacao(e.target.value)}
+          placeholder={nome}
+        />
+        <ErroCampo msg={estado.errosCampo?.['confirmacao']} />
+      </div>
+
+      <div>
+        <SubmitButton variant="destructive" disabled={!podeExcluir} pendingLabel="Excluindo…">
+          Excluir cliente
+        </SubmitButton>
+      </div>
     </form>
   );
 }
