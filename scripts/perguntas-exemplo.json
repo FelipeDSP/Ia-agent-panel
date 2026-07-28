@@ -1,0 +1,7 @@
+[
+  { "pergunta": "Qual o horário de funcionamento aos sábados?", "espera": "9h às 18h" },
+  { "pergunta": "Quanto custa o plano Dedicado mensal?", "espera": "890 reais" },
+  { "pergunta": "Qual o valor da Sala Painel por hora?", "espera": "90 reais por hora" },
+  { "pergunta": "Quanto custa o estacionamento para visitantes?", "espera": "8 reais por período" },
+  { "pergunta": "Posso levar meu cachorro no espaço?", "espera": "pet friendly" }
+]

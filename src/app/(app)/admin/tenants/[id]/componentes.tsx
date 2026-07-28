@@ -1,0 +1,245 @@
+'use client';
+
+import { useActionState, useState } from 'react';
+
+import {
+  alternarSuspensaoTenant,
+  conectarChatwoot,
+  convidarAdminTenant,
+  editarTenantSuper,
+  type EstadoAcao,
+} from '../../acoes';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
+import { SubmitButton } from '@/components/ui/submit-button';
+import { MODELOS_PERMITIDOS } from '@/lib/tenants/schema';
+
+function ErroCampo({ msg }: { msg?: string }) {
+  if (!msg) return null;
+  return <p className="text-xs text-destructive">{msg}</p>;
+}
+
+// --- Configuração (super admin: modelo, temperatura, debounce, nome) ---------
+
+export function FormConfigSuper({
+  tenantId,
+  nome,
+  modelo,
+  temperatura,
+  debounce,
+}: {
+  tenantId: string;
+  nome: string;
+  modelo: string;
+  temperatura: number;
+  debounce: number;
+}) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(editarTenantSuper, {});
+
+  return (
+    <form action={acao} className="flex flex-col gap-4">
+      <input type="hidden" name="tenant_id" value={tenantId} />
+      {/* slug não é editável aqui; mando o atual só para a validação passar */}
+      <input type="hidden" name="slug" value="_" />
+      <input type="hidden" name="system_prompt" value="_" />
+
+      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+      {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="nome">Nome</Label>
+        <Input id="nome" name="nome" defaultValue={nome} />
+        <ErroCampo msg={estado.errosCampo?.['nome']} />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="modelo">Modelo</Label>
+          <Select id="modelo" name="modelo" defaultValue={modelo}>
+            {MODELOS_PERMITIDOS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="temperatura">Temperatura</Label>
+          <Input
+            id="temperatura"
+            name="temperatura"
+            type="number"
+            step="0.05"
+            min="0"
+            max="2"
+            defaultValue={temperatura}
+          />
+          <ErroCampo msg={estado.errosCampo?.['temperatura']} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="debounce_segundos">Debounce (s)</Label>
+          <Input
+            id="debounce_segundos"
+            name="debounce_segundos"
+            type="number"
+            min="1"
+            max="60"
+            defaultValue={debounce}
+          />
+          <ErroCampo msg={estado.errosCampo?.['debounce_segundos']} />
+        </div>
+      </div>
+
+      <div>
+        <SubmitButton>Salvar configuração</SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+// --- Conexão Chatwoot --------------------------------------------------------
+
+export function FormChatwoot({
+  tenantId,
+  accountId,
+  url,
+}: {
+  tenantId: string;
+  accountId: number | null;
+  url: string;
+}) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(conectarChatwoot, {});
+
+  return (
+    <form action={acao} className="flex flex-col gap-4">
+      <input type="hidden" name="tenant_id" value={tenantId} />
+
+      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+      {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="chatwoot_account_id">account_id</Label>
+          <Input
+            id="chatwoot_account_id"
+            name="chatwoot_account_id"
+            type="number"
+            min="1"
+            defaultValue={accountId ?? ''}
+          />
+          <ErroCampo msg={estado.errosCampo?.['chatwoot_account_id']} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="chatwoot_url">URL</Label>
+          <Input id="chatwoot_url" name="chatwoot_url" defaultValue={url} />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="chatwoot_token">Token (api_access_token)</Label>
+        <Input
+          id="chatwoot_token"
+          name="chatwoot_token"
+          type="password"
+          autoComplete="off"
+          placeholder={accountId ? '•••••• (deixe para revalidar)' : ''}
+        />
+        <ErroCampo msg={estado.errosCampo?.['chatwoot_token']} />
+        <p className="text-xs text-muted-foreground">
+          O token é validado com uma chamada real ao Chatwoot antes de salvar.
+        </p>
+      </div>
+
+      <div>
+        <SubmitButton pendingLabel="Validando…">
+          {accountId ? 'Revalidar e salvar' : 'Conectar'}
+        </SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+// --- Convite do admin do cliente --------------------------------------------
+
+export function FormConvite({ tenantId }: { tenantId: string }) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(convidarAdminTenant, {});
+  const [copiado, setCopiado] = useState(false);
+
+  return (
+    <form action={acao} className="flex flex-col gap-4">
+      <input type="hidden" name="tenant_id" value={tenantId} />
+
+      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+      {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="email">Email do admin</Label>
+          <Input id="email" name="email" type="email" required />
+          <ErroCampo msg={estado.errosCampo?.['email']} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="nome">Nome</Label>
+          <Input id="nome" name="nome" />
+        </div>
+      </div>
+
+      <div>
+        <SubmitButton pendingLabel="Convidando…">Convidar admin</SubmitButton>
+      </div>
+
+      {estado.linkConvite ? (
+        <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/50 p-3">
+          <p className="text-xs text-muted-foreground">
+            SMTP ainda não configurado — envie este link ao cliente para ele
+            definir a senha:
+          </p>
+          <div className="flex items-center gap-2">
+            <Input readOnly value={estado.linkConvite} className="font-mono text-xs" />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void navigator.clipboard.writeText(estado.linkConvite ?? '');
+                setCopiado(true);
+              }}
+            >
+              {copiado ? 'Copiado' : 'Copiar'}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </form>
+  );
+}
+
+// --- Suspender / reativar ----------------------------------------------------
+
+export function BotaoSuspensao({ tenantId, ativo }: { tenantId: string; ativo: boolean }) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(alternarSuspensaoTenant, {});
+
+  return (
+    <form action={acao} className="flex flex-col gap-2">
+      <input type="hidden" name="tenant_id" value={tenantId} />
+      <input type="hidden" name="suspender" value={ativo ? 'true' : 'false'} />
+
+      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+      {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
+
+      <div>
+        <SubmitButton variant={ativo ? 'destructive' : 'default'} pendingLabel="Aplicando…">
+          {ativo ? 'Suspender cliente' : 'Reativar cliente'}
+        </SubmitButton>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {ativo
+          ? 'Suspenso, o agente para de responder (api_n8n filtra por ativo).'
+          : 'Reativar volta a permitir que o agente responda.'}
+      </p>
+    </form>
+  );
+}

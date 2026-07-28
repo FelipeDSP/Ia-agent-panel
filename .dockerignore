@@ -1,0 +1,22 @@
+node_modules
+.next
+.git
+.github
+.vercel
+.claude
+npm-debug.log*
+*.log
+
+# Segredos e ambiente local — nunca dentro da imagem.
+.env
+.env.local
+.env*.local
+
+# Build info e artefatos.
+tsconfig.tsbuildinfo
+out
+build
+
+# Docs e afins nao precisam ir para a imagem.
+.DS_Store
+Thumbs.db
