@@ -197,7 +197,6 @@ export default async function PaginaDetalheTenant({
           <CardContent>
             <FormTransferirHumano
               tenantId={tenant.id}
-              workflowId={toolTransferir?.workflow_id ?? ''}
               descricao={toolTransferir?.descricao ?? ''}
               sessao={configTransferir.notificacao?.sessao ?? ''}
               habilitada={Boolean(toolTransferir)}

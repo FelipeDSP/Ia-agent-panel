@@ -170,16 +170,17 @@ export function validarTransferirCliente(fd: FormData): Resultado<{
   };
 }
 
-/** Valida o que a AGÊNCIA edita (infra). */
+/**
+ * Valida o que a AGÊNCIA edita (infra): descrição da tool e sessão WAHA.
+ *
+ * `workflow_id` não entra: no agente atual as tools são fixas nos nós, essa
+ * coluna não liga nada. O que habilita a tool é a linha existir com ativo=true.
+ */
 export function validarTransferirAgencia(fd: FormData): Resultado<{
-  workflowId: string;
   sessao: string;
   descricao: string;
 }> {
   const erros: Record<string, string> = {};
-
-  const workflowId = String(fd.get('workflow_id') ?? '').trim();
-  if (!workflowId) erros['workflow_id'] = 'Informe o ID do workflow da tool no n8n.';
 
   const sessao = String(fd.get('sessao') ?? '').trim();
   const descricao = String(fd.get('descricao') ?? '').trim();
@@ -187,5 +188,5 @@ export function validarTransferirAgencia(fd: FormData): Resultado<{
 
   if (Object.keys(erros).length > 0) return { ok: false, erros };
 
-  return { ok: true, valor: { workflowId, sessao, descricao } };
+  return { ok: true, valor: { sessao, descricao } };
 }

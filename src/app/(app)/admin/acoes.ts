@@ -520,7 +520,7 @@ export async function salvarTransferirHumanoAgencia(
 
   const { data: linha, error: erroSel } = await supabase
     .from('tenant_tools')
-    .select('ativo, config')
+    .select('ativo, config, workflow_id')
     .eq('tenant_id', tenantId)
     .eq('tool_nome', TOOL_TRANSFERIR)
     .maybeSingle();
@@ -541,7 +541,9 @@ export async function salvarTransferirHumanoAgencia(
     {
       tenant_id: tenantId,
       tool_nome: TOOL_TRANSFERIR,
-      workflow_id: validado.valor.workflowId,
+      // workflow_id não é editável pelo painel (metadado, não liga nada).
+      // Preserva o que estiver no banco; em linha nova fica null.
+      workflow_id: linha?.workflow_id ?? null,
       descricao: validado.valor.descricao,
       config,
       ativo: linha ? linha.ativo : false,

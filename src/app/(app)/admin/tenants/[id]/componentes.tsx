@@ -169,13 +169,11 @@ export function FormChatwoot({
 
 export function FormTransferirHumano({
   tenantId,
-  workflowId,
   descricao,
   sessao,
   habilitada,
 }: {
   tenantId: string;
-  workflowId: string;
   descricao: string;
   sessao: string;
   habilitada: boolean;
@@ -192,30 +190,24 @@ export function FormTransferirHumano({
       {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="workflow_id">workflow_id (n8n)</Label>
-          <Input id="workflow_id" name="workflow_id" defaultValue={workflowId} />
-          <ErroCampo msg={estado.errosCampo?.['workflow_id']} />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="sessao">Sessão WAHA</Label>
-          <Input
-            id="sessao"
-            name="sessao"
-            defaultValue={sessao}
-            placeholder="ex.: acquaariquemes (vazio = sem aviso)"
-          />
-          <p className="text-xs text-muted-foreground">
-            Por qual sessão do WAHA sai o aviso. Sem ela, o cliente não consegue ligar o aviso.
-          </p>
-        </div>
-      </div>
-
       <div className="flex flex-col gap-2">
         <Label htmlFor="descricao">Descrição da tool (ensina a IA quando transferir)</Label>
         <Textarea id="descricao" name="descricao" rows={3} defaultValue={descricao} />
         <ErroCampo msg={estado.errosCampo?.['descricao']} />
+      </div>
+
+      <div className="flex max-w-sm flex-col gap-2">
+        <Label htmlFor="sessao">Sessão WAHA (opcional)</Label>
+        <Input
+          id="sessao"
+          name="sessao"
+          defaultValue={sessao}
+          placeholder="ex.: acquaariquemes (vazio = sem aviso)"
+        />
+        <p className="text-xs text-muted-foreground">
+          Por qual sessão do WAHA sai o aviso. Vazio = o cliente não consegue ligar o aviso, mas a
+          transferência (nota + pausa) funciona mesmo assim.
+        </p>
       </div>
 
       <div>
