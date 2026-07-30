@@ -9,6 +9,12 @@ import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarConfigTenantSuper, validarCriacaoTenant } from '@/lib/tenants/schema';
 import { criarUsuario, ehEmailDuplicado } from '@/lib/supabase/admin-usuarios';
+import {
+  HORARIO_PADRAO,
+  TOOL_TRANSFERIR,
+  validarTransferirAgencia,
+  type ConfigTransferir,
+} from '@/lib/tools/transferir-humano';
 
 export type EstadoAcao = {
   erro?: string;
@@ -485,4 +491,70 @@ export async function editarTenantSuper(
 
   revalidatePath(`/admin/tenants/${tenantId}`);
   return { sucesso: 'Configuração atualizada.' };
+}
+
+/**
+ * Agência habilita/configura a INFRA da tool de transferência para humano:
+ * workflow_id (o sub-workflow no n8n), descrição (o texto que ensina a IA quando
+ * transferir) e a sessão do WAHA (por onde o aviso sai).
+ *
+ * Faz upsert em tenant_tools por (tenant_id, tool_nome). Preserva o que é do
+ * cliente — horário, destino da notificação, canal e o próprio `ativo`: em
+ * update, `ativo` não é tocado; ao criar a linha pela primeira vez ela nasce
+ * DESLIGADA, para o cliente ligar depois de definir horário/destino. Só super
+ * admin; o tenant vem do form (rota de agência), validado pelo gate no servidor.
+ */
+export async function salvarTransferirHumanoAgencia(
+  _estado: EstadoAcao,
+  fd: FormData,
+): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  if (!tenantId) return { erro: 'Tenant não informado.' };
+
+  const validado = validarTransferirAgencia(fd);
+  if (!validado.ok) return { errosCampo: validado.erros };
+
+  const supabase = await criarClienteServidor();
+
+  const { data: linha, error: erroSel } = await supabase
+    .from('tenant_tools')
+    .select('ativo, config')
+    .eq('tenant_id', tenantId)
+    .eq('tool_nome', TOOL_TRANSFERIR)
+    .maybeSingle();
+
+  if (erroSel) return { erro: `Não foi possível carregar: ${erroSel.message}` };
+
+  const atual = (linha?.config ?? {}) as Partial<ConfigTransferir>;
+  const config: ConfigTransferir = {
+    horario: atual.horario ?? HORARIO_PADRAO,
+    notificacao: {
+      canal: atual.notificacao?.canal ?? 'nenhum',
+      ...(validado.valor.sessao ? { sessao: validado.valor.sessao } : {}),
+      ...(atual.notificacao?.destino ? { destino: atual.notificacao.destino } : {}),
+    },
+  };
+
+  const { error } = await supabase.from('tenant_tools').upsert(
+    {
+      tenant_id: tenantId,
+      tool_nome: TOOL_TRANSFERIR,
+      workflow_id: validado.valor.workflowId,
+      descricao: validado.valor.descricao,
+      config,
+      ativo: linha ? linha.ativo : false,
+    },
+    { onConflict: 'tenant_id,tool_nome' },
+  );
+
+  if (error) return { erro: `Não foi possível salvar: ${error.message}` };
+
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  return {
+    sucesso: linha
+      ? 'Tool de transferência atualizada.'
+      : 'Tool de transferência habilitada (desligada — o cliente ativa no painel dele).',
+  };
 }

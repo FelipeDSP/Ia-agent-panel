@@ -51,7 +51,7 @@ const REF_PROJETO = new URL(URL_SUPABASE).hostname.split('.')[0];
 const SENHA = 'TesteIsolamento#2026';
 
 /** Os três tenants de teste. A Acqua fica de fora: é cliente real. */
-const TENANTS_TESTE = ['sandbox', 'clinica-teste', 'restaurante-teste'];
+const TENANTS_TESTE = ['restaurante-teste', 'sandbox-de-testes', 'clinica-teste'];
 
 const admin = createClient(URL_SUPABASE, CHAVE_SECRETA, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -330,6 +330,43 @@ async function testarBanco(usuarios, tenants) {
       `${usuario.slug}: não lista usuários de outro tenant`,
       usuariosAlheios.length === 0,
       `${usuariosAlheios.length} alheios`,
+    );
+
+    // -- Config de tools (tenant_tools) de outro tenant ----------------------
+
+    const { data: toolsVistas } = await cliente
+      .from('tenant_tools')
+      .select('id, tenant_id');
+
+    const toolsAlheias = (toolsVistas ?? []).filter(
+      (t) => t.tenant_id !== usuario.tenantId,
+    );
+    checar(
+      `${usuario.slug}: não lista tenant_tools de outro tenant`,
+      toolsAlheias.length === 0,
+      `${toolsAlheias.length} alheias`,
+    );
+
+    const { data: toolsAcqua } = await cliente
+      .from('tenant_tools')
+      .select('id, config')
+      .eq('tenant_id', acqua.id);
+    checar(
+      `${usuario.slug}: não lê a config de tools da Acqua (sessão WAHA, etc.)`,
+      (toolsAcqua ?? []).length === 0,
+      `${(toolsAcqua ?? []).length} linhas`,
+    );
+
+    const { data: toolUpdate } = await cliente
+      .from('tenant_tools')
+      .update({ ativo: false })
+      .eq('tenant_id', outros[0].tenantId)
+      .eq('tool_nome', 'transferir_humano')
+      .select('id');
+    checar(
+      `${usuario.slug}: UPDATE em tenant_tools de ${outros[0].slug} não afeta linha`,
+      (toolUpdate ?? []).length === 0,
+      `${(toolUpdate ?? []).length} linhas alteradas`,
     );
 
     await cliente.auth.signOut();

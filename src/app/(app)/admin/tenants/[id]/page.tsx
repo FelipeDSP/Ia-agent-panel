@@ -12,12 +12,14 @@ import {
 } from '@/components/ui/card';
 import { exigirSuperAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
+import { TOOL_TRANSFERIR, type ConfigTransferir } from '@/lib/tools/transferir-humano';
 
 import {
   BotaoSuspensao,
   FormChatwoot,
   FormConfigSuper,
   FormConvite,
+  FormTransferirHumano,
   GerenciarAdmins,
   ZonaPerigoExcluir,
 } from './componentes';
@@ -43,24 +45,30 @@ export default async function PaginaDetalheTenant({
 
   if (!tenant) notFound();
 
-  // Histórico de prompt + admins do cliente + conversas recentes, em paralelo.
-  const [{ data: versoesRaw }, { data: admins }, { data: conversas }] = await Promise.all([
-    supabase
-      .from('prompt_versoes')
-      .select('id, conteudo, criado_em, criado_por')
-      .eq('tenant_id', id)
-      .order('criado_em', { ascending: false }),
-    supabase
-      .from('usuarios_painel')
-      .select('id, nome, email')
-      .eq('tenant_id', id),
-    supabase
-      .from('conversas')
-      .select('conversation_id, contact_name, phone, status, atualizado_em')
-      .eq('tenant_id', id)
-      .order('atualizado_em', { ascending: false })
-      .limit(30),
-  ]);
+  // Histórico de prompt + admins + conversas recentes + tool de transferência.
+  const [{ data: versoesRaw }, { data: admins }, { data: conversas }, { data: toolTransferir }] =
+    await Promise.all([
+      supabase
+        .from('prompt_versoes')
+        .select('id, conteudo, criado_em, criado_por')
+        .eq('tenant_id', id)
+        .order('criado_em', { ascending: false }),
+      supabase.from('usuarios_painel').select('id, nome, email').eq('tenant_id', id),
+      supabase
+        .from('conversas')
+        .select('conversation_id, contact_name, phone, status, atualizado_em')
+        .eq('tenant_id', id)
+        .order('atualizado_em', { ascending: false })
+        .limit(30),
+      supabase
+        .from('tenant_tools')
+        .select('ativo, workflow_id, descricao, config')
+        .eq('tenant_id', id)
+        .eq('tool_nome', TOOL_TRANSFERIR)
+        .maybeSingle(),
+    ]);
+
+  const configTransferir = (toolTransferir?.config ?? {}) as Partial<ConfigTransferir>;
 
   // Resolve nome do autor de cada versão (poucas linhas; map simples).
   const autores = new Map((admins ?? []).map((a) => [a.email, a.nome]));
@@ -171,6 +179,29 @@ export default async function PaginaDetalheTenant({
           </CardHeader>
           <CardContent>
             <BotaoSuspensao tenantId={tenant.id} ativo={tenant.ativo} />
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Tool: transferência para humano</CardTitle>
+            <CardDescription>
+              Infra da tool. O cliente define horário e destino no painel dele;
+              {toolTransferir
+                ? toolTransferir.ativo
+                  ? ' está ligada por ele.'
+                  : ' ainda desligada por ele.'
+                : ' ainda não habilitada.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FormTransferirHumano
+              tenantId={tenant.id}
+              workflowId={toolTransferir?.workflow_id ?? ''}
+              descricao={toolTransferir?.descricao ?? ''}
+              sessao={configTransferir.notificacao?.sessao ?? ''}
+              habilitada={Boolean(toolTransferir)}
+            />
           </CardContent>
         </Card>
       </div>

@@ -11,6 +11,7 @@ import {
   excluirTenant,
   removerAdmin,
   reenviarAcessoAdmin,
+  salvarTransferirHumanoAgencia,
   type EstadoAcao,
 } from '../../acoes';
 import { Alert } from '@/components/ui/alert';
@@ -19,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
+import { Textarea } from '@/components/ui/textarea';
 import { MODELOS_PERMITIDOS } from '@/lib/tenants/schema';
 
 function ErroCampo({ msg }: { msg?: string }) {
@@ -158,6 +160,66 @@ export function FormChatwoot({
         <SubmitButton pendingLabel="Validando…">
           {accountId ? 'Revalidar e salvar' : 'Conectar'}
         </SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+// --- Tool: transferência para humano (infra, super admin) -------------------
+
+export function FormTransferirHumano({
+  tenantId,
+  workflowId,
+  descricao,
+  sessao,
+  habilitada,
+}: {
+  tenantId: string;
+  workflowId: string;
+  descricao: string;
+  sessao: string;
+  habilitada: boolean;
+}) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(
+    salvarTransferirHumanoAgencia,
+    {},
+  );
+
+  return (
+    <form action={acao} className="flex flex-col gap-4">
+      <input type="hidden" name="tenant_id" value={tenantId} />
+
+      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+      {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="workflow_id">workflow_id (n8n)</Label>
+          <Input id="workflow_id" name="workflow_id" defaultValue={workflowId} />
+          <ErroCampo msg={estado.errosCampo?.['workflow_id']} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="sessao">Sessão WAHA</Label>
+          <Input
+            id="sessao"
+            name="sessao"
+            defaultValue={sessao}
+            placeholder="ex.: acquaariquemes (vazio = sem aviso)"
+          />
+          <p className="text-xs text-muted-foreground">
+            Por qual sessão do WAHA sai o aviso. Sem ela, o cliente não consegue ligar o aviso.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="descricao">Descrição da tool (ensina a IA quando transferir)</Label>
+        <Textarea id="descricao" name="descricao" rows={3} defaultValue={descricao} />
+        <ErroCampo msg={estado.errosCampo?.['descricao']} />
+      </div>
+
+      <div>
+        <SubmitButton>{habilitada ? 'Salvar tool' : 'Habilitar tool'}</SubmitButton>
       </div>
     </form>
   );
