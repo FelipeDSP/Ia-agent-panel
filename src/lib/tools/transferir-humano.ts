@@ -71,15 +71,29 @@ export const HORARIO_PADRAO: Horario = {
 };
 
 /**
- * Número digitado pelo cliente → JID do WAHA (`55DDDNUMERO@c.us`).
- * Aceita com ou sem máscara; assume Brasil (+55) quando vem sem código do país.
- * Retorna null se não parecer um telefone — o chamador vira erro de campo.
+ * Número informado pelo cliente → chatId do WAHA (`<digitos>@c.us`).
+ *
+ * NÃO adivinha nada: não acrescenta código de país nem mexe no "nono dígito"
+ * do WhatsApp brasileiro. O JID do WhatsApp não é derivável do número discável
+ * — a mesma linha pode ter 9 no número mas não no JID (e vice-versa), sem regra
+ * fixa. Então exige-se o número internacional completo (com país) OU o JID
+ * colado, e o painel só garante o sufixo `@c.us`.
+ *
+ * Retorna null se não parecer válido — o chamador vira erro de campo.
  */
 export function formatarDestino(bruto: string): string | null {
-  const digitos = bruto.replace(/\D/g, '');
-  if (digitos.length < 10 || digitos.length > 13) return null;
-  const comPais = digitos.length <= 11 ? `55${digitos}` : digitos;
-  return `${comPais}@c.us`;
+  const t = bruto.trim();
+  if (!t) return null;
+
+  // Já veio como JID (colado do WhatsApp/Chatwoot): usa como está.
+  if (t.includes('@')) {
+    return /^\d{10,15}@[a-z]+\.us$/i.test(t) ? t.toLowerCase() : null;
+  }
+
+  // Só dígitos: exige número internacional completo (com código do país).
+  const digitos = t.replace(/\D/g, '');
+  if (digitos.length < 11 || digitos.length > 15) return null;
+  return `${digitos}@c.us`;
 }
 
 /** JID guardado → dígitos, para preencher o input de novo. */
@@ -146,8 +160,10 @@ export function validarTransferirCliente(fd: FormData): Resultado<{
   let destino: string | undefined;
   if (destinoBruto) {
     const jid = formatarDestino(destinoBruto);
-    if (!jid) erros['destino'] = 'Informe um número de WhatsApp válido (com DDD).';
-    else destino = jid;
+    if (!jid) {
+      erros['destino'] =
+        'Informe o número com o código do país (ex.: 556993666645) ou cole o ID (…@c.us).';
+    } else destino = jid;
   } else if (notificar) {
     erros['destino'] = 'Para avisar no WhatsApp, informe o número.';
   }

@@ -132,12 +132,14 @@ export function FormularioTransferir({
               <Input
                 id="destino"
                 name="destino"
-                placeholder="Ex.: 69 98412-5047"
+                placeholder="Ex.: 556993666645"
                 defaultValue={destinoNumero}
                 disabled={!notificar}
               />
               <p className="text-xs text-muted-foreground">
-                Com DDD. O código do país (55) é adicionado automaticamente.
+                Número completo com o código do país (55). Digite exatamente como o número está no
+                WhatsApp — no Brasil, alguns não têm o 9 depois do DDD. Se o aviso não chegar no
+                teste, tente sem esse 9.
               </p>
               <ErroCampo msg={estado.errosCampo?.['destino']} />
             </div>
