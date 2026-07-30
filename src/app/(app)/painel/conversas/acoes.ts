@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { exigirTenantAdmin } from '@/lib/auth';
+import { invocarLimparMemoria } from '@/lib/n8n';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 export type EstadoConversa = { erro?: string; sucesso?: string };
@@ -54,5 +55,71 @@ export async function definirStatusConversa(
         : novoStatus === 'ativo'
           ? 'Agente reativado.'
           : 'Conversa marcada como resolvida.',
+  };
+}
+
+/**
+ * Limpa a memória conversacional do agente (Redis, via n8n) para uma, várias ou
+ * TODAS as conversas do tenant. Serve para que, depois de atualizar a base de
+ * conhecimento, o agente não responda a partir do que "lembrou" e volte a
+ * consultar a base.
+ *
+ * Não apaga o histórico exibido no painel (mensagens_log é log de auditoria/
+ * billing e permanece) — só a memória que o agente usa como contexto.
+ *
+ * Isolamento: os conversation_id são SEMPRE resolvidos do banco escopados por
+ * tenant_id (do JWT). Uma lista crua do request nunca vira alvo direto — só
+ * limpamos memória de conversas comprovadamente deste tenant. `'todas'` busca
+ * todos os conversation_id do próprio tenant.
+ */
+export async function limparMemoriaConversas(
+  alvo: number[] | 'todas',
+): Promise<EstadoConversa> {
+  const usuario = await exigirTenantAdmin();
+
+  // 'todas': o n8n varre tenant_<uuid>_* — pega até buffers de conversas que já
+  // saíram da tabela. Não precisa enumerar ids; o tenant_id já escopa.
+  if (alvo === 'todas') {
+    const r = await invocarLimparMemoria({
+      tenantId: usuario.tenantId,
+      escopo: 'todas',
+      conversationIds: [],
+    });
+    if (!r.ok) return { erro: r.motivo };
+    revalidatePath('/painel/conversas');
+    return { sucesso: 'Memória de todas as conversas limpa. O agente recomeça consultando a base.' };
+  }
+
+  // Específicas: só limpa conversas comprovadamente deste tenant. Resolvemos os
+  // ids do banco escopados por tenant_id (do JWT) — lista crua do request nunca
+  // vira alvo direto.
+  const pedidos = alvo.filter((n) => Number.isInteger(n));
+  if (pedidos.length === 0) return { erro: 'Nenhuma conversa selecionada.' };
+
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase
+    .from('conversas')
+    .select('conversation_id')
+    .eq('tenant_id', usuario.tenantId)
+    .in('conversation_id', pedidos);
+
+  if (error) return { erro: `Não foi possível carregar as conversas: ${error.message}` };
+
+  const ids = (data ?? []).map((c) => c.conversation_id as number);
+  if (ids.length === 0) return { erro: 'Nenhuma conversa encontrada para limpar.' };
+
+  const r = await invocarLimparMemoria({
+    tenantId: usuario.tenantId,
+    escopo: 'conversas',
+    conversationIds: ids,
+  });
+  if (!r.ok) return { erro: r.motivo };
+
+  revalidatePath('/painel/conversas');
+  return {
+    sucesso:
+      ids.length === 1
+        ? 'Memória limpa nesta conversa. O agente volta a consultar a base do zero.'
+        : `Memória limpa em ${ids.length} conversas.`,
   };
 }

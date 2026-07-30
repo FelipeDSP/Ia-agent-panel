@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
-import { ControlePausa } from './controles';
+import { ControlePausa, LimparMemoria } from './controles';
 
 function dataHora(iso: string): string {
   try {
@@ -71,6 +71,7 @@ export default async function PaginaConversa({
             {conversa.status}
           </Badge>
           <ControlePausa conversationId={idNum} statusInicial={conversa.status} />
+          <LimparMemoria conversationId={idNum} />
         </div>
       </header>
 

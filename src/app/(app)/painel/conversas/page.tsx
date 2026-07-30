@@ -1,6 +1,3 @@
-import Link from 'next/link';
-
-import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardContent,
@@ -11,20 +8,7 @@ import {
 import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === 'pausado') return <Badge variant="warning">pausado</Badge>;
-  if (status === 'resolvido') return <Badge variant="secondary">resolvido</Badge>;
-  return <Badge variant="success">ativo</Badge>;
-}
-
-function dataCurta(iso: string | null): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-  } catch {
-    return iso;
-  }
-}
+import { ListaConversas } from './lista';
 
 export default async function PaginaConversas() {
   const usuario = await exigirTenantAdmin();
@@ -52,38 +36,18 @@ export default async function PaginaConversas() {
         <CardHeader>
           <CardTitle>Atendimentos</CardTitle>
           <CardDescription>
-            {conversas && conversas.length > 0
-              ? `${conversas.length} conversa(s).`
-              : 'Nenhuma conversa ainda.'}
+            Limpar a memória faz o agente esquecer o contexto daquela conversa e voltar a
+            consultar a base de conhecimento — útil depois de atualizar a base. Não apaga o
+            histórico exibido aqui.
           </CardDescription>
         </CardHeader>
-        {conversas && conversas.length > 0 ? (
-          <CardContent className="flex flex-col">
-            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-border pb-2 text-xs font-medium text-muted-foreground">
-              <span>Contato</span>
-              <span>Situação</span>
-              <span className="text-right">Última atividade</span>
-            </div>
-            {conversas.map((c) => (
-              <Link
-                key={c.conversation_id}
-                href={`/painel/conversas/${c.conversation_id}`}
-                className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 border-b border-border py-3 text-sm transition-colors hover:bg-muted/50"
-              >
-                <span className="min-w-0 truncate">
-                  <span className="font-medium">{c.contact_name ?? 'Sem nome'}</span>
-                  {c.phone ? (
-                    <span className="ml-2 text-muted-foreground">{c.phone}</span>
-                  ) : null}
-                </span>
-                <StatusBadge status={c.status} />
-                <span className="text-right text-muted-foreground">
-                  {dataCurta(c.atualizado_em)}
-                </span>
-              </Link>
-            ))}
-          </CardContent>
-        ) : null}
+        <CardContent>
+          {conversas && conversas.length > 0 ? (
+            <ListaConversas conversas={conversas} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Nenhuma conversa ainda.</p>
+          )}
+        </CardContent>
       </Card>
     </div>
   );
