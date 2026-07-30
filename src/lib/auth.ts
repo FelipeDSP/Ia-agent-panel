@@ -50,6 +50,21 @@ export async function obterUsuarioAtual(): Promise<UsuarioAtual | null> {
   // com NULL e nao casam. Negar aqui torna a falha legivel.
   if (papel === 'tenant_admin' && typeof tenantId !== 'string') return null;
 
+  // Tenant excluido (soft delete) ou pausado nao deve mais dar acesso ao admin
+  // dele. O soft delete mantem a linha e o JWT continua valido, entao sem esta
+  // checagem o admin de um cliente "excluido" seguiria logando e vendo os dados.
+  // Fail-closed: se a linha nao vier (RLS esconde deletado) ou vier morta/inativa,
+  // nega. super_admin nao tem tenant e pula. A checagem que vale fica junto do dado.
+  if (papel === 'tenant_admin') {
+    const { data: tenant } = await supabase
+      .from('tenants')
+      .select('deletado_em, ativo')
+      .eq('id', tenantId as string)
+      .maybeSingle();
+
+    if (!tenant || tenant.deletado_em !== null || tenant.ativo === false) return null;
+  }
+
   const nomeMeta = (user.user_metadata as Record<string, unknown>)['nome'];
 
   return {

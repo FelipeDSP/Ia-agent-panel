@@ -432,9 +432,18 @@ export async function excluirTenant(
     };
   }
 
+  // Solta o chatwoot_account_id na exclusão: ele é UNIQUE e, se ficasse preso ao
+  // tenant morto, aquela conta do Chatwoot não poderia ser religada a nenhum outro
+  // cliente. chatwoot_url é NOT NULL, então não pode ir a null — só zeramos o que
+  // trava a religação (account_id) e a credencial (token).
   const { error } = await supabase
     .from('tenants')
-    .update({ deletado_em: new Date().toISOString(), ativo: false })
+    .update({
+      deletado_em: new Date().toISOString(),
+      ativo: false,
+      chatwoot_account_id: null,
+      chatwoot_token: null,
+    })
     .eq('id', tenantId)
     .is('deletado_em', null); // idempotente: não re-exclui
 
