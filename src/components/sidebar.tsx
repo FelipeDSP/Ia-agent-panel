@@ -16,6 +16,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { sair } from '@/app/(auth)/acoes';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import type { Papel } from '@/lib/auth';
 import { cn } from '@/lib/utils';
@@ -158,6 +159,7 @@ export function Sidebar({
           <p className="truncate text-sm font-medium">{nome}</p>
           <p className="truncate text-xs text-muted-foreground">{email}</p>
         </div>
+        <ThemeToggle />
         <form action={sair}>
           <Button type="submit" variant="ghost" size="sm" className="w-full justify-start gap-3">
             <LogOut className="h-4 w-4" aria-hidden />

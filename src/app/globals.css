@@ -1,47 +1,79 @@
 @import 'tailwindcss';
 
-@theme {
-  --color-background: oklch(1 0 0);
-  --color-foreground: oklch(0.21 0.02 260);
-
-  --color-card: oklch(1 0 0);
-  --color-card-foreground: oklch(0.21 0.02 260);
-
-  --color-primary: oklch(0.48 0.16 258);
-  --color-primary-foreground: oklch(0.99 0 0);
-
-  --color-muted: oklch(0.968 0.005 260);
-  --color-muted-foreground: oklch(0.52 0.02 260);
-
-  --color-border: oklch(0.92 0.006 260);
-  --color-ring: oklch(0.48 0.16 258);
-
-  --color-destructive: oklch(0.55 0.2 27);
-
-  --color-sidebar: oklch(0.985 0.003 260);
+/*
+ * Tema por tokens semânticos. Os valores vivem em variáveis CSS que trocam por
+ * `data-theme` (escolha explícita do usuário) OU por `prefers-color-scheme`
+ * (preferência do sistema, quando não há escolha). O `@theme inline` mapeia os
+ * tokens do Tailwind para essas variáveis, então trocar o `data-theme` em
+ * runtime re-tinge tudo sem recompilar.
+ */
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-fg);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-fg);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-fg);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-sidebar: var(--sidebar);
 }
 
+/* Claro (padrão). */
+:root {
+  --bg: oklch(1 0 0);
+  --fg: oklch(0.21 0.02 260);
+  --card: oklch(1 0 0);
+  --card-fg: oklch(0.21 0.02 260);
+  --primary: oklch(0.48 0.16 258);
+  --primary-fg: oklch(0.99 0 0);
+  --muted: oklch(0.968 0.005 260);
+  --muted-fg: oklch(0.52 0.02 260);
+  --border: oklch(0.92 0.006 260);
+  --ring: oklch(0.48 0.16 258);
+  --destructive: oklch(0.55 0.2 27);
+  --sidebar: oklch(0.985 0.003 260);
+}
+
+/*
+ * Escuro pelo sistema — só quando o usuário NÃO forçou claro. O `:not(
+ * [data-theme='light'])` deixa a escolha explícita do usuário vencer a
+ * preferência do sistema.
+ */
 @media (prefers-color-scheme: dark) {
-  @theme {
-    --color-background: oklch(0.16 0.015 265);
-    --color-foreground: oklch(0.96 0.005 260);
-
-    --color-card: oklch(0.2 0.017 265);
-    --color-card-foreground: oklch(0.96 0.005 260);
-
-    --color-primary: oklch(0.68 0.15 258);
-    --color-primary-foreground: oklch(0.16 0.015 265);
-
-    --color-muted: oklch(0.26 0.018 265);
-    --color-muted-foreground: oklch(0.72 0.015 260);
-
-    --color-border: oklch(0.3 0.018 265);
-    --color-ring: oklch(0.68 0.15 258);
-
-    --color-destructive: oklch(0.65 0.19 27);
-
-    --color-sidebar: oklch(0.19 0.017 265);
+  :root:not([data-theme='light']) {
+    --bg: oklch(0.16 0.015 265);
+    --fg: oklch(0.96 0.005 260);
+    --card: oklch(0.2 0.017 265);
+    --card-fg: oklch(0.96 0.005 260);
+    --primary: oklch(0.68 0.15 258);
+    --primary-fg: oklch(0.16 0.015 265);
+    --muted: oklch(0.26 0.018 265);
+    --muted-fg: oklch(0.72 0.015 260);
+    --border: oklch(0.3 0.018 265);
+    --ring: oklch(0.68 0.15 258);
+    --destructive: oklch(0.65 0.19 27);
+    --sidebar: oklch(0.19 0.017 265);
   }
+}
+
+/* Escuro forçado pelo usuário — vale independente do sistema. */
+:root[data-theme='dark'] {
+  --bg: oklch(0.16 0.015 265);
+  --fg: oklch(0.96 0.005 260);
+  --card: oklch(0.2 0.017 265);
+  --card-fg: oklch(0.96 0.005 260);
+  --primary: oklch(0.68 0.15 258);
+  --primary-fg: oklch(0.16 0.015 265);
+  --muted: oklch(0.26 0.018 265);
+  --muted-fg: oklch(0.72 0.015 260);
+  --border: oklch(0.3 0.018 265);
+  --ring: oklch(0.68 0.15 258);
+  --destructive: oklch(0.65 0.19 27);
+  --sidebar: oklch(0.19 0.017 265);
 }
 
 html,
