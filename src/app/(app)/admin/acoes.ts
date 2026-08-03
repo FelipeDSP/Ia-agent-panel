@@ -528,10 +528,18 @@ export async function salvarTransferirHumanoAgencia(
   if (erroSel) return { erro: `Não foi possível carregar: ${erroSel.message}` };
 
   const atual = (linha?.config ?? {}) as Partial<ConfigTransferir>;
+  // Sem sessão WAHA não há por onde o aviso sair. Se a agência limpar a sessão,
+  // o canal cai para 'nenhum' — senão ficaria canal='waha' pendurado, o n8n
+  // tentaria notificar sem sessão e falharia calado, e o cliente nem veria o
+  // controle para corrigir (a tela dele esconde quando não há sessão). Espelha
+  // o mesmo guard que o lado do cliente já aplica.
+  const canal: 'waha' | 'nenhum' = validado.valor.sessao
+    ? (atual.notificacao?.canal ?? 'nenhum')
+    : 'nenhum';
   const config: ConfigTransferir = {
     horario: atual.horario ?? HORARIO_PADRAO,
     notificacao: {
-      canal: atual.notificacao?.canal ?? 'nenhum',
+      canal,
       ...(validado.valor.sessao ? { sessao: validado.valor.sessao } : {}),
       ...(atual.notificacao?.destino ? { destino: atual.notificacao.destino } : {}),
     },

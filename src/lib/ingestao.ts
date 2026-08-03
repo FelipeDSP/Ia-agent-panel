@@ -19,10 +19,15 @@ export async function invocarProcessamento(
 ): Promise<{ ok: boolean; status?: number; corpo?: unknown }> {
   const segredo = process.env.INGESTAO_SECRET;
   if (!segredo) {
-    throw new Error(
+    // Config ausente: NÃO lança. Se lançasse, subirArquivo estouraria depois de
+    // já ter subido o arquivo ao Storage e criado o job — deixando os dois
+    // órfãos. Retornar ok:false deixa os três chamadores tratarem com o mesmo
+    // caminho de erro (job marcado 'erro', mensagem amigável, reprocessável).
+    console.error(
       'INGESTAO_SECRET ausente. Defina no .env.local do painel e como secret da ' +
         'Edge Function (supabase secrets set INGESTAO_SECRET=...).',
     );
+    return { ok: false };
   }
 
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/processar-ingestao`, {

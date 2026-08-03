@@ -145,7 +145,10 @@ export async function ingerirTexto(
   const r = await invocarProcessamento(job.id, texto);
   const corpo = r.corpo as { ok?: boolean; job?: { status?: string; erro_msg?: string } } | null;
 
-  if (!r.ok || corpo?.job?.status === 'erro') {
+  // O caminho síncrono responde 200 mesmo quando o job não conclui (a função
+  // devolve `ok: status === 'concluido'`). Só declaramos sucesso com o sinal
+  // positivo `corpo.ok`; senão o cliente veria "adicionado" sem chunk gravado.
+  if (!r.ok || corpo?.ok !== true || corpo?.job?.status === 'erro') {
     return { erro: corpo?.job?.erro_msg ?? 'Falha ao processar o texto.' };
   }
 
@@ -193,14 +196,20 @@ export async function excluirDocumento(origem: string): Promise<EstadoIngestao> 
   const usuario = await exigirTenantAdmin();
   const supabase = await criarClienteServidor();
 
-  const { error } = await supabase
+  const { data: afetados, error } = await supabase
     .from('kb_documentos')
     .update({ deletado_em: new Date().toISOString() })
     .eq('tenant_id', usuario.tenantId)
     .eq('origem', origem)
-    .is('deletado_em', null);
+    .is('deletado_em', null)
+    .select('id');
 
   if (error) return { erro: `Não foi possível excluir: ${error.message}` };
+  // Sem linhas afetadas: origem inexistente, de outro tenant, ou já removida.
+  // Não mentir "removido" quando nada mudou.
+  if (!afetados || afetados.length === 0) {
+    return { erro: 'Documento não encontrado (ou já removido).' };
+  }
 
   revalidatePath('/painel/conhecimento');
   return { sucesso: 'Documento removido da base.' };

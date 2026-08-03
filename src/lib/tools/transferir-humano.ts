@@ -90,9 +90,11 @@ export function formatarDestino(bruto: string): string | null {
     return /^\d{10,15}@[a-z]+\.us$/i.test(t) ? t.toLowerCase() : null;
   }
 
-  // Só dígitos: exige número internacional completo (com código do país).
+  // Só dígitos: exige número internacional completo (com código do país). No
+  // Brasil isso é 12–13 dígitos (55 + DDD + 8/9). Recusa 11 dígitos: seria um
+  // número nacional sem o país (ex.: 69993666645), que vira um JID não roteável.
   const digitos = t.replace(/\D/g, '');
-  if (digitos.length < 11 || digitos.length > 15) return null;
+  if (digitos.length < 12 || digitos.length > 15) return null;
   return `${digitos}@c.us`;
 }
 
