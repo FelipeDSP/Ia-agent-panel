@@ -56,6 +56,14 @@ export function Sidebar({
 }) {
   const caminho = usePathname();
   const itens = MENU[papel];
+  // Item ativo = o de href MAIS específico que casa com a rota. Sem isso, o
+  // índice da seção ('/painel') acenderia junto de toda sub-rota, porque
+  // '/painel/conversas' etc. começam com '/painel/'. Pegar o href mais longo
+  // que é a própria rota (ou prefixo dela) resolve, e mantém 'Conversas' aceso
+  // na tela de detalhe '/painel/conversas/[id]'.
+  const hrefAtivo = itens
+    .filter((i) => caminho === i.href || caminho.startsWith(`${i.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
   // Drawer no mobile. Fecha sozinho ao trocar de rota (a navegação client
   // muda `caminho`), evitando ter que fechar na mão a cada clique.
   const [aberto, setAberto] = useState(false);
@@ -114,7 +122,7 @@ export function Sidebar({
 
         <nav className="flex flex-1 flex-col gap-0.5 p-3">
         {itens.map(({ href, rotulo, Icone, futuro }) => {
-          const ativo = caminho === href || caminho.startsWith(`${href}/`);
+          const ativo = href === hrefAtivo;
 
           if (futuro) {
             return (
