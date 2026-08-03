@@ -10,7 +10,7 @@ import 'server-only';
  */
 
 export type ResultadoChatwoot =
-  | { ok: true; nomeConta: string | null }
+  | { ok: true; nomeConta: string | null; validado: boolean }
   | { ok: false; motivo: string };
 
 /**
@@ -20,11 +20,20 @@ export type ResultadoChatwoot =
  * GET /api/v1/accounts/{id} responde 200 com a conta quando o token e valido
  * para aquela conta, 401 quando o token e invalido, e 404 quando a conta nao
  * existe para aquele token.
+ *
+ * `ehBot`: o token e de um Agent Bot. Esse tipo de token NAO acessa a API de
+ * conta (/accounts/{id}) — o Chatwoot devolve 401 mesmo o token sendo valido
+ * para POSTar mensagens, que e a unica coisa que o bot faz. Entao, quando
+ * `ehBot`, um 401/403 nao reprova: aceitamos e marcamos `validado=false` (nao
+ * deu para confirmar pela API, mas nao e token furado). Token de usuario
+ * (ehBot=false) mantem a validacao estrita — 401 continua sendo erro, para nao
+ * salvar em silencio um token de usuario digitado errado.
  */
 export async function validarCredencialChatwoot(params: {
   url: string;
   accountId: number;
   token: string;
+  ehBot?: boolean;
 }): Promise<ResultadoChatwoot> {
   const base = params.url.replace(/\/+$/, '');
   let endpoint: URL;
@@ -53,6 +62,11 @@ export async function validarCredencialChatwoot(params: {
   }
 
   if (resposta.status === 401 || resposta.status === 403) {
+    // Token de Agent Bot nao acessa a API de conta — 401 aqui e esperado e nao
+    // reprova o token para o uso dele (postar mensagem). Aceita sem validar.
+    if (params.ehBot) {
+      return { ok: true, nomeConta: null, validado: false };
+    }
     return { ok: false, motivo: 'Token recusado pelo Chatwoot (401). Verifique o token.' };
   }
   if (resposta.status === 404) {
@@ -74,5 +88,5 @@ export async function validarCredencialChatwoot(params: {
     // Corpo nao-JSON num 200 e estranho, mas nao invalida o token.
   }
 
-  return { ok: true, nomeConta };
+  return { ok: true, nomeConta, validado: true };
 }

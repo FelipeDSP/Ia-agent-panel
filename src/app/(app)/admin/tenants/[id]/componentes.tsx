@@ -156,6 +156,17 @@ export function FormChatwoot({
         </p>
       </div>
 
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" name="token_bot" className="mt-0.5 h-4 w-4" />
+        <span>
+          É um token de Agent Bot (o robô responde por ele)
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            Marque se o token veio de um Agent Bot. Esse tipo não é validado pela API de conta
+            (daria 401) — o painel salva sem validar e você confirma com uma mensagem de teste.
+          </span>
+        </span>
+      </label>
+
       <div>
         <SubmitButton pendingLabel="Validando…">
           {accountId ? 'Revalidar e salvar' : 'Conectar'}

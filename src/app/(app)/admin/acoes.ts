@@ -318,6 +318,9 @@ export async function conectarChatwoot(
   const accountIdBruto = String(fd.get('chatwoot_account_id') ?? '').trim();
   let token = String(fd.get('chatwoot_token') ?? '').trim();
   const url = String(fd.get('chatwoot_url') ?? '').trim() || 'https://app.chatyou.chat';
+  // Token de Agent Bot: não passa pela validação da API de conta (dá 401 mesmo
+  // válido). Marcado aqui, a validação aceita o 401 em vez de reprovar.
+  const ehBot = fd.get('token_bot') === 'on' || fd.get('token_bot') === 'true';
 
   if (!tenantId) return { erro: 'Tenant não informado.' };
 
@@ -341,8 +344,9 @@ export async function conectarChatwoot(
     if (!token) return { errosCampo: { chatwoot_token: 'Informe o token.' } };
   }
 
-  // A validação vem ANTES do save. Sem 200 aqui, nada é gravado.
-  const validacao = await validarCredencialChatwoot({ url, accountId, token });
+  // A validação vem ANTES do save. Sem 200 aqui, nada é gravado (salvo token de
+  // bot, que a validação aceita sem confirmar — ver validarCredencialChatwoot).
+  const validacao = await validarCredencialChatwoot({ url, accountId, token, ehBot });
   if (!validacao.ok) {
     return { erro: validacao.motivo };
   }
@@ -362,6 +366,13 @@ export async function conectarChatwoot(
   }
 
   revalidatePath(`/admin/tenants/${tenantId}`);
+  if (!validacao.validado) {
+    return {
+      sucesso:
+        'Chatwoot conectado. Token de Agent Bot salvo sem validação automática ' +
+        '(a API de conta não valida token de bot) — confirme enviando uma mensagem de teste.',
+    };
+  }
   return {
     sucesso: validacao.nomeConta
       ? `Conectado à conta "${validacao.nomeConta}" do Chatwoot.`
