@@ -17,6 +17,10 @@ tsconfig.tsbuildinfo
 # Config local do Claude Code (permissoes por maquina).
 .claude/
 
+# Export do workflow n8n. Fica local — contem PII no pinData (dado de teste) e
+# nao e codigo da aplicacao. Gerenciado direto no n8n.
+agente ia workflow.txt
+
 *.log
 npm-debug.log*
 
