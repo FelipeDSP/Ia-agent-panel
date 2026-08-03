@@ -92,7 +92,7 @@ export function PromptEditor({
         {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
 
         {confirmarModelo ? (
-          <Alert>
+          <Alert variant="warning">
             <div className="flex flex-col gap-2">
               <span>Isto substitui o texto atual pelo modelo. Quer continuar?</span>
               <div className="flex gap-2">

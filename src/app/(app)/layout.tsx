@@ -41,7 +41,7 @@ export default async function LayoutAplicacao({
         os cartoes esticam ate a borda e pares rotulo/valor ficam a meio metro
         de distancia um do outro.
       */}
-      <main className="flex-1 overflow-x-hidden px-8 py-8">
+      <main className="flex-1 overflow-x-hidden px-4 pb-8 pt-20 md:px-8 md:py-8">
         <div className="mx-auto w-full max-w-6xl">{children}</div>
       </main>
     </div>

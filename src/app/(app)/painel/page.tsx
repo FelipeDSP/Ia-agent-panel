@@ -120,7 +120,7 @@ export default async function PaginaPainel() {
           par fica nas duas pontas e a relacao entre eles se perde.
         */}
         <CardContent>
-          <dl className="grid gap-6 text-sm sm:grid-cols-3">
+          <dl className="grid gap-6 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-muted-foreground">Modelo</dt>
               <dd className="mt-1 font-medium">{tenant.modelo}</dd>

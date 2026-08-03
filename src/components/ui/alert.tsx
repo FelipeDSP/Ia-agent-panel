@@ -10,6 +10,8 @@ const alertVariants = cva('rounded-md border px-4 py-3 text-sm', {
       destructive: 'border-destructive/40 bg-destructive/10 text-destructive',
       success:
         'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+      warning:
+        'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
     },
   },
   defaultVariants: { variant: 'default' },

@@ -6,11 +6,14 @@ import {
   Building2,
   LayoutDashboard,
   LogOut,
+  Menu,
   MessagesSquare,
   Settings,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 import { sair } from '@/app/(auth)/acoes';
 import { Button } from '@/components/ui/button';
@@ -52,17 +55,63 @@ export function Sidebar({
 }) {
   const caminho = usePathname();
   const itens = MENU[papel];
+  // Drawer no mobile. Fecha sozinho ao trocar de rota (a navegação client
+  // muda `caminho`), evitando ter que fechar na mão a cada clique.
+  const [aberto, setAberto] = useState(false);
+  useEffect(() => {
+    setAberto(false);
+  }, [caminho]);
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-sidebar">
-      <div className="border-b border-border px-5 py-4">
-        <p className="text-sm font-semibold">Painel de Agentes</p>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          {papel === 'super_admin' ? 'Administração' : (nomeTenant ?? 'Cliente')}
-        </p>
+    <>
+      {/* Barra superior só no mobile: dá o botão de abrir o menu. */}
+      <div className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-sidebar px-4 md:hidden">
+        <button
+          type="button"
+          onClick={() => setAberto(true)}
+          aria-label="Abrir menu"
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Menu className="h-5 w-5" aria-hidden />
+        </button>
+        <span className="text-sm font-semibold">Painel de Agentes</span>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 p-3">
+      {/* Fundo escuro atrás do drawer aberto (mobile). */}
+      {aberto ? (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          aria-hidden
+          onClick={() => setAberto(false)}
+        />
+      ) : null}
+
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-border bg-sidebar transition-transform duration-200',
+          'md:static md:z-auto md:translate-x-0',
+          aberto ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Painel de Agentes</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {papel === 'super_admin' ? 'Administração' : (nomeTenant ?? 'Cliente')}
+            </p>
+          </div>
+          {/* Fechar o drawer (só mobile). */}
+          <button
+            type="button"
+            onClick={() => setAberto(false)}
+            aria-label="Fechar menu"
+            className="-mr-1 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+          >
+            <X className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
+
+        <nav className="flex flex-1 flex-col gap-0.5 p-3">
         {itens.map(({ href, rotulo, Icone, futuro }) => {
           const ativo = caminho === href || caminho.startsWith(`${href}/`);
 
@@ -116,6 +165,7 @@ export function Sidebar({
           </Button>
         </form>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
