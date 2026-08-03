@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
 import { formatarDataHora } from '@/lib/utils';
+import { DICAS_PROMPT, MODELO_PROMPT } from '@/lib/orientacao';
 import {
   restaurarVersaoPrompt,
   salvarPrompt,
@@ -37,6 +38,18 @@ export function PromptEditor({
   const [mostrarHistorico, setMostrarHistorico] = useState(false);
   const [pendente, iniciar] = useTransition();
   const [msgRollback, setMsgRollback] = useState<string | null>(null);
+  // "Usar modelo": preenche o esqueleto. Se já houver texto, pede confirmação
+  // antes de substituir, para não apagar o que o admin escreveu sem querer.
+  const [confirmarModelo, setConfirmarModelo] = useState(false);
+
+  function usarModelo() {
+    if (valor.trim() && !confirmarModelo) {
+      setConfirmarModelo(true);
+      return;
+    }
+    setValor(MODELO_PROMPT);
+    setConfirmarModelo(false);
+  }
 
   function restaurar(versaoId: string) {
     setMsgRollback(null);
@@ -53,6 +66,19 @@ export function PromptEditor({
 
   return (
     <div className="flex flex-col gap-4">
+      <details className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm">
+        <summary className="cursor-pointer font-medium">Como escrever um bom prompt</summary>
+        <ul className="mt-3 flex list-disc flex-col gap-1.5 pl-5 text-muted-foreground">
+          {DICAS_PROMPT.map((dica) => (
+            <li key={dica}>{dica}</li>
+          ))}
+        </ul>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Sem saber por onde começar? Use <span className="font-medium">&ldquo;Usar modelo&rdquo;</span>{' '}
+          para preencher um esqueleto e depois é só editar.
+        </p>
+      </details>
+
       <form action={acao} className="flex flex-col gap-3">
         <Textarea
           name="system_prompt"
@@ -65,8 +91,32 @@ export function PromptEditor({
         {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
         {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
 
+        {confirmarModelo ? (
+          <Alert>
+            <div className="flex flex-col gap-2">
+              <span>Isto substitui o texto atual pelo modelo. Quer continuar?</span>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={usarModelo}>
+                  Substituir pelo modelo
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setConfirmarModelo(false)}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          </Alert>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-3">
           <SubmitButton>Salvar prompt</SubmitButton>
+          <Button type="button" variant="outline" onClick={usarModelo}>
+            Usar modelo
+          </Button>
           <Button
             type="button"
             variant="outline"

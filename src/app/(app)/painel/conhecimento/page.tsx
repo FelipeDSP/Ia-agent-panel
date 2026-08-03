@@ -1,4 +1,5 @@
 import { exigirTenantAdmin } from '@/lib/auth';
+import { DICAS_BASE } from '@/lib/orientacao';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 import { listarStatusJobs, type JobStatus } from './acoes';
@@ -48,6 +49,17 @@ export default async function PaginaConhecimento() {
           sem intervenção da agência.
         </p>
       </header>
+
+      <details className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm">
+        <summary className="cursor-pointer font-medium">
+          Como montar uma boa base de conhecimento
+        </summary>
+        <ul className="mt-3 flex list-disc flex-col gap-1.5 pl-5 text-muted-foreground">
+          {DICAS_BASE.map((dica) => (
+            <li key={dica}>{dica}</li>
+          ))}
+        </ul>
+      </details>
 
       <GestaoConhecimento documentosIniciais={documentos} jobsIniciais={jobs} />
     </div>
