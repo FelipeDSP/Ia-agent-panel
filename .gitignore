@@ -21,6 +21,10 @@ tsconfig.tsbuildinfo
 # nao e codigo da aplicacao. Gerenciado direto no n8n.
 agente ia workflow.txt
 
+# Assets-fonte da marca. As copias que o app usa vivem em public/. A pasta fonte
+# fica local (nao precisa no repo publico).
+[Rr]ebranding/
+
 *.log
 npm-debug.log*
 

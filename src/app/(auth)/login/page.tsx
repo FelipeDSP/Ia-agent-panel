@@ -23,15 +23,25 @@ export default async function PaginaLogin({
   const mensagem = params.erro ? MENSAGENS_ERRO[params.erro] : undefined;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Painel de Agentes</CardTitle>
-        <CardDescription>Entre com sua conta para continuar.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {mensagem ? <Alert variant="destructive">{mensagem}</Alert> : null}
-        <FormularioLogin proximo={params.proximo ?? null} />
-      </CardContent>
-    </Card>
+    <div className="flex flex-col items-center gap-6">
+      <span className="flex items-center gap-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/chatyou-logo.png" alt="chatyou" className="marca-clara h-8 w-auto" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/chatyou-logo-branca.png" alt="chatyou" className="marca-escura h-8 w-auto" />
+        <span className="text-sm font-semibold text-muted-foreground">· IA</span>
+      </span>
+
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>Entrar</CardTitle>
+          <CardDescription>Acesse o painel de agentes de IA.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {mensagem ? <Alert variant="destructive">{mensagem}</Alert> : null}
+          <FormularioLogin proximo={params.proximo ?? null} />
+        </CardContent>
+      </Card>
+    </div>
   );
 }

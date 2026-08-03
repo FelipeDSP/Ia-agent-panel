@@ -28,12 +28,12 @@
   --fg: oklch(0.21 0.02 260);
   --card: oklch(1 0 0);
   --card-fg: oklch(0.21 0.02 260);
-  --primary: oklch(0.48 0.16 258);
+  --primary: oklch(0.754 0.168 66.2);
   --primary-fg: oklch(0.99 0 0);
   --muted: oklch(0.968 0.005 260);
   --muted-fg: oklch(0.52 0.02 260);
   --border: oklch(0.92 0.006 260);
-  --ring: oklch(0.48 0.16 258);
+  --ring: oklch(0.754 0.168 66.2);
   --destructive: oklch(0.55 0.2 27);
   --sidebar: oklch(0.985 0.003 260);
 }
@@ -49,12 +49,12 @@
     --fg: oklch(0.96 0.005 260);
     --card: oklch(0.2 0.017 265);
     --card-fg: oklch(0.96 0.005 260);
-    --primary: oklch(0.68 0.15 258);
-    --primary-fg: oklch(0.16 0.015 265);
+    --primary: oklch(0.754 0.168 66.2);
+    --primary-fg: oklch(0.99 0 0);
     --muted: oklch(0.26 0.018 265);
     --muted-fg: oklch(0.72 0.015 260);
     --border: oklch(0.3 0.018 265);
-    --ring: oklch(0.68 0.15 258);
+    --ring: oklch(0.754 0.168 66.2);
     --destructive: oklch(0.65 0.19 27);
     --sidebar: oklch(0.19 0.017 265);
   }
@@ -66,12 +66,12 @@
   --fg: oklch(0.96 0.005 260);
   --card: oklch(0.2 0.017 265);
   --card-fg: oklch(0.96 0.005 260);
-  --primary: oklch(0.68 0.15 258);
-  --primary-fg: oklch(0.16 0.015 265);
+  --primary: oklch(0.754 0.168 66.2);
+  --primary-fg: oklch(0.99 0 0);
   --muted: oklch(0.26 0.018 265);
   --muted-fg: oklch(0.72 0.015 260);
   --border: oklch(0.3 0.018 265);
-  --ring: oklch(0.68 0.15 258);
+  --ring: oklch(0.754 0.168 66.2);
   --destructive: oklch(0.65 0.19 27);
   --sidebar: oklch(0.19 0.017 265);
 }
@@ -84,5 +84,38 @@ body {
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);
+  font-family: var(--font-montserrat), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Logo da marca: laranja no tema claro, branca no escuro. Espelha a mesma
+ * lógica de troca dos tokens de cor (data-theme + prefers-color-scheme), para
+ * o logo acompanhar o toggle de tema em runtime.
+ */
+.marca-clara {
+  display: block;
+}
+.marca-escura {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .marca-clara {
+    display: none;
+  }
+  :root:not([data-theme='light']) .marca-escura {
+    display: block;
+  }
+}
+:root[data-theme='dark'] .marca-clara {
+  display: none;
+}
+:root[data-theme='dark'] .marca-escura {
+  display: block;
+}
+:root[data-theme='light'] .marca-clara {
+  display: block;
+}
+:root[data-theme='light'] .marca-escura {
+  display: none;
 }

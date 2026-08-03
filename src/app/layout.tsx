@@ -1,10 +1,20 @@
 import type { Metadata } from 'next';
+import { Montserrat } from 'next/font/google';
 
 import './globals.css';
 
+// Fonte da marca ChatYou (a logo usa Montserrat SemiBold). Exposta como
+// variável CSS e aplicada no body via globals.css.
+const montserrat = Montserrat({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-montserrat',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
-  title: 'Painel de Agentes',
-  description: 'Gestão de agentes de IA por cliente',
+  title: 'chatyou · IA',
+  description: 'Painel de agentes de IA do ChatYou',
 };
 
 /*
@@ -20,7 +30,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" className={montserrat.variable} suppressHydrationWarning>
       <body className="min-h-screen antialiased">
         <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA }} />
         {children}

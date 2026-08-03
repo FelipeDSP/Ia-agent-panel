@@ -83,7 +83,13 @@ export function Sidebar({
         >
           <Menu className="h-5 w-5" aria-hidden />
         </button>
-        <span className="text-sm font-semibold">Painel de Agentes</span>
+        <span className="flex items-center gap-1.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/chatyou-logo.png" alt="chatyou" className="marca-clara h-5 w-auto" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/chatyou-logo-branca.png" alt="chatyou" className="marca-escura h-5 w-auto" />
+          <span className="text-xs font-semibold text-muted-foreground">· IA</span>
+        </span>
       </div>
 
       {/* Fundo escuro atrás do drawer aberto (mobile). */}
@@ -102,22 +108,28 @@ export function Sidebar({
           aberto ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">Painel de Agentes</p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {papel === 'super_admin' ? 'Administração' : (nomeTenant ?? 'Cliente')}
-            </p>
+        <div className="border-b border-border px-5 py-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-1.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/chatyou-logo.png" alt="chatyou" className="marca-clara h-6 w-auto" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/chatyou-logo-branca.png" alt="chatyou" className="marca-escura h-6 w-auto" />
+              <span className="text-xs font-semibold text-muted-foreground">· IA</span>
+            </span>
+            {/* Fechar o drawer (só mobile). */}
+            <button
+              type="button"
+              onClick={() => setAberto(false)}
+              aria-label="Fechar menu"
+              className="-mr-1 shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
           </div>
-          {/* Fechar o drawer (só mobile). */}
-          <button
-            type="button"
-            onClick={() => setAberto(false)}
-            aria-label="Fechar menu"
-            className="-mr-1 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
-          >
-            <X className="h-5 w-5" aria-hidden />
-          </button>
+          <p className="mt-1.5 truncate text-xs text-muted-foreground">
+            {papel === 'super_admin' ? 'Administração' : (nomeTenant ?? 'Cliente')}
+          </p>
         </div>
 
         <nav className="flex flex-1 flex-col gap-0.5 p-3">
