@@ -71,6 +71,29 @@ export function Sidebar({
     setAberto(false);
   }, [caminho]);
 
+  // Só no mobile o `<aside>` é um drawer. No desktop é navegação fixa. Precisamos
+  // saber em qual estamos para (a) marcar o aside como `inert` quando o drawer
+  // está fechado — senão o leitor de tela alcança links fora da tela — e (b) dar
+  // semântica de diálogo só quando ele abre como overlay.
+  const [ehMobile, setEhMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const sincronizar = () => setEhMobile(mq.matches);
+    sincronizar();
+    mq.addEventListener('change', sincronizar);
+    return () => mq.removeEventListener('change', sincronizar);
+  }, []);
+
+  // Esc fecha o drawer (padrão de qualquer overlay modal).
+  useEffect(() => {
+    if (!aberto) return;
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAberto(false);
+    };
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, [aberto]);
+
   return (
     <>
       {/* Barra superior só no mobile: dá o botão de abrir o menu. */}
@@ -79,6 +102,8 @@ export function Sidebar({
           type="button"
           onClick={() => setAberto(true)}
           aria-label="Abrir menu"
+          aria-expanded={aberto}
+          aria-controls="menu-lateral"
           className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Menu className="h-5 w-5" aria-hidden />
@@ -102,9 +127,15 @@ export function Sidebar({
       ) : null}
 
       <aside
+        id="menu-lateral"
+        // No mobile fechado, tira o drawer da árvore de acessibilidade e do
+        // foco (links fora da tela não devem ser tabuláveis nem lidos). Quando
+        // abre como overlay, vira diálogo modal.
+        inert={ehMobile && !aberto}
+        {...(ehMobile && aberto ? ({ role: 'dialog', 'aria-modal': true } as const) : {})}
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-border bg-sidebar transition-transform duration-200',
-          'md:static md:z-auto md:translate-x-0',
+          'md:sticky md:top-0 md:z-auto md:h-screen md:translate-x-0',
           aberto ? 'translate-x-0' : '-translate-x-full',
         )}
       >
@@ -132,7 +163,7 @@ export function Sidebar({
           </p>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-0.5 p-3">
+        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-3">
         {itens.map(({ href, rotulo, Icone, futuro }) => {
           const ativo = href === hrefAtivo;
 
@@ -142,7 +173,7 @@ export function Sidebar({
                 key={href}
                 aria-disabled
                 title="Disponível em uma próxima fase"
-                className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
+                className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground opacity-70"
               >
                 <Icone className="h-4 w-4" aria-hidden />
                 {rotulo}

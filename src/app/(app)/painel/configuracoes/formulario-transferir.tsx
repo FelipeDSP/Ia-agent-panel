@@ -38,7 +38,12 @@ export function FormularioTransferir({
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
 
       <label className="flex items-center gap-3">
-        <input type="checkbox" name="ativo" defaultChecked={ativo} className="h-4 w-4" />
+        <input
+          type="checkbox"
+          name="ativo"
+          defaultChecked={ativo}
+          className="h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        />
         <span className="text-sm font-medium">Oferecer transferência para atendimento humano</span>
       </label>
       <p className="-mt-3 text-xs text-muted-foreground">
@@ -70,7 +75,7 @@ export function FormularioTransferir({
                   type="checkbox"
                   name={`dia_${d.valor}`}
                   defaultChecked={horario.dias_semana.includes(d.valor)}
-                  className="h-4 w-4"
+                  className="h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 />
                 {d.nome}
               </label>
@@ -122,7 +127,7 @@ export function FormularioTransferir({
                 name="notificar"
                 checked={notificar}
                 onChange={(e) => setNotificar(e.target.checked)}
-                className="h-4 w-4"
+                className="h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               />
               <span className="text-sm">Me avisar no WhatsApp quando alguém pedir atendimento</span>
             </label>

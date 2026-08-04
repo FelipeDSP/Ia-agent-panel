@@ -1,3 +1,4 @@
+import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -77,7 +78,7 @@ export default async function PaginaConsumoAdmin() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {error ? (
-            <p className="text-sm text-destructive">Não foi possível carregar o consumo: {error.message}</p>
+            <Alert variant="destructive">Não foi possível carregar o consumo: {error.message}</Alert>
           ) : consumo.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Sem consumo registrado ainda. Os tokens começam a aparecer quando o agente responder

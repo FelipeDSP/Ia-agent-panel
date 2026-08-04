@@ -80,7 +80,7 @@ export function ListaConversas({ conversas }: { conversas: ConversaResumo[] }) {
                 disabled={pendente}
                 onClick={() => executar([...selecao])}
               >
-                Confirmar
+                {pendente ? 'Limpando…' : 'Confirmar'}
               </Button>
               <Button variant="outline" size="sm" disabled={pendente} onClick={() => setConfirmando(null)}>
                 Cancelar
@@ -97,7 +97,7 @@ export function ListaConversas({ conversas }: { conversas: ConversaResumo[] }) {
                 disabled={pendente}
                 onClick={() => executar('todas')}
               >
-                Confirmar todas
+                {pendente ? 'Limpando…' : 'Confirmar todas'}
               </Button>
               <Button variant="outline" size="sm" disabled={pendente} onClick={() => setConfirmando(null)}>
                 Cancelar
@@ -151,7 +151,7 @@ export function ListaConversas({ conversas }: { conversas: ConversaResumo[] }) {
         >
           <input
             type="checkbox"
-            className="h-4 w-4 shrink-0 cursor-pointer accent-primary"
+            className="h-4 w-4 shrink-0 cursor-pointer accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             checked={selecao.has(c.conversation_id)}
             onChange={() => alternar(c.conversation_id)}
             aria-label={`Selecionar conversa de ${c.contact_name ?? 'sem nome'}`}

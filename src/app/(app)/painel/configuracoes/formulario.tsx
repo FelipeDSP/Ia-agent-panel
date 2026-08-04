@@ -37,7 +37,7 @@ export function FormularioConfig({
           type="checkbox"
           name="agente_ativo"
           defaultChecked={agenteAtivo}
-          className="h-4 w-4"
+          className="h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         />
         <span className="text-sm font-medium">Agente ligado</span>
       </label>

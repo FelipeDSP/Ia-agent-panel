@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
 export type Documento = {
   origem: string;
@@ -52,6 +53,56 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant="secondary">na fila</Badge>;
 }
 
+/**
+ * Excluir documento com confirmação inline em dois passos — mesmo padrão do
+ * LimparMemoria. Apagar um documento remove os chunks da base do agente; um
+ * clique só era fácil demais de errar.
+ */
+function BotaoExcluirDocumento({
+  nome,
+  desabilitado,
+  excluindo,
+  onConfirmar,
+}: {
+  nome: string;
+  desabilitado: boolean;
+  excluindo: boolean;
+  onConfirmar: () => void;
+}) {
+  const [confirmando, setConfirmando] = useState(false);
+
+  if (!confirmando) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={desabilitado}
+        onClick={() => setConfirmando(true)}
+        aria-label={`Excluir ${nome}`}
+      >
+        <Trash2 className="h-4 w-4" aria-hidden />
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <span className="text-xs text-muted-foreground">Excluir?</span>
+      <Button variant="destructive" size="sm" disabled={desabilitado} onClick={onConfirmar}>
+        {excluindo ? 'Excluindo…' : 'Confirmar'}
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={desabilitado}
+        onClick={() => setConfirmando(false)}
+      >
+        Cancelar
+      </Button>
+    </div>
+  );
+}
+
 export function GestaoConhecimento({
   documentosIniciais,
   jobsIniciais,
@@ -63,6 +114,10 @@ export function GestaoConhecimento({
   const [jobs, setJobs] = useState<JobStatus[]>(jobsIniciais);
   const [pendente, iniciarTransicao] = useTransition();
   const [feedback, setFeedback] = useState<EstadoIngestao>({});
+  // Qual ação está em curso (ex.: `excluir:<origem>`). O `pendente` do
+  // useTransition é compartilhado entre reprocessar e excluir; isto identifica o
+  // botão exato para mostrar "…" só nele.
+  const [acaoAtiva, setAcaoAtiva] = useState<string | null>(null);
 
   const [estadoArquivo, acaoArquivo] = useActionState<EstadoIngestao, FormData>(subirArquivo, {});
   const [estadoTexto, acaoTexto] = useActionState<EstadoIngestao, FormData>(ingerirTexto, {});
@@ -113,15 +168,18 @@ export function GestaoConhecimento({
 
   const aoReprocessar = (jobId: string) =>
     iniciarTransicao(async () => {
+      setAcaoAtiva(`reprocessar:${jobId}`);
       setFeedback(await reprocessar(jobId));
       setJobs(await listarStatusJobs());
+      setAcaoAtiva(null);
     });
 
-  const aoExcluir = (origem: string, nome: string) =>
+  const aoExcluir = (origem: string) =>
     iniciarTransicao(async () => {
+      setAcaoAtiva(`excluir:${origem}`);
       setFeedback(await excluirDocumento(origem));
       router.refresh();
-      void nome;
+      setAcaoAtiva(null);
     });
 
   return (
@@ -209,7 +267,14 @@ export function GestaoConhecimento({
                           disabled={pendente}
                           onClick={() => aoReprocessar(job.id)}
                         >
-                          <RefreshCw className="h-3.5 w-3.5" aria-hidden /> Reprocessar
+                          <RefreshCw
+                            className={cn(
+                              'h-3.5 w-3.5',
+                              acaoAtiva === `reprocessar:${job.id}` && 'animate-spin',
+                            )}
+                            aria-hidden
+                          />
+                          {acaoAtiva === `reprocessar:${job.id}` ? 'Reprocessando…' : 'Reprocessar'}
                         </Button>
                       ) : null}
                     </div>
@@ -217,7 +282,14 @@ export function GestaoConhecimento({
 
                   {job.status === 'processando' ? (
                     <div className="mt-2">
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        role="progressbar"
+                        aria-valuenow={pct}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={`Progresso de ${job.arquivo_nome}`}
+                        className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                      >
                         <div
                           className="h-full bg-primary transition-all"
                           style={{ width: `${pct}%` }}
@@ -262,15 +334,12 @@ export function GestaoConhecimento({
                     {doc.chunks} chunk(s) · {dataCurta(doc.criadoEm)}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={pendente}
-                  onClick={() => aoExcluir(doc.origem, doc.nome)}
-                  aria-label={`Excluir ${doc.nome}`}
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden />
-                </Button>
+                <BotaoExcluirDocumento
+                  nome={doc.nome}
+                  desabilitado={pendente}
+                  excluindo={acaoAtiva === `excluir:${doc.origem}`}
+                  onConfirmar={() => aoExcluir(doc.origem)}
+                />
               </div>
             ))}
           </CardContent>

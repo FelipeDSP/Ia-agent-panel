@@ -45,7 +45,13 @@ export function ControlePausa({
         disabled={pendente}
         onClick={alternar}
       >
-        {pausado ? (
+        {pendente ? (
+          pausado ? (
+            'Retomando…'
+          ) : (
+            'Pausando…'
+          )
+        ) : pausado ? (
           <>
             <Play className="h-4 w-4" aria-hidden /> Retomar agente
           </>

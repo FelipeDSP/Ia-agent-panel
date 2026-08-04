@@ -1,4 +1,5 @@
 import { PromptEditor, type VersaoPrompt } from '@/components/prompt-editor';
+import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -15,7 +16,7 @@ function Metrica({ rotulo, valor }: { rotulo: string; valor: number | string }) 
     <Card>
       <CardContent className="p-6">
         <p className="text-sm text-muted-foreground">{rotulo}</p>
-        <p className="mt-2 text-3xl font-semibold tabular-nums">{valor}</p>
+        <p className="mt-2 text-2xl font-semibold tabular-nums">{valor}</p>
       </CardContent>
     </Card>
   );
@@ -38,9 +39,7 @@ export default async function PaginaPainel() {
 
   if (!tenant) {
     return (
-      <div className="text-sm text-destructive">
-        Não foi possível carregar os dados do seu cliente.
-      </div>
+      <Alert variant="destructive">Não foi possível carregar os dados do seu cliente.</Alert>
     );
   }
 

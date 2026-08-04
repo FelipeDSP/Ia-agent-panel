@@ -1,3 +1,4 @@
+import { Alert } from '@/components/ui/alert';
 import {
   Card,
   CardContent,
@@ -36,7 +37,7 @@ export default async function PaginaConfiguracoes() {
   ]);
 
   if (!tenant) {
-    return <div className="text-sm text-destructive">Não foi possível carregar as configurações.</div>;
+    return <Alert variant="destructive">Não foi possível carregar as configurações.</Alert>;
   }
 
   const configTransferir = (toolTransferir?.config ?? {}) as Partial<ConfigTransferir>;

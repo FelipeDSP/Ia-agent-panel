@@ -157,7 +157,11 @@ export function FormChatwoot({
       </div>
 
       <label className="flex items-start gap-2 text-sm">
-        <input type="checkbox" name="token_bot" className="mt-0.5 h-4 w-4" />
+        <input
+          type="checkbox"
+          name="token_bot"
+          className="mt-0.5 h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        />
         <span>
           É um token de Agent Bot (o robô responde por ele)
           <span className="mt-0.5 block text-xs text-muted-foreground">

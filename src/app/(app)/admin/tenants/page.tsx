@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -44,9 +45,7 @@ export default async function PaginaTenants() {
 
   if (error) {
     return (
-      <div className="text-sm text-destructive">
-        Não foi possível carregar os clientes: {error.message}
-      </div>
+      <Alert variant="destructive">Não foi possível carregar os clientes: {error.message}</Alert>
     );
   }
 
