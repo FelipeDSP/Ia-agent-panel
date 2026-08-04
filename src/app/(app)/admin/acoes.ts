@@ -335,10 +335,12 @@ export async function conectarChatwoot(
   // está salvo — é o que o placeholder do formulário promete. Só exige digitar
   // quando ainda não há token guardado (primeira conexão).
   if (!token) {
+    // Credencial vive em tenant_credenciais (segregada de tenants para o token
+    // nao vazar ao tenant_admin via RLS de linha — ver migracao 16).
     const { data: atual } = await supabase
-      .from('tenants')
+      .from('tenant_credenciais')
       .select('chatwoot_token')
-      .eq('id', tenantId)
+      .eq('tenant_id', tenantId)
       .maybeSingle();
     token = atual?.chatwoot_token ?? '';
     if (!token) return { errosCampo: { chatwoot_token: 'Informe o token.' } };
@@ -351,9 +353,12 @@ export async function conectarChatwoot(
     return { erro: validacao.motivo };
   }
 
+  // account_id/url (nao-sensiveis) ficam em tenants; o token vai para a tabela
+  // segregada (migracao 16). Grava a conta primeiro para o UNIQUE de account_id
+  // reprovar antes de tocar na credencial.
   const { error } = await supabase
     .from('tenants')
-    .update({ chatwoot_account_id: accountId, chatwoot_token: token, chatwoot_url: url })
+    .update({ chatwoot_account_id: accountId, chatwoot_url: url })
     .eq('id', tenantId);
 
   if (error) {
@@ -363,6 +368,18 @@ export async function conectarChatwoot(
       };
     }
     return { erro: `Não foi possível salvar: ${error.message}` };
+  }
+
+  const { error: erroToken } = await supabase
+    .from('tenant_credenciais')
+    .upsert({
+      tenant_id: tenantId,
+      chatwoot_token: token,
+      atualizado_em: new Date().toISOString(),
+    });
+
+  if (erroToken) {
+    return { erro: `Conta salva, mas o token não foi gravado: ${erroToken.message}` };
   }
 
   revalidatePath(`/admin/tenants/${tenantId}`);
@@ -459,12 +476,14 @@ export async function excluirTenant(
       deletado_em: new Date().toISOString(),
       ativo: false,
       chatwoot_account_id: null,
-      chatwoot_token: null,
     })
     .eq('id', tenantId)
     .is('deletado_em', null); // idempotente: não re-exclui
 
   if (error) return { erro: `Não foi possível excluir: ${error.message}` };
+
+  // A credencial vive em tabela separada (migracao 16): limpa junto.
+  await supabase.from('tenant_credenciais').delete().eq('tenant_id', tenantId);
 
   revalidatePath('/admin/tenants');
   // A tela de detalhe filtra deletado_em IS NULL e daria 404; volta para a lista.
