@@ -1,6 +1,6 @@
 'use client';
 
-import { FileText, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { Eye, EyeOff, FileText, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
 
@@ -10,6 +10,8 @@ import {
   listarStatusJobs,
   reprocessar,
   subirArquivo,
+  verConteudoDocumento,
+  type ChunkConteudo,
   type EstadoIngestao,
   type JobStatus,
 } from './acoes';
@@ -103,6 +105,107 @@ function BotaoExcluirDocumento({
   );
 }
 
+/**
+ * Linha de um documento na base, com opção de ver o conteúdo indexado. O texto
+ * dos chunks é carregado sob demanda (só na primeira abertura) — não faz sentido
+ * trazer o corpo de todos os documentos no carregamento da página. Mostrar os
+ * trechos é o que responde à dúvida "subi o arquivo certo?": é exatamente o que
+ * o agente lê.
+ */
+function DocumentoItem({
+  doc,
+  desabilitado,
+  excluindo,
+  onExcluir,
+}: {
+  doc: Documento;
+  desabilitado: boolean;
+  excluindo: boolean;
+  onExcluir: () => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [chunks, setChunks] = useState<ChunkConteudo[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [carregando, iniciar] = useTransition();
+
+  const alternar = () => {
+    const proximo = !aberto;
+    setAberto(proximo);
+    // Carrega uma vez só, na primeira abertura.
+    if (proximo && chunks === null && !carregando) {
+      iniciar(async () => {
+        const r = await verConteudoDocumento(doc.origem);
+        if (r.erro) setErro(r.erro);
+        else setChunks(r.chunks);
+      });
+    }
+  };
+
+  return (
+    <div className="rounded-md border border-border">
+      <div className="flex items-center justify-between gap-3 p-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium">{doc.nome}</p>
+          <p className="text-xs text-muted-foreground">
+            {doc.chunks} chunk(s) · {dataCurta(doc.criadoEm)}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={alternar}
+            aria-expanded={aberto}
+            aria-label={aberto ? `Ocultar conteúdo de ${doc.nome}` : `Ver conteúdo de ${doc.nome}`}
+          >
+            {aberto ? (
+              <EyeOff className="h-4 w-4" aria-hidden />
+            ) : (
+              <Eye className="h-4 w-4" aria-hidden />
+            )}
+            {aberto ? 'Ocultar' : 'Ver conteúdo'}
+          </Button>
+          <BotaoExcluirDocumento
+            nome={doc.nome}
+            desabilitado={desabilitado}
+            excluindo={excluindo}
+            onConfirmar={onExcluir}
+          />
+        </div>
+      </div>
+
+      {aberto ? (
+        <div className="border-t border-border p-3">
+          {carregando ? (
+            <p className="text-sm text-muted-foreground">Carregando conteúdo…</p>
+          ) : erro ? (
+            <Alert variant="destructive">{erro}</Alert>
+          ) : chunks && chunks.length > 0 ? (
+            <>
+              <p className="mb-3 text-xs text-muted-foreground">
+                {chunks.length} trecho(s) indexado(s) — é o texto que o agente consulta. Pode haver
+                pequena sobreposição entre trechos.
+              </p>
+              <div className="flex max-h-96 flex-col divide-y divide-border overflow-y-auto rounded-md bg-muted/40">
+                {chunks.map((c, i) => (
+                  <div key={i} className="flex flex-col gap-1 p-3">
+                    <span className="text-xs font-medium text-muted-foreground">Trecho {i + 1}</span>
+                    <p className="whitespace-pre-wrap break-words text-sm">{c.texto}</p>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Sem conteúdo indexado para este documento.
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function GestaoConhecimento({
   documentosIniciais,
   jobsIniciais,
@@ -126,6 +229,10 @@ export function GestaoConhecimento({
   const formTextoRef = useRef<HTMLFormElement>(null);
 
   const temAtivo = jobs.some((j) => ATIVO.has(j.status));
+  // Só mostramos jobs que pedem atenção: em andamento (progresso ao vivo) ou com
+  // erro (motivo + reprocessar). Concluído some — já aparece em "Documentos na
+  // base"; mantê-lo aqui só duplicaria a informação e poluiria a tela.
+  const jobsRelevantes = jobs.filter((j) => j.status !== 'concluido');
 
   // Polling do progresso enquanto houver job na fila ou processando. Ao terminar
   // um job, atualiza a lista de documentos (router.refresh re-roda o Server
@@ -241,17 +348,17 @@ export function GestaoConhecimento({
         </Card>
       </div>
 
-      {/* Processamentos em andamento / recentes */}
-      {jobs.length > 0 ? (
+      {/* Processamentos: só o que pede atenção (em andamento ou com erro). */}
+      {jobsRelevantes.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>Processamentos</CardTitle>
             <CardDescription>
-              {temAtivo ? 'Atualizando automaticamente…' : 'Últimos envios.'}
+              {temAtivo ? 'Atualizando automaticamente…' : 'Envios que precisam de atenção.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            {jobs.map((job) => {
+            {jobsRelevantes.map((job) => {
               const pct =
                 job.chunks_total > 0 ? Math.round((job.chunks_ok / job.chunks_total) * 100) : 0;
               return (
@@ -324,23 +431,13 @@ export function GestaoConhecimento({
         {documentosIniciais.length > 0 ? (
           <CardContent className="flex flex-col gap-2">
             {documentosIniciais.map((doc) => (
-              <div
+              <DocumentoItem
                 key={doc.origem}
-                className="flex items-center justify-between gap-3 rounded-md border border-border p-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{doc.nome}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {doc.chunks} chunk(s) · {dataCurta(doc.criadoEm)}
-                  </p>
-                </div>
-                <BotaoExcluirDocumento
-                  nome={doc.nome}
-                  desabilitado={pendente}
-                  excluindo={acaoAtiva === `excluir:${doc.origem}`}
-                  onConfirmar={() => aoExcluir(doc.origem)}
-                />
-              </div>
+                doc={doc}
+                desabilitado={pendente}
+                excluindo={acaoAtiva === `excluir:${doc.origem}`}
+                onExcluir={() => aoExcluir(doc.origem)}
+              />
             ))}
           </CardContent>
         ) : null}

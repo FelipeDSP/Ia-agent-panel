@@ -215,6 +215,38 @@ export async function excluirDocumento(origem: string): Promise<EstadoIngestao> 
   return { sucesso: 'Documento removido da base.' };
 }
 
+export type ChunkConteudo = { indice: number; texto: string };
+
+/**
+ * Conteúdo indexado de um documento: os chunks daquele `origem`, em ordem. É
+ * exatamente o que o agente consulta — serve para o cliente conferir se subiu o
+ * arquivo certo. Escopo por tenant explícito além do RLS (regra 6).
+ */
+export async function verConteudoDocumento(
+  origem: string,
+): Promise<{ chunks: ChunkConteudo[]; erro?: string }> {
+  const usuario = await exigirTenantAdmin();
+  const supabase = await criarClienteServidor();
+
+  const { data, error } = await supabase
+    .from('kb_documentos')
+    .select('text, chunk_index')
+    .eq('tenant_id', usuario.tenantId)
+    .eq('origem', origem)
+    .is('deletado_em', null)
+    .order('chunk_index', { ascending: true });
+
+  if (error) {
+    return { chunks: [], erro: `Não foi possível carregar o conteúdo: ${error.message}` };
+  }
+
+  const chunks = (data ?? []).map((c) => ({
+    indice: Number(c.chunk_index ?? 0),
+    texto: String(c.text ?? ''),
+  }));
+  return { chunks };
+}
+
 export type JobStatus = {
   id: string;
   arquivo_nome: string;
