@@ -262,7 +262,7 @@ export function FormConvite({ tenantId }: { tenantId: string }) {
       </div>
 
       {estado.linkConvite ? (
-        <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/50 p-3">
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/50 p-3">
           <p className="text-xs text-muted-foreground">
             SMTP ainda não configurado — envie este link ao cliente para ele
             definir a senha:
@@ -398,7 +398,7 @@ function LinhaAdmin({ tenantId, admin }: { tenantId: string; admin: AdminResumo 
       ) : null}
 
       {confirmando ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-2">
           <span className="text-sm">
             Remover <b>{admin.email}</b>? Isso revoga o acesso dele imediatamente.
           </span>
@@ -416,7 +416,7 @@ function LinhaAdmin({ tenantId, admin }: { tenantId: string; admin: AdminResumo 
       ) : null}
 
       {estadoLink.sucesso && estadoLink.linkConvite ? (
-        <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/50 p-3">
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/50 p-3">
           <p className="text-xs text-muted-foreground">
             Envie este link ao admin para ele (re)definir a senha:
           </p>

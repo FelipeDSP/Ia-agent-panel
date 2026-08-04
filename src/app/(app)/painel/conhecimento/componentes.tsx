@@ -1,10 +1,11 @@
 'use client';
 
-import { Eye, EyeOff, FileText, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { Eye, EyeOff, FileText, RefreshCw, Trash2, Upload, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
 
 import {
+  dispensarJob,
   excluirDocumento,
   ingerirTexto,
   listarStatusJobs,
@@ -142,7 +143,7 @@ function DocumentoItem({
   };
 
   return (
-    <div className="rounded-md border border-border">
+    <div className="rounded-xl border border-border">
       <div className="flex items-center justify-between gap-3 p-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{doc.nome}</p>
@@ -186,7 +187,7 @@ function DocumentoItem({
                 {chunks.length} trecho(s) indexado(s) — é o texto que o agente consulta. Pode haver
                 pequena sobreposição entre trechos.
               </p>
-              <div className="flex max-h-96 flex-col divide-y divide-border overflow-y-auto rounded-md bg-muted/40">
+              <div className="flex max-h-96 flex-col divide-y divide-border overflow-y-auto rounded-xl bg-muted/40">
                 {chunks.map((c, i) => (
                   <div key={i} className="flex flex-col gap-1 p-3">
                     <span className="text-xs font-medium text-muted-foreground">Trecho {i + 1}</span>
@@ -289,6 +290,14 @@ export function GestaoConhecimento({
       setAcaoAtiva(null);
     });
 
+  const aoDispensar = (jobId: string) =>
+    iniciarTransicao(async () => {
+      setAcaoAtiva(`dispensar:${jobId}`);
+      setFeedback(await dispensarJob(jobId));
+      setJobs(await listarStatusJobs());
+      setAcaoAtiva(null);
+    });
+
   return (
     <div className="flex flex-col gap-6">
       {feedback.erro ? <Alert variant="destructive">{feedback.erro}</Alert> : null}
@@ -362,7 +371,7 @@ export function GestaoConhecimento({
               const pct =
                 job.chunks_total > 0 ? Math.round((job.chunks_ok / job.chunks_total) * 100) : 0;
               return (
-                <div key={job.id} className="rounded-md border border-border p-3">
+                <div key={job.id} className="rounded-xl border border-border p-3">
                   <div className="flex items-center justify-between gap-3">
                     <span className="truncate text-sm font-medium">{job.arquivo_nome}</span>
                     <div className="flex shrink-0 items-center gap-2">
@@ -382,6 +391,19 @@ export function GestaoConhecimento({
                             aria-hidden
                           />
                           {acaoAtiva === `reprocessar:${job.id}` ? 'Reprocessando…' : 'Reprocessar'}
+                        </Button>
+                      ) : null}
+                      {job.status === 'erro' ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground"
+                          disabled={pendente}
+                          onClick={() => aoDispensar(job.id)}
+                          aria-label={`Dispensar ${job.arquivo_nome}`}
+                        >
+                          <X className="h-3.5 w-3.5" aria-hidden />
+                          {acaoAtiva === `dispensar:${job.id}` ? 'Dispensando…' : 'Dispensar'}
                         </Button>
                       ) : null}
                     </div>

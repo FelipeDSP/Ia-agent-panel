@@ -66,7 +66,7 @@ export function PromptEditor({
 
   return (
     <div className="flex flex-col gap-4">
-      <details className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm">
+      <details className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm">
         <summary className="cursor-pointer font-medium">Como escrever um bom prompt</summary>
         <ul className="mt-3 flex list-disc flex-col gap-1.5 pl-5 text-muted-foreground">
           {DICAS_PROMPT.map((dica) => (
@@ -128,7 +128,7 @@ export function PromptEditor({
       </form>
 
       {mostrarHistorico ? (
-        <div className="flex flex-col gap-3 rounded-md border border-border p-4">
+        <div className="flex flex-col gap-3 rounded-xl border border-border p-4">
           {msgRollback ? <Alert>{msgRollback}</Alert> : null}
 
           {versoes.length === 0 ? (

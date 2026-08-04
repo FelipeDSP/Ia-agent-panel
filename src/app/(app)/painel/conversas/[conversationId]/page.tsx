@@ -89,10 +89,10 @@ export default async function PaginaConversa({
                   className={`flex flex-col gap-1 ${daAgente ? 'items-end' : 'items-start'}`}
                 >
                   <div
-                    className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
+                    className={`max-w-[75%] rounded-lg border px-3 py-2 text-sm ${
                       daAgente
-                        ? 'bg-primary/10 text-foreground'
-                        : 'bg-muted text-foreground'
+                        ? 'border-primary/20 bg-primary/15 text-foreground'
+                        : 'border-border bg-muted text-foreground'
                     }`}
                   >
                     {m.conteudo ?? <span className="italic text-muted-foreground">(sem conteúdo)</span>}

@@ -51,7 +51,7 @@ export function FormularioTransferir({
         pausa o bot naquela conversa.
       </p>
 
-      <fieldset className="flex flex-col gap-4 rounded-md border border-border p-4">
+      <fieldset className="flex flex-col gap-4 rounded-xl border border-border p-4">
         <legend className="px-1 text-sm font-medium">Horário de atendimento</legend>
 
         <div className="flex max-w-xs flex-col gap-2">
@@ -116,7 +116,7 @@ export function FormularioTransferir({
         </p>
       </fieldset>
 
-      <fieldset className="flex flex-col gap-3 rounded-md border border-border p-4">
+      <fieldset className="flex flex-col gap-3 rounded-xl border border-border p-4">
         <legend className="px-1 text-sm font-medium">Notificação</legend>
 
         {temSessao ? (

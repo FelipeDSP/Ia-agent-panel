@@ -113,13 +113,17 @@ export function ListaConversas({ conversas }: { conversas: ConversaResumo[] }) {
               >
                 <Eraser className="h-4 w-4" aria-hidden /> Limpar memória ({nSel})
               </Button>
+              {/* Ação global (todas as conversas): separada e rotulada por extenso
+                  para não se confundir com o "limpar" da seleção acima. */}
+              <span className="mx-1 h-5 w-px bg-border" aria-hidden />
               <Button
                 variant="ghost"
                 size="sm"
+                className="text-muted-foreground"
                 disabled={pendente}
                 onClick={() => setConfirmando('todas')}
               >
-                Limpar todas
+                Limpar memória de todas
               </Button>
             </>
           )}

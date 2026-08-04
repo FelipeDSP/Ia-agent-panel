@@ -65,7 +65,7 @@ function Tendencia({
   // Veio do zero: qualquer volume é "novo", sem porcentagem que faça sentido.
   if (anterior === 0) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-success">
         <TrendingUp className="h-3.5 w-3.5" aria-hidden /> novo volume vs. {refMes}
       </span>
     );
@@ -86,7 +86,7 @@ function Tendencia({
     <span
       className={cn(
         'inline-flex items-center gap-1 text-xs font-medium',
-        subiu ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+        subiu ? 'text-success' : 'text-destructive',
       )}
     >
       {subiu ? (

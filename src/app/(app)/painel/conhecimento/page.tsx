@@ -50,7 +50,7 @@ export default async function PaginaConhecimento() {
         </p>
       </header>
 
-      <details className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm">
+      <details className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm">
         <summary className="cursor-pointer font-medium">
           Como montar uma boa base de conhecimento
         </summary>

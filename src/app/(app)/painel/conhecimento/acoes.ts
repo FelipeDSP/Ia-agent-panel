@@ -215,6 +215,34 @@ export async function excluirDocumento(origem: string): Promise<EstadoIngestao> 
   return { sucesso: 'Documento removido da base.' };
 }
 
+/**
+ * Dispensa (remove) um job de ingestão que falhou. Só age em jobs com status
+ * 'erro' — um job em andamento ou concluído não se dispensa por aqui. O job é
+ * metadado de processamento efêmero (não é conteúdo do cliente), então é delete
+ * físico, escopado por tenant + id + status. Guarda de rowcount como no
+ * excluirDocumento: não mente "dispensado" se nada mudou.
+ */
+export async function dispensarJob(jobId: string): Promise<EstadoIngestao> {
+  const usuario = await exigirTenantAdmin();
+  const supabase = await criarClienteServidor();
+
+  const { data: afetados, error } = await supabase
+    .from('jobs_ingestao')
+    .delete()
+    .eq('tenant_id', usuario.tenantId)
+    .eq('id', jobId)
+    .eq('status', 'erro')
+    .select('id');
+
+  if (error) return { erro: `Não foi possível dispensar: ${error.message}` };
+  if (!afetados || afetados.length === 0) {
+    return { erro: 'Processamento não encontrado (ou não está com erro).' };
+  }
+
+  revalidatePath('/painel/conhecimento');
+  return { sucesso: 'Processamento dispensado.' };
+}
+
 export type ChunkConteudo = { indice: number; texto: string };
 
 /**
