@@ -26,9 +26,11 @@ export async function GET(request: NextRequest) {
   const tipo = searchParams.get('type') as EmailOtpType | null;
   const proximo = searchParams.get('proximo');
 
-  // Mesma protecao contra open redirect do login.
+  // Mesma protecao contra open redirect do login: barra `//host` e `/\host`
+  // (o browser normaliza `\` para `/`). Aqui o destino e concatenado a `base`,
+  // entao ja seria path de `base`; ainda assim validamos por consistencia.
   const destino =
-    proximo && proximo.startsWith('/') && !proximo.startsWith('//') ? proximo : '/';
+    proximo && proximo.startsWith('/') && !/^\/[/\\]/.test(proximo) ? proximo : '/';
 
   if (!tokenHash || !tipo) {
     return NextResponse.redirect(`${base}/login?erro=link_invalido`);

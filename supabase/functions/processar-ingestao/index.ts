@@ -310,6 +310,10 @@ async function processar(job: Job, textoColado?: string): Promise<void> {
 // impraticavel e o segredo tem alta entropia, mas comparar certo e barato.
 // Comparar so quando os tamanhos batem (o tamanho do segredo nao e sensivel).
 function segredoConfere(recebido: string | null): boolean {
+  // Fail-closed contra misconfig: um INGESTAO_SECRET vazio ou curto abriria o
+  // portao (comparar dois vazios daria `true`). Exige segredo de entropia
+  // minima; se estiver mal configurado, ninguem passa.
+  if (!INGESTAO_SECRET || INGESTAO_SECRET.length < 24) return false;
   if (recebido === null || recebido.length !== INGESTAO_SECRET.length) return false;
   let diff = 0;
   for (let i = 0; i < recebido.length; i++) {

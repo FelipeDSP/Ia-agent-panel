@@ -15,9 +15,14 @@ export type EstadoFormulario = {
  * Destino pos-login pelo papel. Nao aceita destino arbitrario da query string
  * sem validar: `proximo` vem do browser e um valor como
  * `https://sitedeoutro/` viraria open redirect.
+ *
+ * So aceita caminho interno. Rejeita nao so `//host` (protocol-relative) como
+ * `/\host`: o browser normaliza `\` para `/` antes de resolver a URL, entao
+ * `/\evil.com` viraria `//evil.com` -> host externo. A regex barra qualquer
+ * segundo caractere `/` ou `\`.
  */
 function destinoSeguro(proximo: string | null, papel: string): string {
-  if (proximo && proximo.startsWith('/') && !proximo.startsWith('//')) {
+  if (proximo && proximo.startsWith('/') && !/^\/[/\\]/.test(proximo)) {
     return proximo;
   }
   return papel === 'super_admin' ? '/admin/tenants' : '/painel';
