@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/card';
 import { exigirSuperAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
+import { definicaoTool } from '@/lib/tools/registro';
 import { TOOL_TRANSFERIR, type ConfigTransferir } from '@/lib/tools/transferir-humano';
 
 import {
@@ -21,7 +22,9 @@ import {
   FormConvite,
   FormTransferirHumano,
   GerenciarAdmins,
+  GestaoModulos,
   ZonaPerigoExcluir,
+  type ModuloAdmin,
 } from './componentes';
 
 export default async function PaginaDetalheTenant({
@@ -45,30 +48,61 @@ export default async function PaginaDetalheTenant({
 
   if (!tenant) notFound();
 
-  // Histórico de prompt + admins + conversas recentes + tool de transferência.
-  const [{ data: versoesRaw }, { data: admins }, { data: conversas }, { data: toolTransferir }] =
-    await Promise.all([
-      supabase
-        .from('prompt_versoes')
-        .select('id, conteudo, criado_em, criado_por')
-        .eq('tenant_id', id)
-        .order('criado_em', { ascending: false }),
-      supabase.from('usuarios_painel').select('id, nome, email').eq('tenant_id', id),
-      supabase
-        .from('conversas')
-        .select('conversation_id, contact_name, phone, status, atualizado_em')
-        .eq('tenant_id', id)
-        .order('atualizado_em', { ascending: false })
-        .limit(30),
-      supabase
-        .from('tenant_tools')
-        .select('ativo, workflow_id, descricao, config')
-        .eq('tenant_id', id)
-        .eq('tool_nome', TOOL_TRANSFERIR)
-        .maybeSingle(),
-    ]);
+  // Histórico de prompt + admins + conversas recentes + tools (transferência e
+  // catálogo/estado dos módulos).
+  const [
+    { data: versoesRaw },
+    { data: admins },
+    { data: conversas },
+    { data: toolTransferir },
+    { data: catalogo },
+    { data: toolsTenant },
+  ] = await Promise.all([
+    supabase
+      .from('prompt_versoes')
+      .select('id, conteudo, criado_em, criado_por')
+      .eq('tenant_id', id)
+      .order('criado_em', { ascending: false }),
+    supabase.from('usuarios_painel').select('id, nome, email').eq('tenant_id', id),
+    supabase
+      .from('conversas')
+      .select('conversation_id, contact_name, phone, status, atualizado_em')
+      .eq('tenant_id', id)
+      .order('atualizado_em', { ascending: false })
+      .limit(30),
+    supabase
+      .from('tenant_tools')
+      .select('ativo, workflow_id, descricao, config')
+      .eq('tenant_id', id)
+      .eq('tool_nome', TOOL_TRANSFERIR)
+      .maybeSingle(),
+    supabase
+      .from('catalogo_tools')
+      .select('tool_nome, nome_exibicao, descricao_padrao, ativo')
+      .eq('ativo', true)
+      .order('tool_nome'),
+    supabase.from('tenant_tools').select('tool_nome, contratado, ativo').eq('tenant_id', id),
+  ]);
 
   const configTransferir = (toolTransferir?.config ?? {}) as Partial<ConfigTransferir>;
+
+  // Cruza o catálogo (o que existe) com o estado do tenant (o que ele tem). O
+  // rótulo/resumo vêm do registry no código; o catálogo é só a lista + fallback.
+  const estadoPorTool = new Map(
+    (toolsTenant ?? []).map((t) => [t.tool_nome, { contratado: Boolean(t.contratado), ativo: Boolean(t.ativo) }]),
+  );
+  const modulos: ModuloAdmin[] = (catalogo ?? []).map((c) => {
+    const def = definicaoTool(c.tool_nome);
+    const estado = estadoPorTool.get(c.tool_nome);
+    return {
+      tool_nome: c.tool_nome,
+      rotulo: def?.rotulo ?? c.nome_exibicao,
+      resumo: def?.resumo ?? (c.descricao_padrao ?? ''),
+      temConfigCliente: def?.temConfigCliente ?? false,
+      contratado: estado?.contratado ?? false,
+      ativo: estado?.ativo ?? false,
+    };
+  });
 
   // Resolve nome do autor de cada versão (poucas linhas; map simples).
   const autores = new Map((admins ?? []).map((a) => [a.email, a.nome]));
@@ -179,6 +213,19 @@ export default async function PaginaDetalheTenant({
           </CardHeader>
           <CardContent>
             <BotaoSuspensao tenantId={tenant.id} ativo={tenant.ativo} />
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Módulos</CardTitle>
+            <CardDescription>
+              Contratar liga o módulo para este cliente (a Ordem de Serviço vira
+              estado do sistema). Desligar/ligar e configurar é com o cliente.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <GestaoModulos tenantId={tenant.id} modulos={modulos} />
           </CardContent>
         </Card>
 

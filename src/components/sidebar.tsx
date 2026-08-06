@@ -4,6 +4,7 @@ import {
   BarChart3,
   BookOpen,
   Building2,
+  Boxes,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -32,6 +33,7 @@ type ItemMenu = {
 const MENU: Record<Papel, ItemMenu[]> = {
   super_admin: [
     { href: '/admin/tenants', rotulo: 'Clientes', Icone: Building2 },
+    { href: '/admin/catalogo', rotulo: 'Catálogo', Icone: Boxes },
     { href: '/admin/consumo', rotulo: 'Consumo', Icone: BarChart3 },
   ],
   tenant_admin: [

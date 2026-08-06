@@ -6,6 +6,7 @@ import {
   alternarSuspensaoTenant,
   conectarChatwoot,
   convidarAdminTenant,
+  definirContratacao,
   editarNomeAdmin,
   editarTenantSuper,
   excluirTenant,
@@ -15,6 +16,7 @@ import {
   type EstadoAcao,
 } from '../../acoes';
 import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -483,6 +485,79 @@ export function ZonaPerigoExcluir({ tenantId, nome }: { tenantId: string; nome: 
           Excluir cliente
         </SubmitButton>
       </div>
+    </form>
+  );
+}
+
+// --- Módulos (tools) do tenant: contratar / descontratar (§5.2) --------------
+
+export type ModuloAdmin = {
+  tool_nome: string;
+  rotulo: string;
+  resumo: string;
+  temConfigCliente: boolean;
+  contratado: boolean;
+  ativo: boolean;
+};
+
+export function GestaoModulos({
+  tenantId,
+  modulos,
+}: {
+  tenantId: string;
+  modulos: ModuloAdmin[];
+}) {
+  if (modulos.length === 0) {
+    return <p className="text-sm text-muted-foreground">Nenhuma tool ativa no catálogo.</p>;
+  }
+  return (
+    <div className="flex flex-col divide-y divide-border">
+      {modulos.map((m) => (
+        <ModuloRow key={m.tool_nome} tenantId={tenantId} modulo={m} />
+      ))}
+    </div>
+  );
+}
+
+function ModuloRow({ tenantId, modulo }: { tenantId: string; modulo: ModuloAdmin }) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(definirContratacao, {});
+
+  return (
+    <form action={acao} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
+      <input type="hidden" name="tenant_id" value={tenantId} />
+      <input type="hidden" name="tool_nome" value={modulo.tool_nome} />
+      <input type="hidden" name="contratar" value={modulo.contratado ? 'false' : 'true'} />
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{modulo.rotulo}</span>
+            <Badge variant={modulo.contratado ? 'success' : 'secondary'}>
+              {modulo.contratado ? 'contratado' : 'não contratado'}
+            </Badge>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">{modulo.resumo}</p>
+        </div>
+        <SubmitButton
+          size="sm"
+          variant={modulo.contratado ? 'destructive' : 'default'}
+          pendingLabel={modulo.contratado ? 'Descontratando…' : 'Contratando…'}
+        >
+          {modulo.contratado ? 'Descontratar' : 'Contratar'}
+        </SubmitButton>
+      </div>
+
+      {modulo.contratado ? (
+        <p className="text-xs text-muted-foreground">
+          {modulo.ativo
+            ? 'Ligada pelo cliente.'
+            : 'Aguardando o cliente ligar no painel dele.'}
+          {modulo.temConfigCliente ? ' Tem configuração no painel do cliente.' : ''}
+        </p>
+      ) : null}
+
+      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+      {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
     </form>
   );
 }

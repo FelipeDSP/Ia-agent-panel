@@ -579,3 +579,173 @@ export async function salvarTransferirHumanoAgencia(
       : 'Tool de transferência habilitada (desligada — o cliente ativa no painel dele).',
   };
 }
+
+/**
+ * Contrata / descontrata um módulo (tool) para um tenant — a decisão comercial
+ * da §4.2. Só super admin (a §4.1 impede o cliente de fazer isto pela API).
+ *
+ * Contratar cria a linha em tenant_tools com contratado=true e DESLIGADA
+ * (ativo=false): o cliente liga no painel dele depois de configurar. Se a linha
+ * já existe (ex.: a infra de transferir_humano já a criou), só alterna
+ * `contratado`, preservando config e ativo. Descontratar mantém a linha (config
+ * intacto), então recontratar restaura o que o cliente tinha.
+ *
+ * tenant_id e tool_nome vêm do form da rota de agência; o gate no servidor
+ * (exigirSuperAdmin) e a policy p_tools_insert (só super) são as garantias. O
+ * FK tenant_tools.tool_nome -> catalogo_tools recusa tool fora do catálogo.
+ */
+export async function definirContratacao(
+  _estado: EstadoAcao,
+  fd: FormData,
+): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  const toolNome = String(fd.get('tool_nome') ?? '');
+  const contratar = fd.get('contratar') === 'true';
+  if (!tenantId || !toolNome) return { erro: 'Dados incompletos.' };
+
+  const supabase = await criarClienteServidor();
+
+  const { data: existente, error: erroSel } = await supabase
+    .from('tenant_tools')
+    .select('id, ativo')
+    .eq('tenant_id', tenantId)
+    .eq('tool_nome', toolNome)
+    .maybeSingle();
+  if (erroSel) return { erro: `Não foi possível carregar: ${erroSel.message}` };
+
+  if (existente) {
+    const { error } = await supabase
+      .from('tenant_tools')
+      .update({ contratado: contratar })
+      .eq('tenant_id', tenantId)
+      .eq('tool_nome', toolNome);
+    if (error) return { erro: `Não foi possível atualizar: ${error.message}` };
+  } else {
+    // Descontratar algo que nem existe: nada a fazer.
+    if (!contratar) return { sucesso: 'Módulo já não estava contratado.' };
+    const { error } = await supabase.from('tenant_tools').insert({
+      tenant_id: tenantId,
+      tool_nome: toolNome,
+      contratado: true,
+      ativo: false,
+      config: {},
+    });
+    if (error) return { erro: `Não foi possível contratar: ${error.message}` };
+  }
+
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  return {
+    sucesso: contratar
+      ? 'Módulo contratado. O cliente liga e configura no painel dele.'
+      : 'Módulo descontratado. A configuração fica guardada caso recontrate.',
+  };
+}
+
+// --- Catálogo global de tools (§4.3 / §5.2) ---------------------------------
+
+// tool_nome é chave estável usada pelo n8n e pela FK de tenant_tools: slug
+// minúsculo, sem espaço. Imutável depois de criado (é a PK).
+const RE_TOOL_NOME = /^[a-z][a-z0-9_]{1,60}$/;
+
+/** Valida e normaliza o schema_config (JSON de objeto). Vazio => {}. */
+function parseSchemaConfig(bruto: string): { ok: true; valor: Record<string, unknown> } | { ok: false; erro: string } {
+  const t = bruto.trim();
+  if (!t) return { ok: true, valor: {} };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(t);
+  } catch {
+    return { ok: false, erro: 'schema_config precisa ser JSON válido.' };
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, erro: 'schema_config precisa ser um objeto JSON.' };
+  }
+  return { ok: true, valor: parsed as Record<string, unknown> };
+}
+
+/**
+ * Cria uma tool no catálogo global. Só super admin (policy p_catalogo_all).
+ * Provisionar uma capacidade nova para o produto = uma linha aqui + um
+ * sub-workflow no n8n; depois é só contratar por cliente.
+ */
+export async function criarToolCatalogo(
+  _estado: EstadoAcao,
+  fd: FormData,
+): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tool_nome = String(fd.get('tool_nome') ?? '').trim();
+  const nome_exibicao = String(fd.get('nome_exibicao') ?? '').trim();
+  const descricao_padrao = String(fd.get('descricao_padrao') ?? '').trim();
+  const workflow_id_padrao = String(fd.get('workflow_id_padrao') ?? '').trim();
+  const schema = parseSchemaConfig(String(fd.get('schema_config') ?? ''));
+
+  const errosCampo: Record<string, string> = {};
+  if (!RE_TOOL_NOME.test(tool_nome)) {
+    errosCampo['tool_nome'] = 'Use minúsculas, números e _ (ex.: agendar_horario). Começa com letra.';
+  }
+  if (!nome_exibicao) errosCampo['nome_exibicao'] = 'Dê um nome de exibição.';
+  if (!schema.ok) errosCampo['schema_config'] = schema.erro;
+  if (Object.keys(errosCampo).length > 0) return { errosCampo };
+
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.from('catalogo_tools').insert({
+    tool_nome,
+    nome_exibicao,
+    descricao_padrao: descricao_padrao || null,
+    workflow_id_padrao: workflow_id_padrao || null,
+    schema_config: (schema as { valor: Record<string, unknown> }).valor,
+    ativo: fd.get('ativo') === 'on' || fd.get('ativo') === 'true',
+  });
+
+  if (error) {
+    if (error.code === '23505') return { errosCampo: { tool_nome: 'Já existe uma tool com esse nome.' } };
+    return { erro: `Não foi possível criar: ${error.message}` };
+  }
+
+  revalidatePath('/admin/catalogo');
+  return { sucesso: `Tool "${tool_nome}" criada no catálogo.` };
+}
+
+/**
+ * Edita uma tool do catálogo (tudo menos o tool_nome, que é a PK/chave do n8n).
+ * Só super admin.
+ */
+export async function editarToolCatalogo(
+  _estado: EstadoAcao,
+  fd: FormData,
+): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tool_nome = String(fd.get('tool_nome') ?? '').trim();
+  if (!tool_nome) return { erro: 'Tool não informada.' };
+
+  const nome_exibicao = String(fd.get('nome_exibicao') ?? '').trim();
+  const descricao_padrao = String(fd.get('descricao_padrao') ?? '').trim();
+  const workflow_id_padrao = String(fd.get('workflow_id_padrao') ?? '').trim();
+  const schema = parseSchemaConfig(String(fd.get('schema_config') ?? ''));
+
+  const errosCampo: Record<string, string> = {};
+  if (!nome_exibicao) errosCampo['nome_exibicao'] = 'Dê um nome de exibição.';
+  if (!schema.ok) errosCampo['schema_config'] = schema.erro;
+  if (Object.keys(errosCampo).length > 0) return { errosCampo };
+
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase
+    .from('catalogo_tools')
+    .update({
+      nome_exibicao,
+      descricao_padrao: descricao_padrao || null,
+      workflow_id_padrao: workflow_id_padrao || null,
+      schema_config: (schema as { valor: Record<string, unknown> }).valor,
+      ativo: fd.get('ativo') === 'on' || fd.get('ativo') === 'true',
+    })
+    .eq('tool_nome', tool_nome);
+
+  if (error) return { erro: `Não foi possível salvar: ${error.message}` };
+
+  revalidatePath('/admin/catalogo');
+  return { sucesso: 'Tool atualizada.' };
+}
