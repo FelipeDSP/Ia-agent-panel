@@ -6,8 +6,9 @@ própria base de conhecimento sem tocar em SQL. O agente em si roda **fora** do
 painel (n8n) e lê **do mesmo banco Postgres** — o painel é a interface de
 administração, não o runtime do agente.
 
-> Antes de mexer no código, leia `ESPECIFICACAO.md` (modelo de dados e decisões de
-> arquitetura) e `CLAUDE.md` (regras de multi-tenancy e convenções).
+> Antes de mexer no código, leia `docs/especificacao/ESPECIFICACAO.md` (modelo de
+> dados e decisões de arquitetura) e `CLAUDE.md` (regras de multi-tenancy e
+> convenções). Toda a documentação está em `docs/` — veja `docs/README.md`.
 
 ## Stack
 
@@ -187,7 +188,7 @@ push`, o dashboard, ou o MCP) **antes** do primeiro deploy.
 
 > **Produção existente:** há um cliente real (Acqua Lavanderia) cujo agente em n8n
 > lê deste mesmo banco. Não trate como ambiente limpo — veja `CLAUDE.md` e
-> `ESPECIFICACAO.md` antes de qualquer migração de schema.
+> `docs/especificacao/ESPECIFICACAO.md` antes de qualquer migração de schema.
 
 ## Segurança / multi-tenancy
 

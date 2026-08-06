@@ -4,8 +4,9 @@ Painel de gestão de agentes de IA multi-tenant. Uma agência provisiona agentes
 conversacionais para empresas clientes; cada cliente administra seu próprio prompt e
 base de conhecimento sem tocar em SQL.
 
-Leia `ESPECIFICACAO.md` antes de escrever código. Ele contém o modelo de dados,
-as decisões de arquitetura já tomadas e as fases de implementação.
+Leia `docs/especificacao/ESPECIFICACAO.md` antes de escrever código. Ele contém o
+modelo de dados, as decisões de arquitetura já tomadas e as fases de implementação.
+Toda a documentação vive em `docs/` (veja `docs/README.md` para o índice).
 
 ## Stack
 
@@ -66,9 +67,19 @@ entre clientes.
 - Rodar com role que bypassa RLS. Migração com RLS ativo faz `ALTER TABLE` afetar
   apenas a visão do tenant corrente, sem erro visível.
 - A migração de BIGINT para UUID em `tenants` é destrutiva se feita direto. Siga a
-  ordem descrita em `ESPECIFICACAO.md` seção 5.2 — adicionar coluna nova, popular,
+  ordem descrita em `docs/especificacao/ESPECIFICACAO.md` seção 5.2 — adicionar coluna nova, popular,
   trocar constraints, renomear. Teste em branch do Supabase antes de produção.
 - Toda migração precisa de caminho de rollback.
+- **O nome do arquivo tem que bater com a versão em
+  `supabase_migrations.schema_migrations`.** Até 2026-08-05 nenhum batia: as
+  migrações vinham sendo aplicadas por SQL avulso (editor/MCP), que grava o
+  ledger com o próprio timestamp, e os arquivos ficavam com outro. O efeito é que
+  `supabase db push` enxergava seis migrações já aplicadas como novas e as
+  replayaria contra produção. Foram renomeadas; ao aplicar uma migração nova
+  fora do CLI, confira o ledger e renomeie o arquivo para a versão registrada.
+- As migrações 01–08 nunca foram versionadas. A reconstrução delas está em
+  `supabase/baseline/` — é o que permite levantar um ambiente novo sem tocar em
+  produção. Leia o README de lá antes de mexer em migração.
 
 ## Ingestão de documentos
 
@@ -84,6 +95,40 @@ entre clientes.
   esse calibre. Como o n8n lê do mesmo banco, chunk muito maior quebra a paridade
   de recall — o teste de recall da Fase 4 mostrou 3/5 com chunk grande e 5/5 com
   chunk alinhado à produção. Ao mexer no tamanho, re-rode o teste de recall.
+- Não existe caminho para reindexar um documento já **concluído**: a Edge Function
+  responde 409 para job `concluido` e o botão "Reprocessar" só aparece em job com
+  erro. Mudar `CHUNK_ALVO_CHARS` hoje exige re-subir cada documento à mão.
+
+## Busca vetorial
+
+O índice `idx_kb_embedding` é HNSW **global**, sem `tenant_id`. Toda query real
+filtra por tenant, e nessa combinação o planner descarta o HNSW: ele resolve por
+`idx_kb_origem` e ordena os vetores do tenant em memória. Foi verificado com
+`explain (analyze, buffers)` em 2026-08-05 — 158 chunks, 33 ms.
+
+**Isso é correto e é lento.** O recall é perfeito (compara todos os vetores do
+tenant) e o custo cresce linear com o tamanho da base daquele cliente. A alguns
+milhares de chunks por tenant vira o gargalo de cada mensagem do agente.
+
+A armadilha está no conserto óbvio. Forçar o uso do HNSW com
+`hnsw.iterative_scan = off` (o valor atual do banco) faz a busca **devolver menos
+resultados do que o `limit` pedido, em silêncio**: o índice retorna os `ef_search`
+vizinhos mais próximos globalmente e só depois o filtro de tenant descarta os de
+outros clientes. Tenant pequeno numa tabela grande pode receber zero linhas sem
+erro nenhum — o agente responde sem base de conhecimento e nada no log indica que
+faltou contexto. É a mesma classe de falha que a migração 10 eliminou em
+`match_kb_documentos`, reintroduzida por outra porta.
+
+Se for mexer, os caminhos que preservam o recall são:
+
+- índice HNSW **parcial por tenant** (`where tenant_id = '<uuid>'`), que é o que
+  o pgvector recomenda para multi-tenant, ao custo de um índice por cliente;
+- `hnsw.iterative_scan = relaxed_order`, que faz o pgvector continuar varrendo o
+  índice até completar o `limit` (pgvector 0.8.2 no banco — suporta).
+
+Nos dois casos, re-rode o teste de recall (`npm run teste:recall`) antes e depois
+e compare os números. Trocar plano de busca vetorial sem medir recall é como
+trocar o tamanho do chunk sem medir: quebra calado.
 
 ## Testes
 

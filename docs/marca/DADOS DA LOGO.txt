@@ -1,0 +1,3 @@
+FONTE: Montserrat semibold - alterada para composição da logo
+cor: R245 G150 B0
+código: #F59600
