@@ -43,7 +43,7 @@
 -- auth.users sem linha em usuarios_painel. O app trata: obterUsuarioAtual()
 -- devolve null para papel invalido e a acao de login encerra a sessao.
 --
--- Rollback: 20260724200000_12_sync_usuario_app_metadata_rollback.sql
+-- Rollback: 20260724200507_12_sync_usuario_app_metadata_rollback.sql
 
 create or replace function public.handle_novo_usuario()
 returns trigger

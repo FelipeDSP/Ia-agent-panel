@@ -167,7 +167,7 @@ export async function reprocessar(jobId: string): Promise<EstadoIngestao> {
   // RLS ja escopa por tenant; ainda assim filtramos explicito por ele (regra 6).
   const { data: job } = await supabase
     .from('jobs_ingestao')
-    .select('id, tipo, status')
+    .select('id, tipo, status, arquivo_path')
     .eq('tenant_id', usuario.tenantId)
     .eq('id', jobId)
     .maybeSingle();
@@ -175,6 +175,15 @@ export async function reprocessar(jobId: string): Promise<EstadoIngestao> {
   if (!job) return { erro: 'Processamento não encontrado.' };
   if (job.tipo !== 'arquivo') return { erro: 'Só arquivos podem ser reprocessados.' };
   if (job.status === 'processando') return { erro: 'Já está processando.' };
+  // A policy de jobs_ingestao é FOR ALL: o tenant pode INSERIR uma linha direto
+  // pelo PostgREST com um arquivo_path apontando para a pasta de outro cliente.
+  // A Edge Function baixa com service_role, que ignora o RLS de Storage — sem
+  // esta checagem, disparar o reprocessamento devolveria o documento alheio
+  // indexado como base deste tenant. A função também valida (é ela quem lê o
+  // arquivo); aqui é a camada do painel, para o pedido nem sair daqui.
+  if (!job.arquivo_path?.startsWith(`${usuario.tenantId}/`)) {
+    return { erro: 'Processamento não encontrado.' };
+  }
 
   const r = await invocarProcessamento(job.id);
   if (!r.ok) return { erro: 'Não foi possível reiniciar o processamento.' };

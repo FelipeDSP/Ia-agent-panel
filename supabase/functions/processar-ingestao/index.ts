@@ -229,6 +229,17 @@ async function processar(job: Job, textoColado?: string): Promise<void> {
       if (!texto) throw new Error('Texto vazio.');
     } else {
       if (!job.arquivo_path) throw new Error('Job de arquivo sem arquivo_path.');
+      // O download roda com service_role e IGNORA o RLS de Storage — entao a
+      // policy kb_arquivos_select nao protege nada aqui. O path e a unica coisa
+      // que decide qual arquivo e lido, e ele vem de uma linha de jobs_ingestao
+      // que o proprio tenant pode inserir: a policy p_jobs_all e FOR ALL e so
+      // exige tenant_id = auth_tenant_id(), sem dizer nada sobre arquivo_path.
+      // Sem esta checagem, um tenant que soubesse o path de outro criaria um job
+      // apontando para la e receberia o conteudo alheio indexado como base dele.
+      // A convencao de path ({tenant_id}/{uuid}.ext) e fixada em subirArquivo.
+      if (!job.arquivo_path.startsWith(`${job.tenant_id}/`)) {
+        throw new Error('Caminho do arquivo fora da pasta do tenant do job.');
+      }
       const { data, error } = await admin.storage.from(BUCKET).download(job.arquivo_path);
       if (error || !data) throw new Error(`Falha ao baixar do Storage: ${error?.message ?? 'sem dados'}`);
       const bytes = new Uint8Array(await data.arrayBuffer());

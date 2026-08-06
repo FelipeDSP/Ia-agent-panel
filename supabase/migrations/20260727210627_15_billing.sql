@@ -15,7 +15,7 @@
 -- exclusivas de super_admin; o tenant tem so a funcao de volume, que nem
 -- seleciona token nem preco.
 --
--- Rollback: 20260727180000_15_billing_rollback.sql
+-- Rollback: 20260727210627_15_billing_rollback.sql
 
 -- ---------------------------------------------------------------------------
 -- 1. precos_modelo — preco por 1M tokens, versionado por data de vigencia

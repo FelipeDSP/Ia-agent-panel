@@ -12,7 +12,7 @@
 -- Motivo de nao ser a Opcao B: o node PGVector do LangChain abre conexao
 -- propria, entao set_config de node anterior nao alcanca a query.
 --
--- Rollback: 20260724160000_09_api_n8n_rollback.sql
+-- Rollback: 20260724153621_09_api_n8n_rollback.sql
 
 -- ---------------------------------------------------------------------------
 -- 1. Role dedicado

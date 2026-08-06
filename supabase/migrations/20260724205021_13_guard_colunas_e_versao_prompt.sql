@@ -32,7 +32,7 @@
 -- Nenhuma das funcoes api_n8n_* e tocada. Nada destrutivo: cria duas funcoes e
 -- dois triggers, sem alterar dado.
 --
--- Rollback: 20260724210000_13_guard_colunas_e_versao_prompt_rollback.sql
+-- Rollback: 20260724205021_13_guard_colunas_e_versao_prompt_rollback.sql
 
 -- ---------------------------------------------------------------------------
 -- 1. Guard de coluna

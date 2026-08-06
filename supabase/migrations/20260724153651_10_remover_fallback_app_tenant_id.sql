@@ -28,7 +28,7 @@
 --     true
 --   );
 --
--- Rollback: 20260724160500_10_remover_fallback_app_tenant_id_rollback.sql
+-- Rollback: 20260724153651_10_remover_fallback_app_tenant_id_rollback.sql
 
 create or replace function public.auth_tenant_id()
 returns uuid

@@ -17,7 +17,7 @@
 -- Nao ha indice novo: idx_kb_origem ja cobre (tenant_id, origem), que e o que
 -- o swap de reprocessamento usa.
 --
--- Rollback: 20260727150000_14_storage_kb_arquivos_rollback.sql
+-- Rollback: 20260727195732_14_storage_kb_arquivos_rollback.sql
 
 -- ---------------------------------------------------------------------------
 -- 1. Bucket privado, com teto de tamanho e mimes permitidos
