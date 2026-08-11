@@ -9,6 +9,7 @@ import {
   LogOut,
   Menu,
   MessagesSquare,
+  Package,
   Settings,
   X,
 } from 'lucide-react';
@@ -39,6 +40,7 @@ const MENU: Record<Papel, ItemMenu[]> = {
   tenant_admin: [
     { href: '/painel', rotulo: 'Visão geral', Icone: LayoutDashboard },
     { href: '/painel/conhecimento', rotulo: 'Base de conhecimento', Icone: BookOpen },
+    { href: '/painel/catalogo', rotulo: 'Catálogo', Icone: Package },
     { href: '/painel/conversas', rotulo: 'Conversas', Icone: MessagesSquare },
     { href: '/painel/consumo', rotulo: 'Uso', Icone: BarChart3 },
     { href: '/painel/configuracoes', rotulo: 'Configurações', Icone: Settings },
