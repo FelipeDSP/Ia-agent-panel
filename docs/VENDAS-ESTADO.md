@@ -484,7 +484,24 @@ o valor medido é **3,11**, uma diferença de 29%. O tokenizer quebra acento em
 mais de um token, e tanto o system prompt quanto as conversas são em português.
 
 **622 cobre as 7 tools atuais — ~89 por tool.** É o número que a fatia 3 vai
-precisar por perfil: 3 tools dão ~266.
+precisar por perfil: 3 tools dão ~266, mas isso é **regra de três, não medição** —
+a fatia 3 mede o segundo valor pelo mesmo método das duas equações.
+
+#### Pendência: `r` saiu de um tenant só
+
+As duas execuções que resolveram o sistema são **ambas do restaurante-teste**,
+com o mesmo estilo de texto — system prompt curto em português, conversa
+coloquial. Um tenant que escreva diferente pode ter `r` diferente: mais termos
+técnicos, nomes próprios, números ou outro idioma mudam quantos tokens cada
+caractere rende.
+
+Isso **não invalida os ±1,4%** medidos, mas eles valem para esse perfil de texto.
+`r = 3,112` é um valor calibrado, **não uma constante universal**.
+
+**Recalibrar quando houver um segundo tenant vendendo**, repetindo o método: duas
+execuções do mesmo tenant, mesmo prompt, memórias diferentes. Se o `r` do segundo
+divergir muito do primeiro, o certo passa a ser um `r` por tenant — o que é
+viável, porque o cálculo já roda por tenant.
 
 ### A sonda — respondida: NÃO dá
 

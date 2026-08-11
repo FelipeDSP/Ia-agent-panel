@@ -73,6 +73,28 @@ Estas repetem `CLAUDE.md` e `docs/ADICIONAR-TOOL.md` porque são as que quebram 
 - **Nada de `onError: continueRegularOutput` em nó de log ou billing.** Foi o que
   escondeu o bug do `Registra Mensagem`.
 
+## Ctrl+S NÃO salva. Só o botão Save.
+
+Custou duas rodadas para descobrir em 11/08/2026: mutação aplicada, `Ctrl+S`,
+tela mostrando "Saved" — e ao recarregar, **o estado tinha voltado inteiro**.
+
+O atalho não dispara o save nesta instância. O que funciona é clicar no botão
+**Save** no topo direito.
+
+E daí a regra que vale sempre: **confira recarregando a página**, não pelo
+"Saved" da tela. O indicador mente nesse caso, e uma mudança que não pegou é
+indistinguível de uma que pegou até alguém reabrir o workflow — ou até o agente
+se comportar diferente do esperado em produção sem motivo aparente.
+
+Verificação boa, pela store da própria página:
+
+```js
+// depois de recarregar
+const s = document.querySelector('#app').__vue_app__
+  .config.globalProperties.$pinia._s.get('workflows');
+s.allNodes.find(n => n.name === '<nó>').parameters
+```
+
 ## Nota de manutenção — editar por automação
 
 Mutação de **parâmetro** no store Pinia + Save persiste. Mutação **estrutural**
