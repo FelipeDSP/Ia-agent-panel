@@ -15,7 +15,8 @@
     "teste:recall": "node scripts/teste-recall.mjs",
     "teste:modulos": "node tests/isolamento-modulos.mjs",
     "teste:produtos": "node tests/isolamento-produtos.mjs",
-    "teste:dinheiro": "node tests/dinheiro.mjs"
+    "teste:dinheiro": "node tests/dinheiro.mjs",
+    "teste:migracao-vendas": "node tests/migracao-vendas.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
