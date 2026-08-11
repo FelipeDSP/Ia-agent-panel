@@ -46,8 +46,10 @@
 // de acesso e dentro de try/catch — se alguma funcionar, o valor exato substitui
 // toda a estimativa e as tres causas acima somem de uma vez.
 //
-// A sonda nunca derruba o fluxo: qualquer falha cai no caminho estimado, e o
-// motivo vai em `_sonda` para a proxima execucao contar o que aconteceu.
+// VEREDICTO (execucao 3949227): NAO da. O no e encontrado, mas nao tem saida
+// `main` — "No data found from `main` input" nas duas formas. A sonda fica no
+// codigo porque o custo e zero e uma versao futura do n8n pode mudar isso; se
+// mudar, `_sonda` avisa sozinha.
 // ============================================================================
 
 const agent = $('AI Agent').item.json;

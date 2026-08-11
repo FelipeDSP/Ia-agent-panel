@@ -463,15 +463,47 @@ Número errado que se sabe errado é melhor que número errado que parece certo.
 Subir para 830 seria chute com aparência de medição, e não sobreviveria à fatia 3
 de qualquer forma — lá o wrapper passa a variar por perfil.
 
-### A sonda
+### A sonda — respondida: NÃO dá
 
-O valor exato existe: `tokenUsageEstimate` no sub-nó `OpenAI Chat Model`, **uma
-entrada por chamada** (ele não agrega — foi a primeira hipótese testada e
-descartada). A questão é se um nó Code no fluxo principal alcança sub-nó.
+Execução 3949227, com o nó já em produção:
 
-O nó agora tenta duas formas de acesso dentro de `try/catch` e reporta o
-resultado em `_sonda`. **Basta uma conversa real para saber.** Se funcionar, o
-número exato substitui a estimativa e as três causas somem de uma vez.
+```
+_sonda: "erro:first:No data found from `main` input"
+```
+
+O nó `OpenAI Chat Model` **é encontrado** — não é erro de nome — mas não tem
+saída `main`, e tanto `.all()` quanto `.first()` falham nela. **Um nó Code no
+fluxo principal não alcança sub-nó.** A conclusão do autor anterior estava certa;
+agora está provada, e a pergunta não precisa ser reaberta.
+
+O `tokenUsageEstimate` também **não agrega** as N chamadas: é uma entrada por
+chamada. Foi a primeira hipótese, descartada olhando os dados brutos.
+
+Fica a estimativa. A multiplicidade já está corrigida por aritmética.
+
+### O que a mesma execução revelou sobre a memória
+
+```
+execução 3949227    1 chamada    real 2016    estimado 1043    faltam 973
+execução 3948813    1 chamada    real 1554    estimado 1045    faltam 509
+```
+
+Mesma estimativa, mesmo número de chamadas, e a diferença quase dobrou. **A causa
+é a janela de memória**, que subiu de 5 para 20 na fatia 2 — a mesma mudança que
+deixou o carrinho sobreviver à conversa alargou o ponto cego do rateio.
+
+E o erro volta a não ser uniforme: cresce com o tamanho da conversa, então quem
+conversa muito é subcobrado contra quem resolve em duas mensagens.
+
+**Caminho identificado, não implementado:** `mensagens_log` está sendo escrito
+(confirmado em 11/08) e tem `conteudo`, `conversation_id` e `direcao`. Um nó
+Postgres antes do `Estima Tokens`, lendo as últimas ~20 mensagens daquela
+conversa, daria ao cálculo o texto que hoje ele não vê. Custa uma query por
+mensagem.
+
+Com a memória contabilizada, o resíduo passa a ser **só os schemas das tools** —
+e aí `TOKENS_FERRAMENTAS` pode ser calibrado de verdade, em vez de absorver dois
+erros de uma vez.
 
 Campos de diagnóstico no output: `_fonte_tokens`, `_sonda`, `_chamadas`,
 `_estimado_entrada`. Saem quando a sonda der veredicto.
