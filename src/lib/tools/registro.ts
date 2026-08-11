@@ -35,6 +35,23 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
     resumo: 'Encerra a conversa quando o cliente se despede ou o atendimento termina.',
     temConfigCliente: false,
   },
+  /**
+   * Um `tool_nome` só para o módulo inteiro. No n8n são três sub-workflows
+   * (consultar_catalogo, gerenciar_pedido, finalizar_pedido), mas os três
+   * checam `api_n8n_config_tool(tenant_id, 'vendas')`: a granularidade do n8n é
+   * detalhe de execução, a do catálogo é comercial — o cliente contrata
+   * "Vendas", não "adicionar item".
+   *
+   * Fora de TOOLS_BASELINE de propósito: vendas é módulo vendido.
+   */
+  vendas: {
+    nome: 'vendas',
+    rotulo: 'Vendas pelo agente',
+    resumo:
+      'O agente consulta seu catálogo, monta o pedido junto com o cliente na conversa e fecha. ' +
+      'O preço vem sempre do catálogo.',
+    temConfigCliente: false,
+  },
 };
 
 /** Definição de UI de uma tool, ou null se não estiver registrada. */

@@ -24,10 +24,15 @@ ele **muda** quando você reimporta (import cria workflow novo).
 
 | Arquivo | Nome no n8n | ID atual |
 |---|---|---|
-| `agente-principal.json` | Agente Multi-Tenant (Supabase) | _preencher_ |
+| `agente-principal.json` | Agente Multi-Tenant (Supabase) | `1fqJokfU8M2pXhzo` |
 | `tool-busca-kb.json` | Tool - Busca KB Multi-Tenant | `oAScbGA9K7jMZIP0` |
 | `tool-transferir-humano.json` | Tool - Transferir para Humano (Multi-Tenant) | `N902wAbxRd8wHFUv` |
 | `tool-resolver-conversa.json` | Tool - Resolver Conversa (Multi-Tenant) | `lT5oxXJKulPdlPPR` |
+| `tool-consultar-catalogo.json` | Tool - Consultar Catalogo (Multi-Tenant) | `H8jRRLmwBzxshp9w` |
+| `tool-gerenciar-pedido.json` | Tool - Gerenciar Pedido (Multi-Tenant) | `5rMg40Lagy3OaIo7` |
+| `tool-fechar-pedido.json` | Tool - Fechar Pedido (Multi-Tenant) | `bJlew3rtuV4gRgzv` |
+| `tool-cancelar-pedido.json` | Tool - Cancelar Pedido (Multi-Tenant) | `rXF7LJmqNBZDUg4b` |
+| **(nao versionado)** | Limpar Memoria (Webhook do Painel) | `Dvzv1sjECm2q2aPC` |
 
 > Ao reimportar um sub-workflow, o ID muda e **o nó `toolWorkflow` do principal
 > aponta pro ID velho**. Atualize a referência no principal e a tabela acima.

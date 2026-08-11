@@ -77,8 +77,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        832,
-        608
+        1520,
+        592
       ],
       "name": "Resolve no Chatwoot",
       "id": "9dbd8b08-b486-4364-975b-1a614d266400"
@@ -100,11 +100,148 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1072,
-        608
+        1760,
+        592
       ],
       "name": "Retorno Sucesso",
       "id": "fba18eb5-7b06-4eba-91c3-4c9a361030ad"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ra1",
+              "leftValue": "={{ $json.tool_ativa }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        608
+      ],
+      "name": "Tool Ativa?",
+      "id": "venda-res-if000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_tem_pedido_pendente($1::uuid, $2::bigint) AS pendente;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1056,
+        512
+      ],
+      "name": "Tem Pedido Pendente",
+      "id": "venda-res-ped00000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "rp1",
+              "leftValue": "={{ $json.pendente }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1280,
+        512
+      ],
+      "name": "Pedido Pendente?",
+      "id": "venda-res-if200000000000000000000000"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "rp-1",
+              "name": "resultado",
+              "type": "string",
+              "value": "=Ha um pedido em aberto nesta conversa. Confirme com o cliente se ele quer fechar ou cancelar o pedido ANTES de encerrar o atendimento."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1520,
+        400
+      ],
+      "name": "Pedido em Aberto",
+      "id": "venda-res-pen00000000000000000000000"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ro-1",
+              "name": "resultado",
+              "type": "string",
+              "value": "=Nao foi possivel encerrar por aqui. Despeca-se do cliente normalmente."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1056,
+        720
+      ],
+      "name": "Tool Indisponivel",
+      "id": "venda-res-off00000000000000000000000"
     }
   ],
   "pinData": {},
@@ -124,7 +261,7 @@
       "main": [
         [
           {
-            "node": "Resolve no Chatwoot",
+            "node": "Tool Ativa?",
             "type": "main",
             "index": 0
           }
@@ -136,6 +273,53 @@
         [
           {
             "node": "Retorno Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Ativa?": {
+      "main": [
+        [
+          {
+            "node": "Tem Pedido Pendente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tool Indisponivel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Pedido Pendente": {
+      "main": [
+        [
+          {
+            "node": "Pedido Pendente?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pedido Pendente?": {
+      "main": [
+        [
+          {
+            "node": "Pedido em Aberto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolve no Chatwoot",
             "type": "main",
             "index": 0
           }

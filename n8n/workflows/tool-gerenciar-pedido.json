@@ -1,0 +1,446 @@
+{
+  "name": "Tool - Gerenciar Pedido (Multi-Tenant)",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tenant_id"
+            },
+            {
+              "name": "conversation_id",
+              "type": "number"
+            },
+            {
+              "name": "acao"
+            },
+            {
+              "name": "produto_id"
+            },
+            {
+              "name": "quantidade",
+              "type": "number"
+            },
+            {
+              "name": "observacao"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        384,
+        400
+      ],
+      "name": "When Executed by Another Workflow",
+      "id": "venda-ger-trg00000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT chatwoot_url, chatwoot_token, tool_ativa, config\nFROM public.api_n8n_config_tool($1::uuid, 'vendas');",
+        "options": {
+          "queryReplacement": "={{ [ $json.tenant_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        608,
+        400
+      ],
+      "name": "Busca Config",
+      "id": "venda-cfg000000000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "v1",
+              "leftValue": "={{ $json.tool_ativa }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        400
+      ],
+      "name": "Vendas Ativa?",
+      "id": "venda-if0000000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "a1",
+                    "leftValue": "={{ $('When Executed by Another Workflow').item.json.acao }}",
+                    "rightValue": "adicionar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "adicionar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r1",
+                    "leftValue": "={{ $('When Executed by Another Workflow').item.json.acao }}",
+                    "rightValue": "remover",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "remover"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "v1",
+                    "leftValue": "={{ $('When Executed by Another Workflow').item.json.acao }}",
+                    "rightValue": "ver",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "ver"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 3,
+          "renameFallbackOutput": "invalida"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1056,
+        400
+      ],
+      "name": "Qual Acao?",
+      "id": "venda-ger-sw000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_adicionar_item($1::uuid, $2::bigint, $3::uuid, $4::int, $5::text) AS resultado;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id, $('When Executed by Another Workflow').item.json.produto_id, $('When Executed by Another Workflow').item.json.quantidade, $('When Executed by Another Workflow').item.json.observacao ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "position": [
+        1280,
+        208
+      ],
+      "name": "Adiciona Item",
+      "id": "venda-ger-add00000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_remover_item($1::uuid, $2::bigint, $3::uuid) AS resultado;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id, $('When Executed by Another Workflow').item.json.produto_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "position": [
+        1280,
+        368
+      ],
+      "name": "Remove Item",
+      "id": "venda-ger-rem00000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_ver_pedido($1::uuid, $2::bigint) AS resultado;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "position": [
+        1280,
+        528
+      ],
+      "name": "Ve Pedido",
+      "id": "venda-ger-ver00000000000000000000000"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "inv-1",
+              "name": "resultado",
+              "type": "string",
+              "value": "=Acao invalida. Use adicionar, remover ou ver."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1280,
+        688
+      ],
+      "name": "Acao Invalida",
+      "id": "venda-ger-inv00000000000000000000000"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok-1",
+              "name": "resultado",
+              "type": "string",
+              "value": "={{ $json.resultado }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1520,
+        400
+      ],
+      "name": "Retorno",
+      "id": "venda-ger-ok000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "off-1",
+              "name": "resultado",
+              "type": "string",
+              "value": "=Nao e possivel montar pedido por aqui. Ofereca ajuda pelos outros meios ou transfira para um atendente."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1056,
+        592
+      ],
+      "name": "Vendas Indisponivel",
+      "id": "venda-off000000000000000000000000000"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Busca Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Config": {
+      "main": [
+        [
+          {
+            "node": "Vendas Ativa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vendas Ativa?": {
+      "main": [
+        [
+          {
+            "node": "Qual Acao?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Vendas Indisponivel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qual Acao?": {
+      "main": [
+        [
+          {
+            "node": "Adiciona Item",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Remove Item",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ve Pedido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Acao Invalida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adiciona Item": {
+      "main": [
+        [
+          {
+            "node": "Retorno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Item": {
+      "main": [
+        [
+          {
+            "node": "Retorno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ve Pedido": {
+      "main": [
+        [
+          {
+            "node": "Retorno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acao Invalida": {
+      "main": [
+        [
+          {
+            "node": "Retorno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

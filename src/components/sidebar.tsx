@@ -10,6 +10,7 @@ import {
   Menu,
   MessagesSquare,
   Package,
+  Receipt,
   Settings,
   X,
 } from 'lucide-react';
@@ -41,6 +42,7 @@ const MENU: Record<Papel, ItemMenu[]> = {
     { href: '/painel', rotulo: 'Visão geral', Icone: LayoutDashboard },
     { href: '/painel/conhecimento', rotulo: 'Base de conhecimento', Icone: BookOpen },
     { href: '/painel/catalogo', rotulo: 'Catálogo', Icone: Package },
+    { href: '/painel/pedidos', rotulo: 'Pedidos', Icone: Receipt },
     { href: '/painel/conversas', rotulo: 'Conversas', Icone: MessagesSquare },
     { href: '/painel/consumo', rotulo: 'Uso', Icone: BarChart3 },
     { href: '/painel/configuracoes', rotulo: 'Configurações', Icone: Settings },

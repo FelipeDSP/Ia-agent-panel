@@ -1,0 +1,213 @@
+{
+  "name": "Tool - Cancelar Pedido (Multi-Tenant)",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tenant_id"
+            },
+            {
+              "name": "conversation_id",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        384,
+        400
+      ],
+      "name": "When Executed by Another Workflow",
+      "id": "venda-can-trg00000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT chatwoot_url, chatwoot_token, tool_ativa, config\nFROM public.api_n8n_config_tool($1::uuid, 'vendas');",
+        "options": {
+          "queryReplacement": "={{ [ $json.tenant_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        608,
+        400
+      ],
+      "name": "Busca Config",
+      "id": "venda-cfg000000000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "v1",
+              "leftValue": "={{ $json.tool_ativa }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        400
+      ],
+      "name": "Vendas Ativa?",
+      "id": "venda-if0000000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_cancelar_pedido($1::uuid, $2::bigint) AS resultado;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1056,
+        320
+      ],
+      "name": "Cancela Pedido",
+      "id": "venda-can-q0000000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok-1",
+              "name": "resultado",
+              "type": "string",
+              "value": "={{ $json.resultado }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1280,
+        320
+      ],
+      "name": "Retorno",
+      "id": "venda-can-ok000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "off-1",
+              "name": "resultado",
+              "type": "string",
+              "value": "=Nao e possivel montar pedido por aqui. Ofereca ajuda pelos outros meios ou transfira para um atendente."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1056,
+        496
+      ],
+      "name": "Vendas Indisponivel",
+      "id": "venda-off000000000000000000000000000"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Busca Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Config": {
+      "main": [
+        [
+          {
+            "node": "Vendas Ativa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vendas Ativa?": {
+      "main": [
+        [
+          {
+            "node": "Cancela Pedido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Vendas Indisponivel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancela Pedido": {
+      "main": [
+        [
+          {
+            "node": "Retorno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
