@@ -10,7 +10,27 @@ export type EstadoProduto = {
   erro?: string;
   errosCampo?: Record<string, string>;
   sucesso?: string;
+  /**
+   * O que o cliente digitou, devolvido quando a validação falha.
+   *
+   * O React 19 reseta formulário não-controlado depois que a action retorna —
+   * inclusive quando ela retorna erro. Sem isto, errar o preço apagava nome,
+   * descrição e todo o resto: o cliente digitava um produto inteiro e recomeçava
+   * do zero por causa de uma vírgula.
+   */
+  enviado?: Record<string, string>;
+  /** Contador de tentativas com erro; a tela usa como `key` para remontar. */
+  tentativa?: number;
 };
+
+/** Campos de texto do formulário, para devolver ao cliente em caso de erro. */
+function capturarEnviado(fd: FormData): Record<string, string> {
+  const campos = ['nome', 'descricao', 'preco', 'unidade', 'sku', 'estoque'];
+  const saida: Record<string, string> = {};
+  for (const c of campos) saida[c] = String(fd.get(c) ?? '');
+  saida['disponivel'] = fd.get('disponivel') === 'on' ? 'on' : '';
+  return saida;
+}
 
 /** UUID v4 — barra id malformado antes de virar filtro de query. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,16 +48,24 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * nenhum outro ponto do caminho de escrita toca no valor.
  */
 export async function salvarProduto(
-  _estado: EstadoProduto,
+  estadoAnterior: EstadoProduto,
   fd: FormData,
 ): Promise<EstadoProduto> {
   const usuario = await exigirTenantAdmin();
 
+  // Toda saída de erro devolve o que foi digitado — ver `enviado` em EstadoProduto.
+  const proximaTentativa = (estadoAnterior.tentativa ?? 0) + 1;
+  const comEntrada = (parcial: EstadoProduto): EstadoProduto => ({
+    ...parcial,
+    enviado: capturarEnviado(fd),
+    tentativa: proximaTentativa,
+  });
+
   const id = String(fd.get('id') ?? '').trim();
-  if (id && !UUID.test(id)) return { erro: 'Produto inválido.' };
+  if (id && !UUID.test(id)) return comEntrada({ erro: 'Produto inválido.' });
 
   const validado = validarProduto(fd);
-  if (!validado.ok) return { errosCampo: validado.erros };
+  if (!validado.ok) return comEntrada({ errosCampo: validado.erros });
 
   const supabase = await criarClienteServidor();
   const campos = validado.valor;
@@ -55,12 +83,12 @@ export async function salvarProduto(
     // 23505 = índice único (tenant_id, sku) parcial. Só pode ser SKU: é o único
     // unique da tabela além da PK.
     if (error.code === '23505') {
-      return { errosCampo: { sku: 'Já existe um produto ativo com esse SKU.' } };
+      return comEntrada({ errosCampo: { sku: 'Já existe um produto ativo com esse SKU.' } });
     }
     if (error.code === '42501') {
-      return { erro: 'Sem permissão para alterar este produto.' };
+      return comEntrada({ erro: 'Sem permissão para alterar este produto.' });
     }
-    return { erro: `Não foi possível salvar: ${error.message}` };
+    return comEntrada({ erro: `Não foi possível salvar: ${error.message}` });
   }
 
   revalidatePath('/painel/catalogo');

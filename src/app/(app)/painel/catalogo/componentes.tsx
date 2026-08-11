@@ -99,14 +99,18 @@ function FormularioProduto({
     if (estado.sucesso && !editando) form.current?.reset();
   }, [estado.sucesso, editando]);
 
+  // O React 19 reseta o formulário depois que a action retorna, inclusive
+  // quando ela retorna ERRO — errar o preço apagava nome, descrição e tudo. A
+  // action devolve o que foi digitado em `enviado`; remontamos o form com esses
+  // valores como padrão (a `key` muda a cada tentativa com erro).
+  const v = (campo: string, queda: string) => estado.enviado?.[campo] ?? queda;
+
   return (
     <form
       ref={form}
       action={acao}
       className="flex flex-col gap-4"
-      // key força remontagem ao trocar de produto: os defaultValue são
-      // uncontrolled e não se atualizariam sozinhos ao clicar em Editar noutro.
-      key={editando?.id ?? 'novo'}
+      key={`${editando?.id ?? 'novo'}-${estado.tentativa ?? 0}`}
     >
       {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
@@ -118,7 +122,7 @@ function FormularioProduto({
         <Input
           id="nome"
           name="nome"
-          defaultValue={editando?.nome ?? ''}
+          defaultValue={v('nome', editando?.nome ?? '')}
           placeholder="Ex.: Camisa polo masculina"
           maxLength={120}
           required
@@ -131,7 +135,7 @@ function FormularioProduto({
         <Textarea
           id="descricao"
           name="descricao"
-          defaultValue={editando?.descricao ?? ''}
+          defaultValue={v('descricao', editando?.descricao ?? '')}
           placeholder="O que o agente precisa saber para explicar este item ao cliente."
           rows={3}
           maxLength={2000}
@@ -146,7 +150,7 @@ function FormularioProduto({
             id="preco"
             name="preco"
             inputMode="decimal"
-            defaultValue={editando ? centavosParaReais(editando.precoCentavos) : ''}
+            defaultValue={v('preco', editando ? centavosParaReais(editando.precoCentavos) : '')}
             placeholder="24,90"
             required
           />
@@ -155,7 +159,7 @@ function FormularioProduto({
 
         <div className="flex w-52 flex-col gap-2">
           <Label htmlFor="unidade">Unidade</Label>
-          <Select id="unidade" name="unidade" defaultValue={editando?.unidade ?? 'un'}>
+          <Select id="unidade" name="unidade" defaultValue={v('unidade', editando?.unidade ?? 'un')}>
             {UNIDADES.map((u) => (
               <option key={u.valor} value={u.valor}>
                 {u.rotulo}
@@ -170,7 +174,7 @@ function FormularioProduto({
           <Input
             id="sku"
             name="sku"
-            defaultValue={editando?.sku ?? ''}
+            defaultValue={v('sku', editando?.sku ?? '')}
             placeholder="Opcional"
             maxLength={60}
           />
@@ -185,7 +189,7 @@ function FormularioProduto({
             type="number"
             min="0"
             step="1"
-            defaultValue={editando?.estoque ?? ''}
+            defaultValue={v('estoque', editando?.estoque?.toString() ?? '')}
             placeholder="Deixe vazio"
           />
           <ErroCampo msg={estado.errosCampo?.['estoque']} />
@@ -204,7 +208,7 @@ function FormularioProduto({
         <input
           type="checkbox"
           name="disponivel"
-          defaultChecked={editando ? editando.disponivel : true}
+          defaultChecked={estado.enviado ? estado.enviado['disponivel'] === 'on' : editando ? editando.disponivel : true}
           className="h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         />
         <span className="text-sm">Disponível para venda</span>
@@ -275,7 +279,11 @@ export function GestaoCatalogo({ produtosIniciais }: { produtosIniciais: Produto
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <FormularioProduto editando={editando} onCancelar={() => setEditando(null)} />
+          <FormularioProduto
+            key={editando?.id ?? 'novo'}
+            editando={editando}
+            onCancelar={() => setEditando(null)}
+          />
         </CardContent>
       </Card>
 
