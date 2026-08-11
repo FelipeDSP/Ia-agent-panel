@@ -183,7 +183,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT public.api_n8n_adicionar_item($1::uuid, $2::bigint, $3::uuid, $4::int, $5::text) AS resultado;",
+        "query": "SELECT public.api_n8n_adicionar_item($1::uuid, $2::bigint,\n       nullif(btrim($3::text), '')::uuid,\n       coalesce(nullif(btrim($4::text), '')::int, 1),\n       nullif(btrim($5::text), '')) AS resultado;",
         "options": {
           "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id, $('When Executed by Another Workflow').item.json.produto_id, $('When Executed by Another Workflow').item.json.quantidade, $('When Executed by Another Workflow').item.json.observacao ] }}"
         }
@@ -206,7 +206,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT public.api_n8n_remover_item($1::uuid, $2::bigint, $3::uuid) AS resultado;",
+        "query": "SELECT public.api_n8n_remover_item($1::uuid, $2::bigint, nullif(btrim($3::text), '')::uuid) AS resultado;",
         "options": {
           "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id, $('When Executed by Another Workflow').item.json.produto_id ] }}"
         }

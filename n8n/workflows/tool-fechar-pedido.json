@@ -87,7 +87,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT public.api_n8n_fechar_pedido($1::uuid, $2::bigint, coalesce($3::jsonb, '{}'::jsonb)) AS resultado;",
+        "query": "SELECT public.api_n8n_fechar_pedido($1::uuid, $2::bigint, $3::text) AS resultado;",
         "options": {
           "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id, $('When Executed by Another Workflow').item.json.metadados ] }}"
         }

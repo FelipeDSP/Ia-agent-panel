@@ -237,10 +237,18 @@ const gravar = (arq, obj) => {
       name: 'Qual Acao?',
       id: uid('ger-sw'),
     },
-    { ...q('SELECT public.api_n8n_adicionar_item($1::uuid, $2::bigint, $3::uuid, $4::int, $5::text) AS resultado;',
+    // `nullif(btrim(...), '')` em TODO parametro que vem do $fromAI: o valor
+    // chega como string e o modelo manda VAZIA quando nao tem o dado. `''::uuid`
+    // e `''::int` estouram no cast, antes de a funcao ter chance de responder —
+    // foi assim que o fechamento quebrou na primeira venda real (migracao 28).
+    // Com null, a funcao devolve texto que o agente repassa, que e o desenho.
+    { ...q('SELECT public.api_n8n_adicionar_item($1::uuid, $2::bigint,\n' +
+           '       nullif(btrim($3::text), \'\')::uuid,\n' +
+           '       coalesce(nullif(btrim($4::text), \'\')::int, 1),\n' +
+           '       nullif(btrim($5::text), \'\')) AS resultado;',
            `={{ [ ${T}.tenant_id, ${T}.conversation_id, ${T}.produto_id, ${T}.quantidade, ${T}.observacao ] }}`),
       position: [1280, 208], name: 'Adiciona Item', id: uid('ger-add') },
-    { ...q('SELECT public.api_n8n_remover_item($1::uuid, $2::bigint, $3::uuid) AS resultado;',
+    { ...q('SELECT public.api_n8n_remover_item($1::uuid, $2::bigint, nullif(btrim($3::text), \'\')::uuid) AS resultado;',
            `={{ [ ${T}.tenant_id, ${T}.conversation_id, ${T}.produto_id ] }}`),
       position: [1280, 368], name: 'Remove Item', id: uid('ger-rem') },
     { ...q('SELECT public.api_n8n_ver_pedido($1::uuid, $2::bigint) AS resultado;',
@@ -293,7 +301,9 @@ const gravar = (arq, obj) => {
 // pedido, e "cancelar" por engano apaga o carrinho.
 for (const [arq, nome, fn, extras, reps] of [
   ['tool-fechar-pedido.json', 'Tool - Fechar Pedido (Multi-Tenant)',
-   'SELECT public.api_n8n_fechar_pedido($1::uuid, $2::bigint, coalesce($3::jsonb, \'{}\'::jsonb)) AS resultado;',
+   // TEXT e nao jsonb: `$fromAI` manda string, inclusive vazia, e `''::jsonb`
+   // estoura. A funcao normaliza (migracao 28) — texto solto vira observacao.
+   'SELECT public.api_n8n_fechar_pedido($1::uuid, $2::bigint, $3::text) AS resultado;',
    [{ name: 'metadados' }],
    "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id, $('When Executed by Another Workflow').item.json.metadados ] }}"],
   ['tool-cancelar-pedido.json', 'Tool - Cancelar Pedido (Multi-Tenant)',
