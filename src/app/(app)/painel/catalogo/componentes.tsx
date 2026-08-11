@@ -1,7 +1,7 @@
 'use client';
 
 import { Package, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
+import { useActionState, useRef, useState, useTransition } from 'react';
 
 import { excluirProduto, salvarProduto, type EstadoProduto } from './acoes';
 import { Alert } from '@/components/ui/alert';
@@ -86,28 +86,31 @@ function BotaoExcluir({
 function FormularioProduto({
   editando,
   onCancelar,
+  unidadePadrao,
+  onUnidadeMudou,
 }: {
   editando: Produto | null;
   onCancelar: () => void;
+  unidadePadrao: string;
+  onUnidadeMudou: (u: string) => void;
 }) {
   const [estado, acao] = useActionState<EstadoProduto, FormData>(salvarProduto, {});
-  const form = useRef<HTMLFormElement>(null);
 
-  // Cadastro em sequência: depois de criar, limpa para o próximo. Na edição
-  // mantém os valores — o cliente pode querer corrigir outra coisa.
-  useEffect(() => {
-    if (estado.sucesso && !editando) form.current?.reset();
-  }, [estado.sucesso, editando]);
-
-  // O React 19 reseta o formulário depois que a action retorna, inclusive
-  // quando ela retorna ERRO — errar o preço apagava nome, descrição e tudo. A
-  // action devolve o que foi digitado em `enviado`; remontamos o form com esses
-  // valores como padrão (a `key` muda a cada tentativa com erro).
+  /**
+   * O formulário REMONTA a cada retorno da action, via `key` — e é a remontagem
+   * que reaplica os `defaultValue`. Duas coisas dependem disso:
+   *
+   *  - no ERRO, os campos voltam com o que o cliente digitou (`enviado`). O
+   *    React 19 reseta formulário não-controlado depois de uma action, mesmo
+   *    quando ela falha; sem isto, errar o preço apagava nome, descrição e tudo.
+   *  - no SUCESSO, o form volta vazio para o próximo cadastro, já com a última
+   *    unidade escolhida. `form.reset()` não serviria: ele devolve o valor de
+   *    quando o form montou, não o `unidadePadrao` atual.
+   */
   const v = (campo: string, queda: string) => estado.enviado?.[campo] ?? queda;
 
   return (
     <form
-      ref={form}
       action={acao}
       className="flex flex-col gap-4"
       key={`${editando?.id ?? 'novo'}-${estado.tentativa ?? 0}`}
@@ -159,7 +162,17 @@ function FormularioProduto({
 
         <div className="flex w-52 flex-col gap-2">
           <Label htmlFor="unidade">Unidade</Label>
-          <Select id="unidade" name="unidade" defaultValue={v('unidade', editando?.unidade ?? 'un')}>
+          {/* Sem `editando`, o padrão é a última unidade escolhida nesta sessão:
+              quem cadastra 8 pratos seguidos escolhia "Porção" 8 vezes, porque o
+              form reseta a cada item salvo. É a coisa que menos varia dentro de
+              um catálogo. Mora em estado de tela, não no banco — voltar amanhã
+              volta ao padrão. */}
+          <Select
+            id="unidade"
+            name="unidade"
+            defaultValue={v('unidade', editando?.unidade ?? unidadePadrao)}
+            onChange={(e) => onUnidadeMudou(e.target.value)}
+          >
             {UNIDADES.map((u) => (
               <option key={u.valor} value={u.valor}>
                 {u.rotulo}
@@ -232,6 +245,10 @@ function FormularioProduto({
 
 export function GestaoCatalogo({ produtosIniciais }: { produtosIniciais: Produto[] }) {
   const [editando, setEditando] = useState<Produto | null>(null);
+  // Última unidade escolhida NESTA sessão de tela. Não vai ao banco de
+  // propósito: é conveniência de digitação, não preferência do cliente —
+  // recarregar a página volta para "un".
+  const [unidadePadrao, setUnidadePadrao] = useState('un');
   const [erroExclusao, setErroExclusao] = useState<string | null>(null);
   const [excluindoId, setExcluindoId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -283,6 +300,8 @@ export function GestaoCatalogo({ produtosIniciais }: { produtosIniciais: Produto
             key={editando?.id ?? 'novo'}
             editando={editando}
             onCancelar={() => setEditando(null)}
+            unidadePadrao={unidadePadrao}
+            onUnidadeMudou={setUnidadePadrao}
           />
         </CardContent>
       </Card>

@@ -74,6 +74,53 @@ prompt, agente citando detalhe irrelevante), **a tool trunca antes de mandar ao
 LLM** — não se cria coluna nova. Só vale separar se truncar provar-se
 insuficiente, e aí com evidência de conversa real, não com hipótese.
 
+## Achados do cadastro real (fatia 1)
+
+Levantados em 11/08/2026 cadastrando 16 produtos de verdade na tela — cardápio de
+restaurante e serviços de lavanderia, em dois tenants. São observações de uso,
+não hipóteses de projeto.
+
+**Resolvido na hora:** faltava a unidade `pessoa` (couvert, rodízio, buffet — o
+restaurante cobra por pessoa, não por unidade). Migração 24.
+
+### Regra de negócio na descrição — não criar campo
+
+Cadastrando, a descrição virou depósito de regra: "Prazo de 48h", "Mínimo de 3kg
+por pedido", "Servida sábados e quartas", "Não atende couro legítimo".
+
+**Não vira campo estruturado.** Já existe lugar para regra de negócio: a base de
+conhecimento, que o agente busca. A linha de produto carrega o que ele precisa
+para *vender* — nome, preço, unidade, disponibilidade.
+
+E o risco real não é o que parecia. Não é o agente ler prosa e entender errado;
+é ele **não conectar a regra ao produto certo** — saber que existe um mínimo de
+3kg e não amarrar isso à lavagem por quilo na hora de fechar o pedido. Isso não
+se resolve com coluna nova, se resolve com o desenho da conversa.
+
+A fatia 2 responde com **comportamento observado**: rodar pedido real e ver onde
+o agente erra. Só depois disso, se errar, discutir estrutura.
+
+### Variação como produto separado — confirmado, entra na fatia 2
+
+Na lavanderia, "lavagem de terno 2 peças" e "lavagem de paletó avulso" viraram
+dois produtos. O mesmo aconteceria com tamanho de pizza, ponto da carne,
+numeração de peça. Sem `variacoes`, o catálogo cresce como lista de combinações
+e o cliente cadastra o mesmo item cinco vezes.
+
+**Isto deixou de ser hipótese.** A coluna `variacoes` (jsonb) já existe em
+`produtos` desde a migração 23, sem UI. Entra no desenho da fatia 2, junto com
+`adicionar_item` — que precisa saber qual variação foi escolhida para resolver o
+preço.
+
+### Paginação da tela de catálogo — gatilho definido
+
+`/painel/catalogo` carrega o catálogo inteiro num `select` e renderiza tudo. Para
+30 produtos é o certo; para 500 a tela trava, e o `idx_produtos_busca` (migração
+23) fica sem uso no painel — ele existe só para a fatia 2.
+
+**Gatilho:** o primeiro cliente passar de **~100 produtos**. Antes disso,
+paginar custa complexidade sem ganho.
+
 ### Visibilidade de produto para o agente (fatia 2)
 
 Regra única, também documentada no `comment` da coluna `disponivel`:

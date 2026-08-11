@@ -19,7 +19,13 @@ export type EstadoProduto = {
    * do zero por causa de uma vírgula.
    */
   enviado?: Record<string, string>;
-  /** Contador de tentativas com erro; a tela usa como `key` para remontar. */
+  /**
+   * Contador de submissões. A tela usa como parte da `key` do formulário para
+   * remontá-lo a cada retorno da action — é isso que faz `defaultValue` valer de
+   * novo. Sem remontar, `defaultValue` só se aplica na montagem: a última
+   * unidade escolhida não chegaria ao próximo cadastro, e `form.reset()`
+   * devolveria o valor de quando o form montou.
+   */
   tentativa?: number;
 };
 
@@ -92,7 +98,12 @@ export async function salvarProduto(
   }
 
   revalidatePath('/painel/catalogo');
-  return { sucesso: id ? 'Produto atualizado.' : `"${campos.nome}" adicionado ao catálogo.` };
+  // Sem `enviado`: no sucesso o formulário remonta com os defaults — vazio para
+  // um cadastro novo, com os valores salvos numa edição.
+  return {
+    sucesso: id ? 'Produto atualizado.' : `"${campos.nome}" adicionado ao catálogo.`,
+    tentativa: proximaTentativa,
+  };
 }
 
 /**

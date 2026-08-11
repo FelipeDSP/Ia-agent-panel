@@ -26,6 +26,9 @@ export const UNIDADES = [
   { valor: 'peca', rotulo: 'Peça' },
   { valor: 'par', rotulo: 'Par' },
   { valor: 'porcao', rotulo: 'Porção' },
+  // Couvert, rodízio, buffet: o restaurante cobra por pessoa, não por unidade.
+  // Sem isto o agente confirmaria "4 unidades de couvert" (migração 24).
+  { valor: 'pessoa', rotulo: 'Pessoa' },
   { valor: 'hora', rotulo: 'Hora' },
   { valor: 'servico', rotulo: 'Serviço' },
 ] as const;
