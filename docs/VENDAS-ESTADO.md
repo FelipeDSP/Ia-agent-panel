@@ -457,11 +457,34 @@ para separar "schema" de "memória" com os dados que temos.
 estimaram o mesmo 1045, enquanto o real diferiu em 306 tokens. E a janela acabou
 de ir de 5 para 20.
 
-### A constante fica em 320, de propósito
+### Calibrado: 3,11 chars/token e 622 tokens de schema
 
-Número errado que se sabe errado é melhor que número errado que parece certo.
-Subir para 830 seria chute com aparência de medição, e não sobreviveria à fatia 3
-de qualquer forma — lá o wrapper passa a variar por perfil.
+Duas execuções com o **mesmo texto de prompt** e memórias diferentes formam um
+sistema de duas equações — e aí os dois desconhecidos se separam:
+
+```
+3948813   real 1554 = 2901/r + S           (conversa nova, memória ~0)
+3949288   real 2036 = (2901+1500)/r + S
+subtraindo:    482 = 1500/r   →   r = 3,112   →   S = 622
+```
+
+Conferido contra as quatro execuções disponíveis:
+
+```
+3948813   previsto  1556   real  1554   +0,1%
+3949288   previsto  2040   real  2036   +0,2%
+3948994   previsto  3775   real  3828   −1,4%   (2 chamadas)
+3948818   previsto 10485   real 10481    0,0%   (6 chamadas, a venda)
+```
+
+Antes disso o mesmo cálculo errava de 1,5x a 10x.
+
+**Os 4 chars/token da heurística genérica estavam errados para português**:
+o valor medido é **3,11**, uma diferença de 29%. O tokenizer quebra acento em
+mais de um token, e tanto o system prompt quanto as conversas são em português.
+
+**622 cobre as 7 tools atuais — ~89 por tool.** É o número que a fatia 3 vai
+precisar por perfil: 3 tools dão ~266.
 
 ### A sonda — respondida: NÃO dá
 

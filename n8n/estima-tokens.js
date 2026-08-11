@@ -50,6 +50,25 @@
 // `main` — "No data found from `main` input" nas duas formas. A sonda fica no
 // codigo porque o custo e zero e uma versao futura do n8n pode mudar isso; se
 // mudar, `_sonda` avisa sozinha.
+//
+// ----------------------------------------------------------------------------
+// CALIBRACAO (11/08/2026) — como 3,11 e 622 sairam
+// ----------------------------------------------------------------------------
+// Duas execucoes com o MESMO texto de prompt e memorias diferentes formam um
+// sistema de duas equacoes, e ai os dois desconhecidos se separam:
+//
+//   3948813   real 1554 = 2901/r + S          (conversa nova, memoria ~0)
+//   3949288   real 2036 = (2901+1500)/r + S
+//   subtraindo:    482 = 1500/r   ->   r = 3,112   ->   S = 622
+//
+// Conferido contra as quatro execucoes disponiveis:
+//
+//   3948813   previsto  1556   real  1554   +0,1%
+//   3949288   previsto  2040   real  2036   +0,2%
+//   3948994   previsto  3775   real  3828   -1,4%   (2 chamadas)
+//   3948818   previsto 10485   real 10481    0,0%   (6 chamadas, a venda)
+//
+// Antes desta calibracao o mesmo calculo errava de 1,5x a 10x.
 // ============================================================================
 
 const agent = $('AI Agent').item.json;
@@ -58,19 +77,21 @@ const textoSaida = agent?.output ?? '';
 const WRAPPER = __WRAPPER__;
 
 // Schemas das ferramentas: contam como prompt token e nao dao para derivar do
-// texto. 320 e PROVISORIO e SABIDAMENTE BAIXO — a medicao de 11/08 aponta ~830
-// somando memoria. Nao foi subido porque nao da para separar "schema" de
-// "memoria" com os dados que temos, e chutar o numero certo importa menos que
-// saber que ele esta errado. A sonda resolve, ou a proxima medicao calibra.
-const TOKENS_FERRAMENTAS = 320;
+// texto. MEDIDO, nao chutado — ver o bloco de calibracao no fim deste cabecalho.
+// 622 cobre as 7 tools atuais, ~89 por tool. Ao adicionar ou remover tool, o
+// numero muda: 3 tools dao ~266.
+const TOKENS_FERRAMENTAS = 622;
 
 // Crescimento medio do prompt a cada round-trip de tool (resultado da tool +
 // mensagem do assistente). Calibrado contra as 3 execucoes reais: com 55, a
 // formula errou 0,0% / -1,4% / 0,0%.
 const CRESCIMENTO_POR_CHAMADA = 55;
 
-// ~4 chars/token. Portugues acentuado rende um pouco mais, entao e conservador.
-const emTokens = (t) => Math.ceil((t || '').length / 4);
+// 3,11 chars/token, MEDIDO para portugues acentuado — nao os 4 da heuristica
+// generica, que subestimava em ~29%. O tokenizer da OpenAI quebra acento em mais
+// de um token, e o system prompt daqui e todo em portugues.
+const CHARS_POR_TOKEN = 3.11;
+const emTokens = (t) => Math.ceil((t || '').length / CHARS_POR_TOKEN);
 
 // ----------------------------------------------------------------------------
 // 1. Sonda: o numero exato esta alcancavel?
