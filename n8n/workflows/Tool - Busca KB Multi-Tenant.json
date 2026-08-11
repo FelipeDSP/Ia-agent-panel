@@ -110,19 +110,6 @@
       "name": "Consolida Resultado"
     }
   ],
-  "pinData": {
-    "Quando executado por outro workflow": [
-      {
-        "json": {
-          "tenant_id": "ebef4715-1a05-41d0-ad62-929b7fefa887",
-          "pergunta": "Quais são os preços do restaurante?"
-        },
-        "pairedItem": {
-          "item": 0
-        }
-      }
-    ]
-  },
   "connections": {
     "Quando executado por outro workflow": {
       "main": [
@@ -169,15 +156,12 @@
       ]
     }
   },
-  "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "771a5489-537e-4fb9-8bc3-9c7be62ea009",
   "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "9ffb0b87bfe505b98520e5d51b10973dd4da506af73cbafd10b2aa5c893d4cf1"
+    "templateCredsSetupCompleted": true
   },
-  "id": "oAScbGA9K7jMZIP0",
-  "tags": []
+  "active": false,
+  "id": "oAScbGA9K7jMZIP0"
 }
