@@ -299,6 +299,62 @@ O "endgame" do `docs/ADICIONAR-TOOL.md` — AI Agent montando tools e system pro
 a partir de `api_n8n_tools_ativas` — vale fazer perto de 3–4 tools. Vendas soma
 pelo menos 3, então a decisão chega junto.
 
+## Fatia 3 é o endgame do workflow principal
+
+Registrado em 11/08/2026, ao dimensionar as tools de venda. **Não fazer agora** —
+mas saber que a fatia 2 está pagando um preço que a fatia 3 elimina.
+
+### O sintoma
+
+Os schemas das tools vão em **toda requisição de todo tenant**: o workflow
+principal é compartilhado e os nós `toolWorkflow` ficam pendurados no `AI Agent`
+incondicionalmente. `tool_ativa` bloqueia o **efeito**, não o **custo**. A Acqua,
+que não contratou vendas, paga o schema das tools de venda em cada mensagem,
+para sempre.
+
+Foi isso que empurrou a consolidação de 6 sub-workflows para 4 na fatia 2.
+
+### Por que a consolidação é contorno, não solução
+
+Consolidar tool para economizar token está resolvendo o sintoma. O problema é
+que **o painel não é a fonte da verdade do que o agente carrega** — é o que o
+"endgame" de `docs/ADICIONAR-TOOL.md` descreve: migrar o `AI Agent` para montar
+tools e system prompt a partir de `api_n8n_tools_ativas`, em vez de nós fixos.
+
+Feito isso, cada tenant carrega só o que contratou, `contratado/ativo` passa a
+cortar o agente de verdade, e adicionar tool deixa de exigir mexer no principal.
+
+### O gatilho já foi ultrapassado
+
+`ADICIONAR-TOOL.md` diz que vale fazer perto de **3–4 tools**. Com vendas:
+
+```
+busca_conhecimento, transferir_humano, resolver_conversa     3
+consultar_catalogo, gerenciar_pedido, fechar_pedido,
+cancelar_pedido                                             +4
+                                                          -----
+                                                             7
+```
+
+**Sete, bem acima do gatilho.** A fatia 2 entrega mesmo assim, com nós fixos,
+porque o endgame é refatoração do fluxo principal e não cabe junto com a
+entrega de vendas — misturar as duas tornaria impossível saber o que quebrou.
+
+**Fatia 3 é o endgame.** Ele também resolve, de graça, a consolidação: com tools
+montadas por tenant, separar `adicionar_item` de `remover_item` volta a custar
+zero para quem não vende.
+
+### Regra que fica desta rodada
+
+**Ação destrutiva não fica atrás de `$fromAI` junto com ação reversível.**
+
+`gerenciar_pedido` agrupa adicionar/remover/ver porque o pior caso é um turno
+perdido — o carrinho devolvido mostra o engano na hora. `fechar_pedido` e
+`cancelar_pedido` são tools próprias: o agente chamar `fechar` quando o cliente
+perguntou "quanto ficou?" trava o pedido, e `cancelar` por engano apaga o
+carrinho. Ação irreversível precisa ser escolha positiva do modelo, não um valor
+de parâmetro no meio de outros.
+
 ## Ideia futura: memória de longo prazo por cliente
 
 **Sem código.** Registrada em 11/08/2026 para não se perder.
