@@ -22,7 +22,7 @@
 -- varredura documentada la (28 funcoes, views, policies, indices, colunas) e
 -- pre-requisito e nao formalidade.
 --
--- Rollback: 20260811140000_21b_credencial_chatwoot_contract_rollback.sql
+-- Rollback: 20260811135800_21b_credencial_chatwoot_contract_rollback.sql
 
 begin;
 
