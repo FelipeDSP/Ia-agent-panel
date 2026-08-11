@@ -30,6 +30,7 @@ export type Produto = {
   unidade: string;
   sku: string | null;
   estoque: number | null;
+  disponivel: boolean;
 };
 
 function ErroCampo({ msg }: { msg?: string }) {
@@ -196,6 +197,23 @@ function FormularioProduto({
         Estoque vazio significa <strong>não controla estoque</strong>; zero significa esgotado.
       </p>
 
+      {/* Campo espelho: checkbox desmarcado não vai no POST, então sem ele o
+          servidor não distinguiria "desmarcou" de "formulário sem o campo". */}
+      <input type="hidden" name="disponivel_presente" value="1" />
+      <label className="flex items-center gap-3">
+        <input
+          type="checkbox"
+          name="disponivel"
+          defaultChecked={editando ? editando.disponivel : true}
+          className="h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        />
+        <span className="text-sm">Disponível para venda</span>
+      </label>
+      <p className="-mt-3 text-xs text-muted-foreground">
+        Desmarque para pausar o item — “hoje não tem” — sem apagar o cadastro nem mexer no
+        estoque. Ele continua aqui para você reativar depois.
+      </p>
+
       <div className="flex items-center gap-2">
         <SubmitButton>{editando ? 'Salvar alterações' : 'Adicionar ao catálogo'}</SubmitButton>
         {editando ? (
@@ -299,6 +317,7 @@ export function GestaoCatalogo({ produtosIniciais }: { produtosIniciais: Produto
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{p.nome}</span>
                       {p.sku ? <Badge variant="secondary">{p.sku}</Badge> : null}
+                      {!p.disponivel ? <Badge variant="warning">pausado</Badge> : null}
                       {p.estoque === 0 ? (
                         <Badge variant="warning">esgotado</Badge>
                       ) : p.estoque !== null ? (

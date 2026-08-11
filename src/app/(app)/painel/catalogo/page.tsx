@@ -12,7 +12,7 @@ export default async function PaginaCatalogo() {
   // regra 6 do CLAUDE.md. `deletado_em is null` porque a exclusão é soft.
   const { data, error } = await supabase
     .from('produtos')
-    .select('id, nome, descricao, preco_centavos, unidade, sku, estoque')
+    .select('id, nome, descricao, preco_centavos, unidade, sku, estoque, disponivel')
     .eq('tenant_id', usuario.tenantId)
     .is('deletado_em', null)
     .order('nome', { ascending: true });
@@ -31,6 +31,7 @@ export default async function PaginaCatalogo() {
     unidade: p.unidade as string,
     sku: (p.sku as string | null) ?? null,
     estoque: (p.estoque as number | null) ?? null,
+    disponivel: p.disponivel as boolean,
   }));
 
   return (

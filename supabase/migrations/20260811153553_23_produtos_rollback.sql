@@ -46,21 +46,12 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 2. Tabela (leva junto policy, indices e trigger)
+-- 2. Tabela
 -- ---------------------------------------------------------------------------
-
+-- Leva junto policy, indices e trigger. Nenhuma extensao a remover: a versao
+-- anterior desta migracao instalava btree_gin para um indice composto
+-- (tenant_id, tsvector), e a medicao mostrou ganho dentro do ruido na escala
+-- real — o indice de busca ficou GIN simples e nada foi instalado em producao.
 drop table if exists public.produtos;
-
--- ---------------------------------------------------------------------------
--- 3. btree_gin
--- ---------------------------------------------------------------------------
--- So a migracao 23 instalou e so o indice de busca de produtos usava. Se outra
--- migracao passar a depender dela, REMOVA este drop — derrubar a extensao
--- levaria os indices dela junto, em cascata silenciosa.
---
--- Sem `cascade` de proposito: se algo mais depender, o drop falha e avisa, em
--- vez de destruir indice alheio.
-
-drop extension if exists btree_gin;
 
 commit;

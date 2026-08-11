@@ -59,6 +59,34 @@ Isolamento entre clientes já é garantido pelo padrão existente: toda função
 tabela. O agente da lavanderia não enxerga prato de restaurante porque a query
 nem chega perto.
 
+### Risco aberto: `descricao` tem dois públicos
+
+A coluna `descricao` de `produtos` serve ao mesmo tempo para o cliente se
+organizar e para o agente explicar o item. São usos diferentes: o segundo vai
+para o contexto do LLM a cada busca de produto.
+
+**Não foi criada uma `descricao_agente` separada**, de propósito — seria
+especulação sobre um problema que ainda não aconteceu, sem saber o formato de
+retorno da tool nem o custo real de contexto.
+
+Se na fatia 2 a descrição virar ruído (catálogo com textos longos inflando o
+prompt, agente citando detalhe irrelevante), **a tool trunca antes de mandar ao
+LLM** — não se cria coluna nova. Só vale separar se truncar provar-se
+insuficiente, e aí com evidência de conversa real, não com hipótese.
+
+### Visibilidade de produto para o agente (fatia 2)
+
+Regra única, também documentada no `comment` da coluna `disponivel`:
+
+```sql
+deletado_em is null and disponivel and (estoque is null or estoque > 0)
+```
+
+`disponivel` é separado de `estoque` porque "hoje não tem" não é "acabou o
+estoque": forçar `estoque = 0` para pausar um item empurraria o cliente para o
+modo de controle de estoque que ele não quis, e a alternativa seria remover o
+produto — perdendo o cadastro para repor amanhã.
+
 ## Lado n8n — cuidado com a Acqua
 
 O workflow principal é **hardcoded e compartilhado por todos os tenants**: não lê

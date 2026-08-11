@@ -25,20 +25,14 @@
 -- essa distincao, prato de restaurante (que nao tem estoque) e produto esgotado
 -- ficariam indistinguiveis, e o agente da fatia 2 recusaria venda de prato.
 --
--- Rollback: 20260811170000_23_produtos_rollback.sql
+-- DISPONIVEL E SEPARADO DE ESTOQUE. "Hoje nao tem" nao e "acabou o estoque":
+-- forcar estoque = 0 para pausar um item empurra o cliente para o modo de
+-- controle de estoque que ele nao quis, e a alternativa seria remover o produto
+-- do catalogo — perdendo o cadastro para repor amanha.
+--
+-- Rollback: 20260811153553_23_produtos_rollback.sql
 
 begin;
-
--- ---------------------------------------------------------------------------
--- 0. btree_gin: deixa o indice de busca comecar por tenant_id
--- ---------------------------------------------------------------------------
--- GIN puro nao indexa uuid, entao um indice textual sozinho seria GLOBAL: a
--- busca do tenant varreria as entradas de todos os clientes e so depois
--- filtraria — a mesma forma que o CLAUDE.md descreve no HNSW de kb_documentos.
--- Com btree_gin o indice composto (tenant_id, busca) e possivel e a regra 3
--- ("tenant_id e a primeira coluna de todo indice composto") vale tambem aqui.
-
-create extension if not exists btree_gin with schema extensions;
 
 -- ---------------------------------------------------------------------------
 -- 1. Tabela
@@ -54,12 +48,21 @@ create table if not exists public.produtos (
   unidade        text not null default 'un',
   variacoes      jsonb not null default '{}'::jsonb,
   estoque        integer,
+  disponivel     boolean not null default true,
   deletado_em    timestamptz,
   criado_em      timestamptz not null default now(),
   atualizado_em  timestamptz not null default now(),
 
-  constraint produtos_nome_nao_vazio    check (btrim(nome) <> ''),
-  constraint produtos_unidade_nao_vazia check (btrim(unidade) <> ''),
+  constraint produtos_nome_nao_vazio check (btrim(nome) <> ''),
+  -- Lista fechada espelhando UNIDADES em src/lib/vendas/schema.ts. Texto livre
+  -- diverge sozinho — um cliente digita 'un', outro 'unid.', outro 'unidade' —
+  -- e na fatia 2 o agente le isso em voz alta ao confirmar o pedido.
+  -- CHECK e nao FK de proposito: tabela de referencia vira tela de gestao
+  -- depois, e acrescentar unidade e raro o bastante para valer uma migracao de
+  -- uma linha. Ao mexer aqui, mexa em UNIDADES junto.
+  constraint produtos_unidade_valida check (unidade in (
+    'un', 'kg', 'g', 'l', 'ml', 'm', 'm2', 'peca', 'par', 'porcao', 'hora', 'servico'
+  )),
   constraint produtos_preco_nao_negativo check (preco_centavos >= 0),
   -- Estoque negativo seria venda de item inexistente virando numero negativo em
   -- vez de erro. Null continua permitido: e "nao controla estoque".
@@ -80,6 +83,10 @@ comment on column public.produtos.preco_centavos is
   'Preco em CENTAVOS. R$ 24,90 = 2490. Nunca reais, nunca float.';
 comment on column public.produtos.estoque is
   'null = nao controla estoque (ex.: prato de restaurante). 0 = controla e esgotou.';
+comment on column public.produtos.disponivel is
+  'Pausa o item sem mexer no estoque nem remove-lo do catalogo (ex.: "hoje nao '
+  'tem"). REGRA DE VISIBILIDADE que a fatia 2 usa para o agente enxergar um '
+  'produto: deletado_em is null and disponivel and (estoque is null or estoque > 0).';
 comment on column public.produtos.variacoes is
   'Reservada para a fatia 2. A UI da fatia 1 nao escreve aqui.';
 
@@ -107,12 +114,34 @@ create unique index if not exists uq_produtos_tenant_sku
 -- Expressao em vez de coluna gerada: mantem a tabela com as colunas que o
 -- briefing definiu, sem um campo derivado aparecendo em `select *`. O literal
 -- 'portuguese' e obrigatorio para a expressao ser IMMUTABLE e indexavel.
+--
+-- POR QUE ESTE INDICE NAO COMECA POR tenant_id, ao contrario dos dois de cima.
+-- GIN nao indexa uuid sem a extensao btree_gin, entao o composto
+-- (tenant_id, to_tsvector(...)) exigiria instalar contrib em producao. Medido
+-- antes de decidir, comparando os dois indices na mesma tabela, com um tenant
+-- pequeno convivendo com um grande (mediana de 5 execucoes):
+--
+--     5.100 linhas   pequeno 38,3 ms -> 36,8 ms   ganho 1,0x
+--    50.200 linhas   pequeno 41,2 ms -> 38,2 ms   ganho 1,1x
+--   200.200 linhas   pequeno 65,0 ms -> 36,8 ms   ganho 1,8x
+--
+-- O composto e estruturalmente melhor — a 200 mil linhas le 4 blocos de heap
+-- contra 3.075, e descarta 0 linhas contra 25.000. Mas isso so vira tempo de
+-- parede acima de ~200 mil produtos, e o piso de ~36 ms aqui e latencia de rede,
+-- nao varredura. Instalar extensao em producao por ganho dentro do ruido na
+-- escala real deste produto nao se paga.
+--
+-- E — diferente do HNSW de kb_documentos — nao ha risco de recall: GIN devolve
+-- TODOS os matches e o filtro de tenant descarta os alheios depois. Verificado
+-- nas tres escalas, resultado identico com e sem o composto. O modo de falha
+-- silencioso que assombra a busca vetorial nao existe aqui.
+--
+-- QUANDO REVISITAR: se algum tenant passar de ~50 mil produtos, ou a tabela de
+-- ~200 mil, refaca a medicao. Trocar e uma migracao de uma linha (drop index +
+-- create), porque indice nao carrega dado.
 create index if not exists idx_produtos_busca
   on public.produtos
-  using gin (
-    tenant_id,
-    to_tsvector('portuguese', nome || ' ' || coalesce(descricao, ''))
-  )
+  using gin (to_tsvector('portuguese', nome || ' ' || coalesce(descricao, '')))
   where deletado_em is null;
 
 -- ---------------------------------------------------------------------------

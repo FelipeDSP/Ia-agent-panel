@@ -10,6 +10,11 @@
 
 import { parsearPrecoParaCentavos } from './dinheiro';
 
+/**
+ * Espelha o CHECK `produtos_unidade_valida` da migração 23. Mexeu aqui, mexeu
+ * lá — o banco recusa valor fora desta lista, então divergir vira erro 23514 na
+ * cara do cliente.
+ */
 export const UNIDADES = [
   { valor: 'un', rotulo: 'Unidade (un)' },
   { valor: 'kg', rotulo: 'Quilo (kg)' },
@@ -39,6 +44,7 @@ export type ProdutoValidado = {
   unidade: string;
   sku: string | null;
   estoque: number | null;
+  disponivel: boolean;
 };
 
 export type ResultadoValidacao =
@@ -83,6 +89,13 @@ export function validarProduto(fd: FormData): ResultadoValidacao {
     else estoque = n;
   }
 
+  // Pausar o item sem mexer no estoque nem removê-lo do catálogo. Checkbox
+  // ausente no POST significa desmarcado — por isso o campo espelho
+  // `disponivel_presente`, que distingue "desmarcou" de "o form nem tem o campo".
+  const disponivel = fd.has('disponivel_presente')
+    ? fd.get('disponivel') === 'on' || fd.get('disponivel') === 'true'
+    : true;
+
   if (Object.keys(erros).length > 0) return { ok: false, erros };
 
   return {
@@ -94,6 +107,7 @@ export function validarProduto(fd: FormData): ResultadoValidacao {
       unidade,
       sku,
       estoque,
+      disponivel,
     },
   };
 }
