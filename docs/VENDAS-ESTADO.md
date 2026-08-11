@@ -355,6 +355,29 @@ perguntou "quanto ficou?" trava o pedido, e `cancelar` por engano apaga o
 carrinho. Ação irreversível precisa ser escolha positiva do modelo, não um valor
 de parâmetro no meio de outros.
 
+## Janela conhecida entre o debounce e a resolução do perfil
+
+Registrada em 11/08/2026, ao desenhar a fatia 3.
+
+O nó `Tools Ativas` fica **depois** do `Wait Debounce`, de propósito: assim roda
+uma vez por invocação real do agente, e não em toda mensagem que o
+`Ultima Mensagem?` vai descartar.
+
+O efeito colateral é uma janela: entre a mensagem chegar e o perfil ser
+resolvido passam os segundos do debounce (8s na Acqua). **Se alguém desligar
+vendas nesse intervalo, a rota usa o estado novo** — a mensagem que chegou com o
+módulo ligado é atendida pelo agente básico.
+
+**Não é grave**, e por dois motivos: a trava `tool_ativa` do sub-workflow recusa
+a ação de qualquer forma, então nada é gravado indevidamente; e a janela é de
+segundos, contra uma ação (descontratar) que é rara e deliberada.
+
+O inverso — ligar vendas durante a janela — faz a mensagem já ser atendida pelo
+perfil de vendas, que é o comportamento desejável.
+
+Fica anotado porque é o tipo de coisa que, se aparecer como "o agente ignorou meu
+pedido uma vez", ninguém conectaria à posição de um nó.
+
 ## Ideia futura: memória de longo prazo por cliente
 
 **Sem código.** Registrada em 11/08/2026 para não se perder.

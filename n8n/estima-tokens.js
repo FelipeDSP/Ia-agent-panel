@@ -71,16 +71,33 @@
 // Antes desta calibracao o mesmo calculo errava de 1,5x a 10x.
 // ============================================================================
 
-const agent = $('AI Agent').item.json;
+// A saida do agent vem por $input, NAO por $('AI Agent'): a fatia 3 tem DOIS
+// agents e so um executa. Referenciar por nome quebraria no perfil que nao
+// casasse com o nome escrito — e o `$input` nao precisa saber de quem veio.
+const agent = $input.first().json;
 const textoSaida = agent?.output ?? '';
 
-const WRAPPER = __WRAPPER__;
+// Qual perfil executou. Vem do `Tools Ativas`, que e nome fixo mas SEMPRE roda:
+// esta antes do Switch, no caminho unico. Fallback `basico` de proposito — aqui
+// e MEDICAO, e errar cobrando a menos e melhor que a mais. (No roteamento o
+// sinal e oposto: la nao ha fallback, ver o no `Vende?`.)
+let perfil = 'basico';
+try {
+  perfil = $('Tools Ativas').item.json.perfil ?? 'basico';
+} catch (e) { /* sem o no no contexto: assume basico */ }
 
-// Schemas das ferramentas: contam como prompt token e nao dao para derivar do
-// texto. MEDIDO, nao chutado — ver o bloco de calibracao no fim deste cabecalho.
-// 622 cobre as 7 tools atuais, ~89 por tool. Ao adicionar ou remover tool, o
-// numero muda: 3 tools dao ~266.
-const TOKENS_FERRAMENTAS = 622;
+// Os dois wrappers e os dois S saem do gerador, da mesma fonte do System Message
+// de cada agent. `npm run n8n:sincronia` falha se divergirem.
+const WRAPPERS = __WRAPPERS__;
+const S_POR_PERFIL = __PERFIS_S__;
+
+const WRAPPER = WRAPPERS[perfil] ?? WRAPPERS.basico;
+
+// Schemas das ferramentas, POR PERFIL — cada agent carrega um conjunto diferente
+// e custa diferente. 622 (7 tools) foi MEDIDO pelo metodo das duas equacoes;
+// 266 (3 tools) ainda e regra de tres e sera medido assim que houver execucao no
+// perfil basico. Com `r` ja conhecido, uma execucao basta para resolver.
+const TOKENS_FERRAMENTAS = S_POR_PERFIL[perfil] ?? S_POR_PERFIL.basico;
 
 // Crescimento medio do prompt a cada round-trip de tool (resultado da tool +
 // mensagem do assistente). Calibrado contra as 3 execucoes reais: com 55, a
@@ -180,5 +197,6 @@ return [{
     _chamadas: real ? real.chamadas : chamadas,
     _estimado_entrada: estimado_entrada,
     _historico_chars: historicoChars,
+    _perfil: perfil,
   },
 }];
