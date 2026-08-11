@@ -1,0 +1,151 @@
+// ============================================================================
+// ESTIMA TOKENS — corpo do no Code que roda logo apos o "AI Agent"
+//
+// ESTE ARQUIVO E A FONTE. O JSON do workflow recebe uma copia injetada por
+// scripts/gerar-principal-vendas.mjs. Editar o no pela UI do n8n e perder a
+// alteracao no proximo `node scripts/gerar-principal-vendas.mjs` — edite aqui.
+//
+// O motivo de existir como arquivo: ate 2026-08-11 este codigo vivia como string
+// dentro do JSON do workflow, onde nao da para revisar em diff nem rodar lint. O
+// bug de multiplicidade abaixo passou meses invisivel em parte por isso.
+//
+// ----------------------------------------------------------------------------
+// O QUE ESTE NO CALCULA, E O ERRO QUE ELE TINHA
+// ----------------------------------------------------------------------------
+// Ele estima os tokens de uma interacao para ratear custo entre clientes. Nao e
+// fatura — mas precisa ser CONSISTENTE entre tenants, senao o rateio mente.
+//
+// Medido em 2026-08-11 contra execucoes reais, ele NAO era consistente:
+//
+//   execucao   chamadas ao modelo   real (soma)   registrado   erro
+//   3948813            1                1554         1045       1,5x
+//   3948994            2                3828         1045       3,7x
+//   3948818            6               10481         1049      10,0x
+//
+// TRES causas, em ordem de tamanho:
+//
+// 1. MULTIPLICIDADE (a de 10x). Ele contava UMA chamada ao modelo. Mas cada tool
+//    call e outro round-trip que reenvia o prompt inteiro: a venda fez 6. E o
+//    erro cresce com o uso de ferramenta — ou seja, quem vende era subcobrado
+//    contra quem so conversa. Corrigido aqui.
+//
+// 2. BASE SUBESTIMADA. A primeira chamada real custou 1554 tokens; a estimativa
+//    de texto + TOKENS_FERRAMENTAS deu 1045. Faltam ~509, que sao os schemas das
+//    tools (a constante esta velha) mais a janela de memoria do Redis, que o no
+//    nao enxerga. NAO corrigido ainda — depende da sonda abaixo.
+//
+// 3. MEMORIA INVISIVEL. Duas execucoes com conteudo de memoria diferente
+//    estimaram o MESMO valor (1045), enquanto o real diferiu em 306 tokens.
+//
+// ----------------------------------------------------------------------------
+// A SONDA
+// ----------------------------------------------------------------------------
+// O numero exato existe: `tokenUsageEstimate` no sub-no "OpenAI Chat Model", uma
+// entrada por chamada. A tentativa anterior concluiu que um no Code no fluxo
+// principal nao alcanca sub-no. Isso e testado aqui de novo, com varias formas
+// de acesso e dentro de try/catch — se alguma funcionar, o valor exato substitui
+// toda a estimativa e as tres causas acima somem de uma vez.
+//
+// A sonda nunca derruba o fluxo: qualquer falha cai no caminho estimado, e o
+// motivo vai em `_sonda` para a proxima execucao contar o que aconteceu.
+// ============================================================================
+
+const agent = $('AI Agent').item.json;
+const textoSaida = agent?.output ?? '';
+
+const WRAPPER = __WRAPPER__;
+
+// Schemas das ferramentas: contam como prompt token e nao dao para derivar do
+// texto. 320 e PROVISORIO e SABIDAMENTE BAIXO — a medicao de 11/08 aponta ~830
+// somando memoria. Nao foi subido porque nao da para separar "schema" de
+// "memoria" com os dados que temos, e chutar o numero certo importa menos que
+// saber que ele esta errado. A sonda resolve, ou a proxima medicao calibra.
+const TOKENS_FERRAMENTAS = 320;
+
+// Crescimento medio do prompt a cada round-trip de tool (resultado da tool +
+// mensagem do assistente). Calibrado contra as 3 execucoes reais: com 55, a
+// formula errou 0,0% / -1,4% / 0,0%.
+const CRESCIMENTO_POR_CHAMADA = 55;
+
+// ~4 chars/token. Portugues acentuado rende um pouco mais, entao e conservador.
+const emTokens = (t) => Math.ceil((t || '').length / 4);
+
+// ----------------------------------------------------------------------------
+// 1. Sonda: o numero exato esta alcancavel?
+// ----------------------------------------------------------------------------
+let real = null;
+let sonda = 'nao_tentada';
+
+const formas = [
+  ['all', () => $('OpenAI Chat Model').all().map((i) => i.json)],
+  ['first', () => [$('OpenAI Chat Model').first().json]],
+];
+
+for (const [nome, fn] of formas) {
+  try {
+    const itens = fn();
+    const usos = (itens || [])
+      .map((j) => j?.tokenUsageEstimate ?? j?.tokenUsage ?? null)
+      .filter(Boolean);
+    if (usos.length > 0) {
+      real = {
+        chamadas: usos.length,
+        entrada: usos.reduce((a, u) => a + (u.promptTokens || 0), 0),
+        saida: usos.reduce((a, u) => a + (u.completionTokens || 0), 0),
+      };
+      sonda = `ok:${nome}`;
+      break;
+    }
+    sonda = `vazio:${nome}`;
+  } catch (e) {
+    sonda = `erro:${nome}:${String(e && e.message).slice(0, 60)}`;
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 2. Caminho estimado, com multiplicidade
+// ----------------------------------------------------------------------------
+let systemPrompt = '';
+try {
+  systemPrompt = $('Resolve Tenant').item.json.system_prompt ?? '';
+} catch (e) { /* sem tenant no contexto: segue sem o system_prompt */ }
+
+let mensagens = '';
+try {
+  const lista = $('Lista Depois').item.json.lista_depois;
+  mensagens = Array.isArray(lista) ? lista.join('\n') : (lista ?? '');
+} catch (e) {
+  mensagens = agent?.input ?? '';
+}
+
+// Quantas vezes o modelo foi chamado. `intermediateSteps` exige
+// `returnIntermediateSteps: true` nas opcoes do AI Agent — sem isso caimos em 1,
+// que e o comportamento antigo (e o erro antigo).
+const passos = Array.isArray(agent?.intermediateSteps) ? agent.intermediateSteps.length : 0;
+const chamadas = 1 + passos;
+
+const base = emTokens(WRAPPER + systemPrompt + mensagens) + TOKENS_FERRAMENTAS;
+
+// Cada chamada reenvia o prompt inteiro; o historico cresce a cada round-trip.
+const estimado_entrada = chamadas * base + CRESCIMENTO_POR_CHAMADA * ((chamadas * (chamadas - 1)) / 2);
+const estimado_saida = emTokens(textoSaida);
+
+// ----------------------------------------------------------------------------
+// 3. Real quando der, estimado quando nao
+// ----------------------------------------------------------------------------
+const tokens_entrada = real ? real.entrada : estimado_entrada;
+const tokens_saida = real ? real.saida : estimado_saida;
+
+return [{
+  json: {
+    output: textoSaida,
+    tokens_entrada,
+    tokens_saida,
+    _fonte_tokens: real ? 'api_real' : 'estimativa_com_multiplicidade',
+    // Diagnostico: some daqui quando a sonda tiver dado veredicto e o caminho
+    // estiver decidido. Ate la, e o que responde se da para parar de estimar.
+    _sonda: sonda,
+    _chamadas: real ? real.chamadas : chamadas,
+    _estimado_entrada: estimado_entrada,
+  },
+}];

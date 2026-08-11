@@ -72,30 +72,27 @@ const novoFixo = fixo.replace('## Regras gerais', SECOES_VENDAS + '## Regras ger
 
 agente.parameters.options.systemMessage = '=' + novoFixo + cauda;
 
-// O WRAPPER e o mesmo texto, sem o '=' e sem a expressao.
+// O corpo do no Estima Tokens vem de n8n/estima-tokens.js — arquivo real, que da
+// para revisar em diff e rodar lint. Antes vivia como string dentro do JSON, e
+// foi em parte por isso que o bug de multiplicidade (erro de 10x no rateio)
+// passou meses invisivel.
 const est = no('Estima Tokens');
-let code = est.parameters.jsCode;
-const ini = code.indexOf('const WRAPPER = `');
-const fim = code.indexOf('`;', ini);
-if (ini < 0 || fim < 0) throw new Error('WRAPPER nao encontrado no Estima Tokens');
+const corpo = fs.readFileSync(path.join(RAIZ, 'n8n', 'estima-tokens.js'), 'utf8');
+
+if (!corpo.includes('__WRAPPER__')) {
+  throw new Error('n8n/estima-tokens.js sem o marcador __WRAPPER__ — o gerador nao tem onde injetar');
+}
 
 // Escapa o que quebraria o template literal.
 const paraLiteral = (s) => s.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
-code = code.slice(0, ini) + 'const WRAPPER = `' + paraLiteral(novoFixo) + code.slice(fim);
+let code = corpo.replace('__WRAPPER__', '`' + paraLiteral(novoFixo) + '`');
 
-// ---------------------------------------------------------------------------
-// 3. TOKENS_FERRAMENTAS — provisorio, para o Felipe recalibrar medindo
-// ---------------------------------------------------------------------------
-// 110 cobria 3 tools (~37 por schema). As 4 de venda tem mais parametros que a
-// media, entao a estimativa e conservadora. NAO E MEDICAO: o valor real sai do
-// `tokenUsageEstimate` do sub-no OpenAI Chat Model, comparando uma execucao
-// antes e uma depois. Enquanto nao for medido, o rateio de custo erra para menos.
-const TOKENS_PROVISORIO = 320;
-code = code.replace(
-  /const TOKENS_FERRAMENTAS = \d+;/,
-  `const TOKENS_FERRAMENTAS = ${TOKENS_PROVISORIO}; // PROVISORIO — recalibrar medindo (ver runbook)`,
-);
 est.parameters.jsCode = code;
+
+// `returnIntermediateSteps` e o que faz o AI Agent devolver os tool calls no
+// output — sem isso o Estima Tokens nao tem como saber quantas vezes o modelo
+// foi chamado, e volta a contar uma so (o erro de 10x).
+agente.parameters.options = { ...agente.parameters.options, returnIntermediateSteps: true };
 
 // ---------------------------------------------------------------------------
 // 4. Janela de memoria: 5 (default) -> 20
@@ -177,20 +174,31 @@ const TOOLS = [
   },
 ];
 
-// Idempotencia: remove versoes anteriores destes nos.
+// Idempotencia: remove versoes anteriores destes nos — PRESERVANDO o workflowId
+// real. Depois que os sub-workflows sao importados, o ID deixa de ser
+// placeholder; reexecutar o gerador nao pode desfazer isso e mandar o agente
+// chamar um workflow inexistente em producao (foi o que aconteceu no primeiro
+// import da fatia 2).
 const nomesVenda = new Set(TOOLS.map((t) => t.nome));
+const idsReais = new Map();
+for (const n of w.nodes) {
+  if (!nomesVenda.has(n.name)) continue;
+  const v = n.parameters?.workflowId?.value;
+  if (typeof v === 'string' && v && !v.startsWith('SUBSTITUIR_ID_')) idsReais.set(n.name, v);
+}
 w.nodes = w.nodes.filter((n) => !nomesVenda.has(n.name));
 for (const nome of nomesVenda) delete w.connections[nome];
 
 for (const t of TOOLS) {
+  const idFinal = idsReais.get(t.nome) ?? t.placeholder;
   w.nodes.push({
     parameters: {
       description: t.description,
       workflowId: {
         __rl: true,
-        value: t.placeholder,
+        value: idFinal,
         mode: 'list',
-        cachedResultUrl: `/workflow/${t.placeholder}`,
+        cachedResultUrl: `/workflow/${idFinal}`,
         cachedResultName: t.arquivo,
       },
       workflowInputs: {
@@ -217,5 +225,5 @@ console.log('agente-principal.json atualizado:');
 console.log('  + 4 nos toolWorkflow (workflowId com placeholder SUBSTITUIR_ID_*)');
 console.log('  + secoes de vendas no System Message do AI Agent');
 console.log('  = WRAPPER do Estima Tokens reescrito a partir do MESMO texto');
-console.log(`  = TOKENS_FERRAMENTAS -> ${TOKENS_PROVISORIO} (provisorio, recalibrar medindo)`);
+console.log(`  = corpo do Estima Tokens injetado de n8n/estima-tokens.js`);
 console.log('  = contextWindowLength do Redis Chat Memory -> 20');

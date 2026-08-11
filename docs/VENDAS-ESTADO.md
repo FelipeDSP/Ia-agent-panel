@@ -423,3 +423,62 @@ pedido fechado manualmente antes de plugar dinheiro.
 - Descobrir se a Acqua ainda usa o produto (zero tráfego desde 24/07; token não
   foi revogado, o que favorece a hipótese de webhook parado)
 - `contextWindowLength` da memória Redis: subir de 5 para ~20 antes de vendas
+
+## Rateio de custo: o `Estima Tokens` estava errado em até 10x
+
+Medido em 11/08/2026 contra execuções reais, ao fechar a fatia 2.
+
+```
+execução   chamadas ao modelo   real (soma)   registrado   erro
+3948813            1                1554         1045       1,5x
+3948994            2                3828         1045       3,7x
+3948818            6               10481         1049      10,0x   ← a venda
+```
+
+**O erro não era uniforme entre tenants** — e é isso que o quebra. O próprio nó
+diz que não é fatura, é estimativa *consistente* para ratear. Mas quem usa
+ferramenta era subcobrado 10x contra quem só conversa, e vendas multiplica
+justamente o uso de ferramenta.
+
+### Três causas
+
+**1. Multiplicidade — a de 10x.** O nó contava UMA chamada ao modelo. Cada tool
+call é outro round-trip que reenvia o prompt inteiro; a venda fez seis.
+**Corrigido.** A aritmética `K × base + 55 × K(K−1)/2` foi calibrada contra as
+três execuções e errou 0,0% / −1,4% / 0,0%. `K` vem de `intermediateSteps`, que
+exigiu ligar `returnIntermediateSteps` no AI Agent.
+
+**2. Base subestimada.** A primeira chamada real custou 1554 tokens; a estimativa
+deu 1045. Faltam ~509, que são os schemas das tools (`TOKENS_FERRAMENTAS = 320`
+está velho, aponta para ~830) mais a janela do Redis. **Não corrigido** — não dá
+para separar "schema" de "memória" com os dados que temos.
+
+**3. Memória invisível.** Duas execuções com conteúdo de memória diferente
+estimaram o mesmo 1045, enquanto o real diferiu em 306 tokens. E a janela acabou
+de ir de 5 para 20.
+
+### A constante fica em 320, de propósito
+
+Número errado que se sabe errado é melhor que número errado que parece certo.
+Subir para 830 seria chute com aparência de medição, e não sobreviveria à fatia 3
+de qualquer forma — lá o wrapper passa a variar por perfil.
+
+### A sonda
+
+O valor exato existe: `tokenUsageEstimate` no sub-nó `OpenAI Chat Model`, **uma
+entrada por chamada** (ele não agrega — foi a primeira hipótese testada e
+descartada). A questão é se um nó Code no fluxo principal alcança sub-nó.
+
+O nó agora tenta duas formas de acesso dentro de `try/catch` e reporta o
+resultado em `_sonda`. **Basta uma conversa real para saber.** Se funcionar, o
+número exato substitui a estimativa e as três causas somem de uma vez.
+
+Campos de diagnóstico no output: `_fonte_tokens`, `_sonda`, `_chamadas`,
+`_estimado_entrada`. Saem quando a sonda der veredicto.
+
+### O corpo do nó virou arquivo
+
+`n8n/estima-tokens.js`. Antes vivia como string dentro do JSON do workflow, onde
+não dá para revisar em diff nem rodar lint — e foi em parte por isso que o erro
+de multiplicidade passou meses invisível. O gerador injeta, e o `__WRAPPER__` é
+substituído pelo mesmo texto do System Message.
