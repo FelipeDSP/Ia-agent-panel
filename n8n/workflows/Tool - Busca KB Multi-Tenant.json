@@ -1,0 +1,183 @@
+{
+  "name": "Tool - Busca KB Multi-Tenant",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tenant_id"
+            },
+            {
+              "name": "pergunta"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -592,
+        16
+      ],
+      "id": "8eab0122-dcbb-4f50-8771-8bb57ef85dc5",
+      "name": "Quando executado por outro workflow"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: 'text-embedding-3-small', input: $json.pergunta }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -368,
+        16
+      ],
+      "id": "fef33209-b90c-49e5-ba2c-cab9ccda3e0c",
+      "name": "Gera Embedding",
+      "credentials": {
+        "openAiApi": {
+          "id": "B4TZHIczm0tpk2wS",
+          "name": "OpenAi Chatyou"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// A API retorna o vetor como array JS.\n// O Postgres espera o literal de vetor: '[0.1,0.2,...]'\nconst vetor = $json.data?.[0]?.embedding;\n\nif (!Array.isArray(vetor) || vetor.length !== 1536) {\n  throw new Error(`Embedding invalido: esperado array de 1536, recebido ${vetor?.length ?? typeof vetor}`);\n}\n\nreturn [{\n  json: {\n    tenant_id: $('Quando executado por outro workflow').first().json.tenant_id,\n    embedding_literal: '[' + vetor.join(',') + ']'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        16
+      ],
+      "id": "c18abaa7-dc51-4544-8ce7-6536b42cb107",
+      "name": "Formata Vetor"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT text, similarity\nFROM public.api_n8n_buscar_kb($1::uuid, $2::extensions.vector, 5, '{}'::jsonb)\nORDER BY similarity DESC;",
+        "options": {
+          "queryReplacement": "={{ [ $json.tenant_id, $json.embedding_literal ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        80,
+        16
+      ],
+      "id": "6aaeb843-e2d3-4ca3-bdb6-91e55f691ec3",
+      "name": "Busca Vetorial",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consolida os trechos num unico texto para o LLM.\n// Retorna string vazia explicita quando nao ha resultado, para o\n// agente saber que precisa transferir em vez de inventar resposta.\nconst itens = $input.all().map(i => i.json).filter(r => r && r.text);\n\nif (itens.length === 0) {\n  return [{ json: { resposta: 'NENHUM_RESULTADO: a base de conhecimento não contém informação sobre esta pergunta.' } }];\n}\n\nconst texto = itens\n  .map((r, i) => `[Trecho ${i + 1} | relevância ${Number(r.similarity).toFixed(3)}]\\n${r.text}`)\n  .join('\\n\\n---\\n\\n');\n\nreturn [{ json: { resposta: texto } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        16
+      ],
+      "id": "5b051bb1-440a-493a-b802-41cd0d8cb23f",
+      "name": "Consolida Resultado"
+    }
+  ],
+  "pinData": {
+    "Quando executado por outro workflow": [
+      {
+        "json": {
+          "tenant_id": "ebef4715-1a05-41d0-ad62-929b7fefa887",
+          "pergunta": "Quais são os preços do restaurante?"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Quando executado por outro workflow": {
+      "main": [
+        [
+          {
+            "node": "Gera Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gera Embedding": {
+      "main": [
+        [
+          {
+            "node": "Formata Vetor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formata Vetor": {
+      "main": [
+        [
+          {
+            "node": "Busca Vetorial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Vetorial": {
+      "main": [
+        [
+          {
+            "node": "Consolida Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "771a5489-537e-4fb9-8bc3-9c7be62ea009",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9ffb0b87bfe505b98520e5d51b10973dd4da506af73cbafd10b2aa5c893d4cf1"
+  },
+  "id": "oAScbGA9K7jMZIP0",
+  "tags": []
+}

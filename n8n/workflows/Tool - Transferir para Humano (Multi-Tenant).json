@@ -1,0 +1,392 @@
+{
+  "name": "Tool - Transferir para Humano (Multi-Tenant)",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tenant_id"
+            },
+            {
+              "name": "resumo"
+            },
+            {
+              "name": "conversation_id",
+              "type": "number"
+            },
+            {
+              "name": "account_id",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1024,
+        -736
+      ],
+      "id": "b37ef655-3e6f-4fe1-91ed-c8a8b890a97c",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT chatwoot_url, chatwoot_token, tool_ativa, config\nFROM public.api_n8n_config_tool($1::uuid, 'transferir_humano');",
+        "options": {
+          "queryReplacement": "={{ [ $json.tenant_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -816,
+        -736
+      ],
+      "id": "cc42c48e-1f25-43c3-904c-35748c1bf4f6",
+      "name": "Busca Config",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// Avalia horario de atendimento a partir da config do tenant.\n// Nada de fuso ou dia da semana hardcoded: tudo vem do banco.\n// ============================================================\n\nconst cfg = $json.config || {};\nconst horario = cfg.horario || {};\nconst notificacao = cfg.notificacao || { canal: 'nenhum' };\n\nconst tz = horario.timezone || 'America/Sao_Paulo';\nconst diasPermitidos = Array.isArray(horario.dias_semana) ? horario.dias_semana : [1,2,3,4,5];\nconst horaInicio = Number.isFinite(horario.hora_inicio) ? horario.hora_inicio : 8;\nconst horaFim = Number.isFinite(horario.hora_fim) ? horario.hora_fim : 18;\n\n// Intl resolve o fuso corretamente, inclusive horario de verao.\n// Calculo manual de offset (como no fluxo antigo) quebra 2x por ano.\nconst agora = new Date();\nconst fmt = new Intl.DateTimeFormat('en-US', {\n  timeZone: tz,\n  weekday: 'short',\n  hour: 'numeric',\n  hour12: false\n});\n\nconst partes = Object.fromEntries(\n  fmt.formatToParts(agora).map(p => [p.type, p.value])\n);\n\nconst mapaDias = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };\nconst diaSemana = mapaDias[partes.weekday];\nconst hora = parseInt(partes.hour, 10);\n\nconst diaOk = diasPermitidos.includes(diaSemana);\nconst horaOk = hora >= horaInicio && hora < horaFim;\nconst disponivel = diaOk && horaOk;\n\nconst entrada = $('When Executed by Another Workflow').first().json;\n\nreturn [{\n  json: {\n    disponivel,\n    tool_ativa: $json.tool_ativa !== false,\n    chatwoot_url: $json.chatwoot_url,\n    chatwoot_token: $json.chatwoot_token,\n    notificacao,\n    tenant_id: entrada.tenant_id,\n    resumo: entrada.resumo,\n    conversation_id: entrada.conversation_id,\n    account_id: entrada.account_id,\n    debug: { tz, diaSemana, hora, diaOk, horaOk }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        -736
+      ],
+      "id": "483107b1-7c1d-417a-9ed6-5c76f42309a8",
+      "name": "Avalia Horario"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "h1",
+              "leftValue": "={{ $json.tool_ativa }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "h2",
+              "leftValue": "={{ $json.disponivel }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -368,
+        -736
+      ],
+      "id": "f9629e04-09e2-4c14-9873-0e502ec00b73",
+      "name": "Pode Transferir?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.chatwoot_url }}/api/v1/accounts/{{ $json.account_id }}/conversations/{{ $json.conversation_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $json.chatwoot_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ content: '🤖 *Resumo do atendimento via bot:*\\n\\n' + $json.resumo, message_type: 'outgoing', private: true }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -144,
+        -864
+      ],
+      "id": "b0fee967-b479-410a-a882-540738a981d5",
+      "name": "Nota Privada no Chatwoot"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_definir_status_conversa($1::uuid, $2::bigint, 'pausado') AS status;",
+        "options": {
+          "queryReplacement": "={{ [ $('Avalia Horario').item.json.tenant_id, $('Avalia Horario').item.json.conversation_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        80,
+        -864
+      ],
+      "id": "b11a6631-7853-4f16-ae72-df883abc8b48",
+      "name": "Pausa Agente",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "n1",
+              "leftValue": "={{ $('Avalia Horario').item.json.notificacao.canal }}",
+              "rightValue": "waha",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        304,
+        -864
+      ],
+      "id": "6bdd6168-6c9f-4c76-9b3d-2f47f1237506",
+      "name": "Notifica por WAHA?"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Avalia Horario').item.json.notificacao.sessao }}",
+        "chatId": "={{ $('Avalia Horario').item.json.notificacao.destino }}",
+        "text": "=🔔 *Novo atendimento solicitado!*\n\n💬 *Assunto:* {{ $('Avalia Horario').item.json.resumo }}\n\nO cliente solicita atendimento humano.",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        512,
+        -960
+      ],
+      "id": "18325406-ac7a-4df7-9b39-c2d128988be1",
+      "name": "Notifica WAHA",
+      "credentials": {
+        "wahaApi": {
+          "id": "gx2yKmYvYBBJ2Yhl",
+          "name": "WAHA account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok-001",
+              "name": "resultado",
+              "value": "=TRANSFERIDO: um atendente humano foi notificado e assumirá a conversa. Informe ao cliente que a transferência foi realizada e que aguarde o atendimento.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        736,
+        -864
+      ],
+      "id": "07324a82-50d1-42be-b47c-be99b8fa3a54",
+      "name": "Retorno Sucesso"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fora-001",
+              "name": "resultado",
+              "value": "=FORA_DO_HORARIO: não há atendente disponível neste momento. Informe ao cliente o horário de atendimento e ofereça ajuda com outras dúvidas enquanto isso.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -144,
+        -576
+      ],
+      "id": "ab89f32d-0f30-4af2-bed2-bb088e22e40e",
+      "name": "Fora do Horario"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Busca Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Config": {
+      "main": [
+        [
+          {
+            "node": "Avalia Horario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avalia Horario": {
+      "main": [
+        [
+          {
+            "node": "Pode Transferir?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pode Transferir?": {
+      "main": [
+        [
+          {
+            "node": "Nota Privada no Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fora do Horario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nota Privada no Chatwoot": {
+      "main": [
+        [
+          {
+            "node": "Pausa Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pausa Agente": {
+      "main": [
+        [
+          {
+            "node": "Notifica por WAHA?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notifica por WAHA?": {
+      "main": [
+        [
+          {
+            "node": "Notifica WAHA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retorno Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notifica WAHA": {
+      "main": [
+        [
+          {
+            "node": "Retorno Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1b68648c-c82f-49f1-ad7b-1f64c4b98b82",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9ffb0b87bfe505b98520e5d51b10973dd4da506af73cbafd10b2aa5c893d4cf1"
+  },
+  "id": "N902wAbxRd8wHFUv",
+  "tags": []
+}

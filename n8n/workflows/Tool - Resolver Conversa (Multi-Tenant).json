@@ -1,0 +1,157 @@
+{
+  "name": "Tool - Resolver Conversa (Multi-Tenant)",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tenant_id"
+            },
+            {
+              "name": "conversation_id",
+              "type": "number"
+            },
+            {
+              "name": "account_id",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        384,
+        608
+      ],
+      "name": "When Executed by Another Workflow",
+      "id": "511f3976-dfc6-4af7-b4f3-f8c16468d5bb"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT chatwoot_url, chatwoot_token, tool_ativa, config\nFROM public.api_n8n_config_tool($1::uuid, 'resolver_conversa');",
+        "options": {
+          "queryReplacement": "={{ [ $json.tenant_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        608,
+        608
+      ],
+      "name": "Busca Config",
+      "id": "bef1fbd4-019b-4d34-8130-46126571e074",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Busca Config').item.json.chatwoot_url }}/api/v1/accounts/{{ $('When Executed by Another Workflow').item.json.account_id }}/conversations/{{ $('When Executed by Another Workflow').item.json.conversation_id }}/toggle_status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $('Busca Config').item.json.chatwoot_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ status: 'resolved' }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        832,
+        608
+      ],
+      "name": "Resolve no Chatwoot",
+      "id": "9dbd8b08-b486-4364-975b-1a614d266400"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok-001",
+              "name": "resultado",
+              "type": "string",
+              "value": "=Conversa finalizada e marcada como resolvida. Despeca-se do cliente de forma cordial."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1072,
+        608
+      ],
+      "name": "Retorno Sucesso",
+      "id": "fba18eb5-7b06-4eba-91c3-4c9a361030ad"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Busca Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Config": {
+      "main": [
+        [
+          {
+            "node": "Resolve no Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve no Chatwoot": {
+      "main": [
+        [
+          {
+            "node": "Retorno Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "efa043c7-bc75-4a29-b621-68821da417bf",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9ffb0b87bfe505b98520e5d51b10973dd4da506af73cbafd10b2aa5c893d4cf1"
+  },
+  "id": "lT5oxXJKulPdlPPR",
+  "tags": []
+}
