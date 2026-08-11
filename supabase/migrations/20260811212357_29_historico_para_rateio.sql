@@ -37,7 +37,7 @@
 -- DROP + CREATE porque `create or replace` nao aceita mudanca no RETURNS TABLE.
 -- Dentro de transacao: chamada concorrente espera o lock em vez de falhar.
 --
--- Rollback: 20260811230000_29_historico_para_rateio_rollback.sql
+-- Rollback: 20260811212357_29_historico_para_rateio_rollback.sql
 
 begin;
 
