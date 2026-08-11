@@ -115,8 +115,12 @@ preço.
 ### Foto de produto — transporte VERIFICADO, implementação junto com `variacoes`
 
 Testado em 11/08/2026 contra o sandbox real (ChatYou, `chatwoot_account_id = 1`,
-inbox "WA - Testes", conversa 1864). **Nada implementado** — a decisão de modelo
-espera `variacoes`, pelo motivo no fim desta seção.
+inbox "WA - Testes", conversa 1864), com recebimento confirmado no aparelho.
+**Nada implementado** — a decisão de modelo espera `variacoes`, pelo motivo no
+fim desta seção.
+
+**Assunto fechado por ora.** O transporte está resolvido e não precisa de mais
+investigação para começar a fatia 2.
 
 #### O que o teste respondeu
 
@@ -139,7 +143,16 @@ link. Não há TTL a calibrar porque não há URL nossa em jogo.
 **3. Multipart funciona.** `attachments[]` com os bytes, `content-type`
 `multipart/form-data`: **200**, anexo criado com `file_type: "image"`.
 
-**4. E o achado que decide a arquitetura: o Chatwoot RE-HOSPEDA a imagem.** O
+**4. No WhatsApp chega como FOTO, com a legenda no mesmo balão.** Confirmado no
+aparelho: renderizou como preview inline, não como documento/arquivo, e o
+`content` da mensagem veio junto da imagem, num balão só, com timestamp único.
+
+Consequência para a fatia 2: **a tool de foto devolve UMA mensagem com imagem +
+legenda.** Não há duas mensagens para ordenar, nem risco de a legenda chegar
+antes ou depois da foto — que seria o problema clássico e é o motivo de a
+pergunta ter sido feita.
+
+**5. E o achado que decide a arquitetura: o Chatwoot RE-HOSPEDA a imagem.** O
 `data_url` que ele devolve aponta para o próprio Chatwoot:
 
 ```
@@ -159,12 +172,13 @@ Nenhuma requisição do Chatwoot, do WhatsApp ou de qualquer origem externa.
 - **O fluxo é:** n8n baixa do Storage (URL assinada curta) → reenvia ao Chatwoot
   em multipart → o Chatwoot hospeda e entrega ao WhatsApp. Duas transferências
   de bytes por foto enviada, o que importa para produto com várias fotos.
-- **Falta medir** o custo dessas duas transferências com imagem de tamanho real
-  (o teste usou 1,7 KB). Foto de cardápio tem centenas de KB; vale checar limite
-  de tamanho do Chatwoot e o tempo do round-trip antes de mandar 3 fotos numa
-  resposta.
-- **Falta confirmar** se o WhatsApp entrega legenda junto da imagem ou exige
-  mensagem separada — muda o texto que a tool de venda devolve.
+- **Adiado de propósito:** medir o custo das duas transferências com imagem de
+  tamanho real. O teste usou 1,7 KB e foto de cardápio tem centenas de KB, mas
+  medir agora seria medir a premissa errada — **vamos querer redimensionar no
+  upload de qualquer jeito**, então o peso que trafega será o da imagem já
+  reduzida, não o do arquivo que o cliente subiu. A medição (limite de tamanho
+  do Chatwoot, tempo de round-trip, quantas fotos cabem numa resposta) entra
+  quando foto virar prioridade, junto com a decisão de redimensionamento.
 
 #### Storage
 
