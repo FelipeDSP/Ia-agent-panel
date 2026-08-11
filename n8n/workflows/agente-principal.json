@@ -1092,9 +1092,9 @@
         "description": "Consulta o catálogo do cliente e devolve produtos com preço, unidade e id. Use SEMPRE antes de falar preço ou oferecer item. Nunca invente valores.",
         "workflowId": {
           "__rl": true,
-          "value": "SUBSTITUIR_ID_CONSULTAR_CATALOGO",
+          "value": "H8jRRLmwBzxshp9w",
           "mode": "list",
-          "cachedResultUrl": "/workflow/SUBSTITUIR_ID_CONSULTAR_CATALOGO",
+          "cachedResultUrl": "/workflow/H8jRRLmwBzxshp9w",
           "cachedResultName": "Tool - Consultar Catalogo (Multi-Tenant)"
         },
         "workflowInputs": {
@@ -1142,9 +1142,9 @@
         "description": "Monta o pedido do cliente. acao=adicionar (com produto_id, quantidade e observacao), acao=remover (com produto_id) ou acao=ver. Devolve sempre o pedido inteiro com o total já calculado.",
         "workflowId": {
           "__rl": true,
-          "value": "SUBSTITUIR_ID_GERENCIAR_PEDIDO",
+          "value": "5rMg40Lagy3OaIo7",
           "mode": "list",
-          "cachedResultUrl": "/workflow/SUBSTITUIR_ID_GERENCIAR_PEDIDO",
+          "cachedResultUrl": "/workflow/5rMg40Lagy3OaIo7",
           "cachedResultName": "Tool - Gerenciar Pedido (Multi-Tenant)"
         },
         "workflowInputs": {
@@ -1232,9 +1232,9 @@
         "description": "Fecha o pedido em aberto e devolve o numero e o resumo. Use SOMENTE apos o cliente confirmar que o pedido esta completo. Depois de fechado nao aceita alteracao.",
         "workflowId": {
           "__rl": true,
-          "value": "SUBSTITUIR_ID_FECHAR_PEDIDO",
+          "value": "bJlew3rtuV4gRgzv",
           "mode": "list",
-          "cachedResultUrl": "/workflow/SUBSTITUIR_ID_FECHAR_PEDIDO",
+          "cachedResultUrl": "/workflow/bJlew3rtuV4gRgzv",
           "cachedResultName": "Tool - Fechar Pedido (Multi-Tenant)"
         },
         "workflowInputs": {
@@ -1292,9 +1292,9 @@
         "description": "Cancela o pedido em aberto e libera a conversa para um novo. Confirme com o cliente antes: o carrinho e perdido.",
         "workflowId": {
           "__rl": true,
-          "value": "SUBSTITUIR_ID_CANCELAR_PEDIDO",
+          "value": "rXF7LJmqNBZDUg4b",
           "mode": "list",
-          "cachedResultUrl": "/workflow/SUBSTITUIR_ID_CANCELAR_PEDIDO",
+          "cachedResultUrl": "/workflow/rXF7LJmqNBZDUg4b",
           "cachedResultName": "Tool - Cancelar Pedido (Multi-Tenant)"
         },
         "workflowInputs": {
