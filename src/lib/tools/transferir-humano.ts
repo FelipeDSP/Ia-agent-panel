@@ -114,18 +114,18 @@ function inteiro(fd: FormData, campo: string): number | null {
 }
 
 /**
- * Valida o que o CLIENTE edita. Não inclui `sessao` (é da agência); o server
- * mescla com o que já está gravado.
+ * Valida o que o CLIENTE edita no formulário de transferência. Não inclui
+ * `sessao` (é da agência); o server mescla com o que já está gravado.
+ *
+ * Também não inclui `ativo`: ligar/desligar migrou para o switch de "Meus
+ * módulos", que é o único escritor daquela coluna. Ver `alternarModulo`.
  */
 export function validarTransferirCliente(fd: FormData): Resultado<{
-  ativo: boolean;
   horario: Horario;
   canal: 'waha' | 'nenhum';
   destino?: string;
 }> {
   const erros: Record<string, string> = {};
-
-  const ativo = fd.get('ativo') === 'on' || fd.get('ativo') === 'true';
 
   const timezone = String(fd.get('timezone') ?? '').trim();
   if (!(TIMEZONES_BR as readonly string[]).includes(timezone)) {
@@ -175,7 +175,6 @@ export function validarTransferirCliente(fd: FormData): Resultado<{
   return {
     ok: true,
     valor: {
-      ativo,
       horario: {
         timezone,
         dias_semana,

@@ -1,5 +1,4 @@
 import { Alert } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import {
   Card,
   CardContent,
@@ -19,6 +18,7 @@ import {
 
 import { FormularioConfig } from './formulario';
 import { FormularioTransferir } from './formulario-transferir';
+import { ListaModulos } from './lista-modulos';
 
 export default async function PaginaConfiguracoes() {
   const usuario = await exigirTenantAdmin();
@@ -96,31 +96,7 @@ export default async function PaginaConfiguracoes() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {modulos.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum módulo contratado ainda.</p>
-          ) : (
-            <div className="flex flex-col divide-y divide-border">
-              {modulos.map((m) => (
-                <div
-                  key={m.tool_nome}
-                  className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{m.rotulo}</span>
-                      <Badge variant={m.ativo ? 'success' : 'secondary'}>
-                        {m.ativo ? 'ativo' : 'desligado'}
-                      </Badge>
-                    </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{m.resumo}</p>
-                  </div>
-                  {m.temConfigCliente ? (
-                    <span className="text-xs text-muted-foreground">Configure abaixo.</span>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
+          <ListaModulos modulos={modulos} />
         </CardContent>
       </Card>
 

@@ -12,7 +12,8 @@
     "importar-producao": "node scripts/import-producao.mjs",
     "teste:isolamento": "node tests/isolamento-fase2.mjs",
     "teste:seguranca-tools": "node tests/seguranca-tenant-tools.mjs",
-    "teste:recall": "node scripts/teste-recall.mjs"
+    "teste:recall": "node scripts/teste-recall.mjs",
+    "teste:modulos": "node tests/isolamento-modulos.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

@@ -37,19 +37,21 @@ export function FormularioTransferir({
       {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
 
-      <label className="flex items-center gap-3">
-        <input
-          type="checkbox"
-          name="ativo"
-          defaultChecked={ativo}
-          className="h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-        />
-        <span className="text-sm font-medium">Oferecer transferência para atendimento humano</span>
-      </label>
-      <p className="-mt-3 text-xs text-muted-foreground">
-        Quando ligado, o agente pode passar a conversa para um atendente (dentro do horário) e
-        pausa o bot naquela conversa.
-      </p>
+      {/* Ligar/desligar mora no switch de "Meus módulos" — um escritor só para
+          tenant_tools.ativo. Aqui fica só o aviso de estado, para o cliente não
+          configurar horário achando que o módulo já está no ar. */}
+      {ativo ? (
+        <p className="text-xs text-muted-foreground">
+          Módulo ligado. O agente pode passar a conversa para um atendente dentro do horário
+          abaixo e pausa o bot naquela conversa.
+        </p>
+      ) : (
+        <Alert>
+          Este módulo está <strong>desligado</strong>. Você pode ajustar o horário e o aviso
+          agora, mas o agente só vai transferir depois que você ligar em{' '}
+          <strong>Meus módulos</strong>, acima.
+        </Alert>
+      )}
 
       <fieldset className="flex flex-col gap-4 rounded-xl border border-border p-4">
         <legend className="px-1 text-sm font-medium">Horário de atendimento</legend>

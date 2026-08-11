@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarEdicaoTenantAdmin } from '@/lib/tenants/schema';
+import { definicaoTool } from '@/lib/tools/registro';
 import {
   TOOL_TRANSFERIR,
   validarTransferirCliente,
@@ -16,6 +17,72 @@ export type EstadoConfig = {
   errosCampo?: Record<string, string>;
   sucesso?: string;
 };
+
+export type ResultadoModulo = { ok: true } | { ok: false; erro: string };
+
+/**
+ * Cliente liga/desliga um módulo contratado ("Meus módulos").
+ *
+ * Antes disto o card só exibia o estado: quem gravava `ativo` era o formulário
+ * da transferência, então módulo sem config de cliente (busca_conhecimento,
+ * resolver_conversa) ficava preso em desligado, sem caminho de UI.
+ *
+ * Toca SOMENTE `ativo`. `contratado` é decisão comercial da agência e o trigger
+ * tenant_tools_guard_colunas barra quem não é super_admin — mandar as duas
+ * colunas juntas faria o guard reprovar o update inteiro, inclusive a parte
+ * legítima.
+ *
+ * tenantId vem de exigirTenantAdmin (JWT), nunca do argumento — regra 1 do
+ * CLAUDE.md. O filtro explícito por tenant_id é a primeira camada; a RLS de
+ * tenant_tools é a segunda (regra 6). Um cliente do tenant A chamando esta ação
+ * direto, com o tool_nome de um módulo do tenant B, atinge zero linhas: o filtro
+ * é montado com o tenant DELE.
+ */
+export async function alternarModulo(
+  toolNome: string,
+  ativo: boolean,
+): Promise<ResultadoModulo> {
+  const usuario = await exigirTenantAdmin();
+
+  // Só módulos que o painel conhece. Barra string arbitrária vinda do cliente
+  // antes de ela virar filtro de query.
+  if (!definicaoTool(toolNome)) {
+    return { ok: false, erro: 'Módulo desconhecido.' };
+  }
+
+  const supabase = await criarClienteServidor();
+
+  // Exige linha contratada. Sem esta checagem, uma chamada direta ligaria um
+  // módulo que a agência não vendeu: o guard permite `ativo`, e o sub-workflow
+  // do n8n consulta `tool_ativa` — não `contratado` — para decidir se responde.
+  const { data: linha, error: erroSel } = await supabase
+    .from('tenant_tools')
+    .select('contratado')
+    .eq('tenant_id', usuario.tenantId)
+    .eq('tool_nome', toolNome)
+    .maybeSingle();
+
+  if (erroSel) return { ok: false, erro: `Não foi possível carregar: ${erroSel.message}` };
+  if (!linha || !linha.contratado) {
+    return { ok: false, erro: 'Este módulo não está incluído no seu plano. Fale com a agência.' };
+  }
+
+  const { error } = await supabase
+    .from('tenant_tools')
+    .update({ ativo })
+    .eq('tenant_id', usuario.tenantId)
+    .eq('tool_nome', toolNome);
+
+  if (error) {
+    if (error.code === '42501') {
+      return { ok: false, erro: 'Sem permissão para alterar este módulo.' };
+    }
+    return { ok: false, erro: `Não foi possível salvar: ${error.message}` };
+  }
+
+  revalidatePath('/painel/configuracoes');
+  return { ok: true };
+}
 
 /**
  * O tenant_admin edita as próprias configurações: mensagens de sistema,
@@ -59,7 +126,12 @@ export async function salvarConfigTenant(
 
 /**
  * Cliente configura o COMPORTAMENTO da transferência para atendimento humano:
- * liga/desliga, horário de atendimento e para onde ser avisado no WhatsApp.
+ * horário de atendimento e para onde ser avisado no WhatsApp.
+ *
+ * NÃO grava `ativo`: ligar/desligar é do switch em "Meus módulos"
+ * (alternarModulo), fonte única. Enquanto os dois existiam, este formulário
+ * enviava o `ativo` que fotografou ao montar (checkbox uncontrolled), então
+ * salvar o horário depois de mexer no switch revertia o switch em silêncio.
  *
  * Infra (workflow_id, descrição, sessão do WAHA) é da agência e NÃO é tocada
  * aqui — só atualizamos `ativo` e `config`, e o `config` é reconstruído
@@ -112,7 +184,7 @@ export async function salvarTransferirHumano(
 
   const { error } = await supabase
     .from('tenant_tools')
-    .update({ ativo: validado.valor.ativo, config: novaConfig })
+    .update({ config: novaConfig })
     .eq('tenant_id', usuario.tenantId)
     .eq('tool_nome', TOOL_TRANSFERIR);
 
