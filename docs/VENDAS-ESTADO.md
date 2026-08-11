@@ -112,6 +112,54 @@ e o cliente cadastra o mesmo item cinco vezes.
 `adicionar_item` — que precisa saber qual variação foi escolhida para resolver o
 preço.
 
+### Foto de produto — em aberto, decidir junto com `variacoes`
+
+Levantado em 11/08/2026. **Nada implementado.** Registrado porque a decisão
+depende de uma verificação que ainda não foi feita, e fazer o modelo de dados
+antes dela é chutar.
+
+**Mais de uma foto por produto** é requisito desde o começo, não evolução: uma
+peça de roupa tem frente, verso e detalhe; um prato tem foto do prato e da mesa.
+
+**O que decide o modelo é o lado do agente, não o do painel.** A pergunta é como
+o Chatwoot aceita a imagem na mensagem que o agente envia:
+
+- se aceita **URL**, o bucket pode ficar privado e o n8n manda uma URL assinada —
+  mas aí o TTL da assinatura tem que cobrir o tempo até o WhatsApp buscar o
+  arquivo, e isso é um prazo que não controlamos;
+- se exige **upload multipart** dos bytes, o n8n baixa do Storage e reenvia ao
+  Chatwoot. O bucket fica totalmente privado e o isolamento entre clientes não
+  depende de URL nenhuma. **É o caminho mais seguro** — e o mais trabalhoso no
+  workflow.
+
+Antes de modelar, verificar **nesta ordem**:
+
+1. o token de **Agent Bot** consegue enviar anexo? Sabemos que ele é recusado em
+   endpoints de leitura da API de plataforma (ver
+   `docs/DIAGNOSTICO-CREDENCIAL-CHATWOOT.md`); enviar anexo é outro endpoint e
+   precisa de teste próprio. Se não conseguir, o resto da discussão muda —
+   seria preciso um token de usuário, com implicação de segurança;
+2. o endpoint de mensagem aceita URL ou exige multipart;
+3. o WhatsApp carrega legenda junto da imagem, ou exige mensagem separada. Isso
+   muda o texto que a tool de venda devolve.
+
+**Storage:** hoje existe um bucket só, `kb-arquivos`, privado, limitado a
+PDF/DOCX/TXT e 10MB (migração 14). Foto de produto precisa de bucket novo — o
+MIME type não bate e o propósito é outro. O padrão de path a seguir é o de lá:
+`{tenant_id}/{uuid}.{ext}`, com RLS de Storage escopando por tenant.
+
+**Modelo de dados — a armadilha:** a vontade natural é `fotos jsonb` em
+`produtos`, uma lista de paths. Funciona até aparecer o pedido óbvio seguinte,
+que é **foto por variação** — camisa azul e vermelha não podem mostrar a mesma
+imagem. Como `variacoes` também está em aberto (seção acima), as duas coisas
+devem ser desenhadas **juntas**: fazer foto agora e variação depois obriga a
+remodelar foto.
+
+**Limpeza:** produto usa soft delete, então arquivo no Storage sobrevive à
+exclusão. Precisa de uma regra explícita — ou o arquivo fica (barato, e o
+cliente pode restaurar), ou entra uma rotina de limpeza. Decidir junto, não
+depois.
+
 ### Paginação da tela de catálogo — gatilho definido
 
 `/painel/catalogo` carrega o catálogo inteiro num `select` e renderiza tudo. Para
