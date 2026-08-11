@@ -508,6 +508,45 @@ erros de uma vez.
 Campos de diagnóstico no output: `_fonte_tokens`, `_sonda`, `_chamadas`,
 `_estimado_entrada`. Saem quando a sonda der veredicto.
 
+### Lição: mudar contexto do agente mexe no faturamento
+
+Não é óbvio, e por isso fica escrito.
+
+A fatia 2 subiu o `contextWindowLength` do Redis de 5 para 20 — uma mudança de
+**comportamento do agente**, feita para o carrinho sobreviver à conversa. O
+efeito colateral foi **quadruplicar o ponto cego do rateio**: o `Estima Tokens`
+não enxergava a memória, então o erro por mensagem saltou de ~509 para ~973
+tokens sem que nada no código de billing mudasse.
+
+Ninguém revisando aquela mudança olharia para o faturamento. Mas janela de
+contexto, tamanho de system prompt, número de tools e retorno de tool **são todos
+entrada do modelo** — e entrada do modelo é custo.
+
+**Regra que fica:** ao mexer em qualquer coisa que altere o que vai no prompt,
+rode `npm run n8n:sincronia` e confira o rateio na execução seguinte. Se o que
+mudou não estiver contabilizado no `Estima Tokens`, o rateio passa a mentir em
+silêncio — e mentir de forma desigual entre clientes, que é pior que mentir
+igual para todos.
+
+### Como o histórico entrou sem virar a quarta query
+
+`api_n8n_conversa_sync` já era chamada antes do AI Agent, no momento exato em que
+o histórico é o que a memória vai carregar. A migração 29 fez ela devolver mais
+uma coluna, `historico_chars`, e o nó que já existia passou a ler junto. Nenhum
+nó novo, nenhuma query nova.
+
+**Devolve contagem, não texto.** O cálculo só precisa do tamanho, e trafegar o
+conteúdo colocaria conversa de cliente no log de execução do n8n — onde o token
+do Chatwoot já aparece.
+
+E `Registra Mensagem` passou a gravar as **duas direções numa chamada só**: duas
+chamadas de função num `SELECT` continuam sendo um statement, então a restrição
+de "query com parâmetro = statement único" continua respeitada. A entrada entra
+com 0/0 de token para não contar duas vezes em nenhuma soma.
+
+Até então `direcao = 'entrada'` tinha **zero linhas** — só a saída era registrada.
+Sem isso o histórico reconstruído seria metade do contexto.
+
 ### O corpo do nó virou arquivo
 
 `n8n/estima-tokens.js`. Antes vivia como string dentro do JSON do workflow, onde

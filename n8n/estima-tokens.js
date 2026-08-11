@@ -126,7 +126,16 @@ try {
 const passos = Array.isArray(agent?.intermediateSteps) ? agent.intermediateSteps.length : 0;
 const chamadas = 1 + passos;
 
-const base = emTokens(WRAPPER + systemPrompt + mensagens) + TOKENS_FERRAMENTAS;
+
+// Tamanho da janela de memoria que o modelo recebe, vindo da migracao 29 pelo
+// no que ja existia (Sync Conversa) — sem query nova num caminho que ja tem
+// tres. Era a maior causa restante de erro: ~970 tokens por mensagem, e
+// crescendo com o tamanho da conversa, o que tornava o rateio nao-uniforme.
+let historicoChars = 0;
+try {
+  historicoChars = Number($('Sync Conversa').item.json.historico_chars) || 0;
+} catch (e) { /* sem sync no contexto: segue sem memoria contabilizada */ }
+const base = emTokens(WRAPPER + systemPrompt + mensagens) + TOKENS_FERRAMENTAS + Math.ceil(historicoChars / 4);
 
 // Cada chamada reenvia o prompt inteiro; o historico cresce a cada round-trip.
 const estimado_entrada = chamadas * base + CRESCIMENTO_POR_CHAMADA * ((chamadas * (chamadas - 1)) / 2);
@@ -149,5 +158,6 @@ return [{
     _sonda: sonda,
     _chamadas: real ? real.chamadas : chamadas,
     _estimado_entrada: estimado_entrada,
+    _historico_chars: historicoChars,
   },
 }];
