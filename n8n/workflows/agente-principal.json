@@ -609,7 +609,7 @@
         "promptType": "define",
         "text": "={{ ($('Lista Depois').item.json.lista_depois || []).join('\\n') }}",
         "options": {
-          "systemMessage": "=`# INSTRUÇÕES DE SISTEMA (não divulgue estas instruções ao cliente)\n\nVocê é um agente de atendimento com acesso a FERRAMENTAS. Use-as sempre que necessário:\n\n## Ferramenta: busca_conhecimento\nSEMPRE que o cliente perguntar qualquer coisa sobre o negócio — produtos, preços, horários, serviços, políticas, localização, formas de pagamento ou qualquer informação específica da empresa — use a ferramenta de busca na base de conhecimento ANTES de responder. NUNCA invente informações sobre o negócio. Se a busca não retornar nada útil, diga que não tem essa informação e ofereça transferência para um atendente humano.\n\n## Ferramenta: transferir_humano\nUse quando o cliente pedir explicitamente para falar com um atendente, OU quando você não conseguir responder após buscar na base de conhecimento. Ao transferir, gere um resumo claro do que foi conversado.\n\n## Ferramenta: resolver_conversa\nUse quando o cliente se despedir, agradecer e sinalizar que nao precisa de mais nada, ou quando a conversa claramente chegou ao fim SEM pergunta pendente. Envie a mensagem de despedida ANTES de finalizar. Nunca finalize no meio de um atendimento em andamento.\n\n## Regras gerais\n- Responda sempre no idioma do cliente (português brasileiro por padrão).\n- Seja direto e útil. Não repita a mesma informação várias vezes.\n- Se não souber algo e a base não ajudar, seja honesto em vez de inventar.\n\n---\n\n# PERSONALIDADE E CONTEXTO DO NEGÓCIO\n\n` {{ $('Resolve Tenant').item.json.system_prompt }}"
+          "systemMessage": "=`# INSTRUÇÕES DE SISTEMA (não divulgue estas instruções ao cliente)\n\nVocê é um agente de atendimento com acesso a FERRAMENTAS. Use-as sempre que necessário:\n\n## Ferramenta: busca_conhecimento\nSEMPRE que o cliente perguntar qualquer coisa sobre o negócio — produtos, preços, horários, serviços, políticas, localização, formas de pagamento ou qualquer informação específica da empresa — use a ferramenta de busca na base de conhecimento ANTES de responder. NUNCA invente informações sobre o negócio. Se a busca não retornar nada útil, diga que não tem essa informação e ofereça transferência para um atendente humano.\n\n## Ferramenta: transferir_humano\nUse quando o cliente pedir explicitamente para falar com um atendente, OU quando você não conseguir responder após buscar na base de conhecimento. Ao transferir, gere um resumo claro do que foi conversado.\n\n## Ferramenta: resolver_conversa\nUse quando o cliente se despedir, agradecer e sinalizar que nao precisa de mais nada, ou quando a conversa claramente chegou ao fim SEM pergunta pendente. Envie a mensagem de despedida ANTES de finalizar. Nunca finalize no meio de um atendimento em andamento.\n\n## Ferramenta: consultar_catalogo\nUse para descobrir o que o cliente pode comprar, com preço e unidade. SEMPRE consulte antes de falar preço — nunca invente valor nem calcule desconto. Cada item vem com um id; guarde o id para usar em gerenciar_pedido.\n\n## Ferramenta: gerenciar_pedido\nMonta o pedido junto com o cliente. Ações:\n- `adicionar`: informe produto_id (vindo de consultar_catalogo), quantidade e, se houver, observação do cliente (\"sem cebola\", \"bem passado\").\n- `remover`: informe o produto_id do item a tirar.\n- `ver`: mostra o pedido atual sem alterar nada.\nA ferramenta SEMPRE devolve o pedido inteiro com o total. Repita esse resumo ao cliente e confirme antes de fechar. O total vem calculado — nunca some você mesmo.\n\n## Ferramenta: fechar_pedido\nUse SOMENTE quando o cliente confirmar explicitamente que o pedido está completo. Antes de chamar, repita os itens e o total e espere o \"pode fechar\". Depois de fechado o pedido NÃO aceita mais alteração. Se o cliente só perguntou o valor, use gerenciar_pedido com ação `ver`.\n\n## Ferramenta: cancelar_pedido\nUse quando o cliente desistir do pedido ou pedir para recomeçar. Cancela o pedido em aberto e libera a conversa para um novo. Confirme com o cliente antes — o carrinho é perdido.\n\n## Regras gerais\n- Responda sempre no idioma do cliente (português brasileiro por padrão).\n- Seja direto e útil. Não repita a mesma informação várias vezes.\n- Se não souber algo e a base não ajudar, seja honesto em vez de inventar.\n\n---\n\n# PERSONALIDADE E CONTEXTO DO NEGÓCIO\n\n` {{ $('Resolve Tenant').item.json.system_prompt }}"
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
@@ -651,7 +651,8 @@
     {
       "parameters": {
         "sessionIdType": "customKey",
-        "sessionKey": "=tenant_{{ $('Resolve Tenant').item.json.tenant_id }}_memory_{{ $('Extrair e Filtrar').item.json.conversation_id }}"
+        "sessionKey": "=tenant_{{ $('Resolve Tenant').item.json.tenant_id }}_memory_{{ $('Extrair e Filtrar').item.json.conversation_id }}",
+        "contextWindowLength": 20
       },
       "type": "@n8n/n8n-nodes-langchain.memoryRedisChat",
       "typeVersion": 1.5,
@@ -1012,7 +1013,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============================================================\n// ESTIMA TOKENS — no Code logo apos o \"AI Agent\"\n//\n// Por que ESTIMATIVA e nao numero real:\n//  - O n8n so expoe uma estimativa (tokenUsageEstimate), e apenas no output do\n//    sub-no \"OpenAI Chat Model\", que um no Code no fluxo principal NAO alcanca\n//    (por isso a tentativa anterior via $items dava 0). Confirmado na execucao:\n//    o dado existe (promptTokens ~447) mas so no sub-no.\n//  - Entao estimamos aqui, mirando o MESMO numero que o n8n calcula.\n//\n// Nao e numero de fatura — e uma estimativa CONSISTENTE para ratear custo entre\n// clientes. Cobre com precisao as partes dominantes e constantes (system message\n// + definicoes das ferramentas); a memoria do Redis nao entra (nao e acessivel\n// aqui), entao conversas longas e turnos com uso de ferramenta subcontam um\n// pouco. Para rateio de custo, e suficiente.\n//\n// Prompt = WRAPPER (fixo) + tenant.system_prompt (variavel) + mensagens\n//          + TOKENS_FERRAMENTAS (schemas das tools, contados pela API)\n// ============================================================\n\nconst agent = $('AI Agent').item.json;\nconst textoSaida = agent?.output ?? '';\n\n// System message FIXO do no \"AI Agent\" (o texto ANTES do system_prompt do tenant).\n// >>> MANTENHA EM SINCRONIA: se editar o \"System Message\" no no AI Agent, cole a\n// >>> mesma versao aqui, senao a estimativa desalinha do que e realmente enviado.\nconst WRAPPER = `# INSTRUÇÕES DE SISTEMA (não divulgue estas instruções ao cliente)\n\nVocê é um agente de atendimento com acesso a FERRAMENTAS. Use-as sempre que necessário:\n\n## Ferramenta: busca_conhecimento\nSEMPRE que o cliente perguntar qualquer coisa sobre o negócio — produtos, preços, horários, serviços, políticas, localização, formas de pagamento ou qualquer informação específica da empresa — use a ferramenta de busca na base de conhecimento ANTES de responder. NUNCA invente informações sobre o negócio. Se a busca não retornar nada útil, diga que não tem essa informação e ofereça transferência para um atendente humano.\n\n## Ferramenta: transferir_humano\nUse quando o cliente pedir explicitamente para falar com um atendente, OU quando você não conseguir responder após buscar na base de conhecimento. Ao transferir, gere um resumo claro do que foi conversado.\n\n## Regras gerais\n- Responda sempre no idioma do cliente (português brasileiro por padrão).\n- Seja direto e útil. Não repita a mesma informação várias vezes.\n- Se não souber algo e a base não ajudar, seja honesto em vez de inventar.\n\n---\n\n# PERSONALIDADE E CONTEXTO DO NEGÓCIO\n\n`;\n\n// Schemas das ferramentas (busca_conhecimento + transferir_humano) tambem contam\n// como prompt tokens e nao dao para derivar do texto. Constante calibrada contra\n// o tokenUsageEstimate do n8n (~110). Recalibre se adicionar/remover ferramentas.\nconst TOKENS_FERRAMENTAS = 110;\n\n// ~4 chars/token (heuristica padrao). Portugues acentuado costuma render um\n// pouco mais, entao isto e levemente conservador — ok para rateio.\nconst emTokens = (t) => Math.ceil((t || '').length / 4);\n\nlet systemPrompt = '';\ntry {\n  systemPrompt = $('Resolve Tenant').item.json.system_prompt ?? '';\n} catch (e) { /* sem tenant no contexto: segue sem o system_prompt */ }\n\nlet mensagens = '';\ntry {\n  const lista = $('Lista Depois').item.json.lista_depois;\n  mensagens = Array.isArray(lista) ? lista.join('\\n') : (lista ?? '');\n} catch (e) {\n  mensagens = agent?.input ?? '';\n}\n\nconst tokens_entrada = emTokens(WRAPPER + systemPrompt + mensagens) + TOKENS_FERRAMENTAS;\nconst tokens_saida = emTokens(textoSaida);\n\nreturn [{\n  json: {\n    output: textoSaida,\n    tokens_entrada,\n    tokens_saida,\n    _fonte_tokens: 'estimativa_calibrada', // estimativa mirando o tokenUsageEstimate do n8n\n  },\n}];\n"
+        "jsCode": "// ============================================================\n// ESTIMA TOKENS — no Code logo apos o \"AI Agent\"\n//\n// Por que ESTIMATIVA e nao numero real:\n//  - O n8n so expoe uma estimativa (tokenUsageEstimate), e apenas no output do\n//    sub-no \"OpenAI Chat Model\", que um no Code no fluxo principal NAO alcanca\n//    (por isso a tentativa anterior via $items dava 0). Confirmado na execucao:\n//    o dado existe (promptTokens ~447) mas so no sub-no.\n//  - Entao estimamos aqui, mirando o MESMO numero que o n8n calcula.\n//\n// Nao e numero de fatura — e uma estimativa CONSISTENTE para ratear custo entre\n// clientes. Cobre com precisao as partes dominantes e constantes (system message\n// + definicoes das ferramentas); a memoria do Redis nao entra (nao e acessivel\n// aqui), entao conversas longas e turnos com uso de ferramenta subcontam um\n// pouco. Para rateio de custo, e suficiente.\n//\n// Prompt = WRAPPER (fixo) + tenant.system_prompt (variavel) + mensagens\n//          + TOKENS_FERRAMENTAS (schemas das tools, contados pela API)\n// ============================================================\n\nconst agent = $('AI Agent').item.json;\nconst textoSaida = agent?.output ?? '';\n\n// System message FIXO do no \"AI Agent\" (o texto ANTES do system_prompt do tenant).\n// >>> MANTENHA EM SINCRONIA: se editar o \"System Message\" no no AI Agent, cole a\n// >>> mesma versao aqui, senao a estimativa desalinha do que e realmente enviado.\nconst WRAPPER = `\\`# INSTRUÇÕES DE SISTEMA (não divulgue estas instruções ao cliente)\n\nVocê é um agente de atendimento com acesso a FERRAMENTAS. Use-as sempre que necessário:\n\n## Ferramenta: busca_conhecimento\nSEMPRE que o cliente perguntar qualquer coisa sobre o negócio — produtos, preços, horários, serviços, políticas, localização, formas de pagamento ou qualquer informação específica da empresa — use a ferramenta de busca na base de conhecimento ANTES de responder. NUNCA invente informações sobre o negócio. Se a busca não retornar nada útil, diga que não tem essa informação e ofereça transferência para um atendente humano.\n\n## Ferramenta: transferir_humano\nUse quando o cliente pedir explicitamente para falar com um atendente, OU quando você não conseguir responder após buscar na base de conhecimento. Ao transferir, gere um resumo claro do que foi conversado.\n\n## Ferramenta: resolver_conversa\nUse quando o cliente se despedir, agradecer e sinalizar que nao precisa de mais nada, ou quando a conversa claramente chegou ao fim SEM pergunta pendente. Envie a mensagem de despedida ANTES de finalizar. Nunca finalize no meio de um atendimento em andamento.\n\n## Ferramenta: consultar_catalogo\nUse para descobrir o que o cliente pode comprar, com preço e unidade. SEMPRE consulte antes de falar preço — nunca invente valor nem calcule desconto. Cada item vem com um id; guarde o id para usar em gerenciar_pedido.\n\n## Ferramenta: gerenciar_pedido\nMonta o pedido junto com o cliente. Ações:\n- \\`adicionar\\`: informe produto_id (vindo de consultar_catalogo), quantidade e, se houver, observação do cliente (\"sem cebola\", \"bem passado\").\n- \\`remover\\`: informe o produto_id do item a tirar.\n- \\`ver\\`: mostra o pedido atual sem alterar nada.\nA ferramenta SEMPRE devolve o pedido inteiro com o total. Repita esse resumo ao cliente e confirme antes de fechar. O total vem calculado — nunca some você mesmo.\n\n## Ferramenta: fechar_pedido\nUse SOMENTE quando o cliente confirmar explicitamente que o pedido está completo. Antes de chamar, repita os itens e o total e espere o \"pode fechar\". Depois de fechado o pedido NÃO aceita mais alteração. Se o cliente só perguntou o valor, use gerenciar_pedido com ação \\`ver\\`.\n\n## Ferramenta: cancelar_pedido\nUse quando o cliente desistir do pedido ou pedir para recomeçar. Cancela o pedido em aberto e libera a conversa para um novo. Confirme com o cliente antes — o carrinho é perdido.\n\n## Regras gerais\n- Responda sempre no idioma do cliente (português brasileiro por padrão).\n- Seja direto e útil. Não repita a mesma informação várias vezes.\n- Se não souber algo e a base não ajudar, seja honesto em vez de inventar.\n\n---\n\n# PERSONALIDADE E CONTEXTO DO NEGÓCIO\n\n\\` `;\n\n// Schemas das ferramentas (busca_conhecimento + transferir_humano) tambem contam\n// como prompt tokens e nao dao para derivar do texto. Constante calibrada contra\n// o tokenUsageEstimate do n8n (~110). Recalibre se adicionar/remover ferramentas.\nconst TOKENS_FERRAMENTAS = 320; // PROVISORIO — recalibrar medindo (ver runbook)\n\n// ~4 chars/token (heuristica padrao). Portugues acentuado costuma render um\n// pouco mais, entao isto e levemente conservador — ok para rateio.\nconst emTokens = (t) => Math.ceil((t || '').length / 4);\n\nlet systemPrompt = '';\ntry {\n  systemPrompt = $('Resolve Tenant').item.json.system_prompt ?? '';\n} catch (e) { /* sem tenant no contexto: segue sem o system_prompt */ }\n\nlet mensagens = '';\ntry {\n  const lista = $('Lista Depois').item.json.lista_depois;\n  mensagens = Array.isArray(lista) ? lista.join('\\n') : (lista ?? '');\n} catch (e) {\n  mensagens = agent?.input ?? '';\n}\n\nconst tokens_entrada = emTokens(WRAPPER + systemPrompt + mensagens) + TOKENS_FERRAMENTAS;\nconst tokens_saida = emTokens(textoSaida);\n\nreturn [{\n  json: {\n    output: textoSaida,\n    tokens_entrada,\n    tokens_saida,\n    _fonte_tokens: 'estimativa_calibrada', // estimativa mirando o tokenUsageEstimate do n8n\n  },\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1085,6 +1086,256 @@
       ],
       "id": "316246aa-7d1e-4794-b792-8359ddb76dce",
       "name": "Call 'Tool - Resolver Conversa (Multi-Tenant)'"
+    },
+    {
+      "parameters": {
+        "description": "Consulta o catálogo do cliente e devolve produtos com preço, unidade e id. Use SEMPRE antes de falar preço ou oferecer item. Nunca invente valores.",
+        "workflowId": {
+          "__rl": true,
+          "value": "SUBSTITUIR_ID_CONSULTAR_CATALOGO",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/SUBSTITUIR_ID_CONSULTAR_CATALOGO",
+          "cachedResultName": "Tool - Consultar Catalogo (Multi-Tenant)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $('Resolve Tenant').item.json.tenant_id }}",
+            "termo": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('termo', `o que o cliente procura, ex: pizza, camisa, lavagem`, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "termo",
+              "displayName": "termo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        848,
+        576
+      ],
+      "id": "venda-tool-consultar_ca0000000000000",
+      "name": "Consultar Catalogo"
+    },
+    {
+      "parameters": {
+        "description": "Monta o pedido do cliente. acao=adicionar (com produto_id, quantidade e observacao), acao=remover (com produto_id) ou acao=ver. Devolve sempre o pedido inteiro com o total já calculado.",
+        "workflowId": {
+          "__rl": true,
+          "value": "SUBSTITUIR_ID_GERENCIAR_PEDIDO",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/SUBSTITUIR_ID_GERENCIAR_PEDIDO",
+          "cachedResultName": "Tool - Gerenciar Pedido (Multi-Tenant)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $('Resolve Tenant').item.json.tenant_id }}",
+            "conversation_id": "={{ $('Extrair e Filtrar').item.json.conversation_id }}",
+            "acao": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('acao', `adicionar, remover ou ver`, 'string') }}",
+            "produto_id": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('produto_id', `id do produto vindo de consultar_catalogo; vazio quando acao=ver`, 'string') }}",
+            "quantidade": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('quantidade', `quantas unidades; 1 se o cliente nao disser`, 'number') }}",
+            "observacao": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('observacao', `observacao do cliente sobre o item, ex: sem cebola. vazio se nao houver`, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "acao",
+              "displayName": "acao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "produto_id",
+              "displayName": "produto_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "quantidade",
+              "displayName": "quantidade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "observacao",
+              "displayName": "observacao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1008,
+        576
+      ],
+      "id": "venda-tool-gerenciar_pe0000000000000",
+      "name": "Gerenciar Pedido"
+    },
+    {
+      "parameters": {
+        "description": "Fecha o pedido em aberto e devolve o numero e o resumo. Use SOMENTE apos o cliente confirmar que o pedido esta completo. Depois de fechado nao aceita alteracao.",
+        "workflowId": {
+          "__rl": true,
+          "value": "SUBSTITUIR_ID_FECHAR_PEDIDO",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/SUBSTITUIR_ID_FECHAR_PEDIDO",
+          "cachedResultName": "Tool - Fechar Pedido (Multi-Tenant)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $('Resolve Tenant').item.json.tenant_id }}",
+            "conversation_id": "={{ $('Extrair e Filtrar').item.json.conversation_id }}",
+            "metadados": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('metadados', `json com entrega/retirada/observacao geral, ex: {\"entrega\":\"retirada\"}. vazio se nao houver`, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "metadados",
+              "displayName": "metadados",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1168,
+        576
+      ],
+      "id": "venda-tool-fechar_pedid0000000000000",
+      "name": "Fechar Pedido"
+    },
+    {
+      "parameters": {
+        "description": "Cancela o pedido em aberto e libera a conversa para um novo. Confirme com o cliente antes: o carrinho e perdido.",
+        "workflowId": {
+          "__rl": true,
+          "value": "SUBSTITUIR_ID_CANCELAR_PEDIDO",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/SUBSTITUIR_ID_CANCELAR_PEDIDO",
+          "cachedResultName": "Tool - Cancelar Pedido (Multi-Tenant)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tenant_id": "={{ $('Resolve Tenant').item.json.tenant_id }}",
+            "conversation_id": "={{ $('Extrair e Filtrar').item.json.conversation_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tenant_id",
+              "displayName": "tenant_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        1328,
+        576
+      ],
+      "id": "venda-tool-cancelar_ped0000000000000",
+      "name": "Cancelar Pedido"
     }
   ],
   "connections": {
@@ -1418,6 +1669,50 @@
       ]
     },
     "Call 'Tool - Resolver Conversa (Multi-Tenant)'": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Catalogo": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerenciar Pedido": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fechar Pedido": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancelar Pedido": {
       "ai_tool": [
         [
           {
