@@ -25,7 +25,7 @@
 -- Todas SECURITY DEFINER, search_path = public, p_tenant_id primeiro, grant so
 -- para n8n_agent. Sem grant de tabela: e por aqui ou nao e.
 --
--- Rollback: 20260811190500_26_api_n8n_vendas_rollback.sql
+-- Rollback: 20260811185432_26_api_n8n_vendas_rollback.sql
 
 begin;
 

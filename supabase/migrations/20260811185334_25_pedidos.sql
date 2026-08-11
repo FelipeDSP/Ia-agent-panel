@@ -15,7 +15,7 @@
 -- risco. Proposta completa de variacao e gatilho para retomar em
 -- docs/VENDAS-ESTADO.md.
 --
--- Rollback: 20260811190000_25_pedidos_rollback.sql
+-- Rollback: 20260811185334_25_pedidos_rollback.sql
 
 begin;
 

@@ -24,10 +24,10 @@ const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 const conn = fs.readFileSync(RAIZ+'.env.local', 'utf8').match(/SUPABASE_DB_URL=(.*)/)[1].trim();
 const c = new pg.Client({ connectionString: conn, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 20000 });
 const mig = (f) => fs.readFileSync(RAIZ+'supabase/migrations/' + f, 'utf8').replace(/^\s*(begin|commit)\s*;\s*$/gim, '');
-const M25 = mig('20260811190000_25_pedidos.sql');
-const M26 = mig('20260811190500_26_api_n8n_vendas.sql');
-const R25 = mig('20260811190000_25_pedidos_rollback.sql');
-const R26 = mig('20260811190500_26_api_n8n_vendas_rollback.sql');
+const M25 = mig('20260811185334_25_pedidos.sql');
+const M26 = mig('20260811185432_26_api_n8n_vendas.sql');
+const R25 = mig('20260811185334_25_pedidos_rollback.sql');
+const R26 = mig('20260811185432_26_api_n8n_vendas_rollback.sql');
 
 const A = 'ebef4715-1a05-41d0-ad62-929b7fefa887'; // Restaurante Teste (13 produtos)
 const B = '7cd0750e-e610-497a-bc0e-c1cd83b159ec'; // Sandbox de Testes (6 produtos)
