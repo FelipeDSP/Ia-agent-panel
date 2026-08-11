@@ -100,17 +100,79 @@ se resolve com coluna nova, se resolve com o desenho da conversa.
 A fatia 2 responde com **comportamento observado**: rodar pedido real e ver onde
 o agente erra. Só depois disso, se errar, discutir estrutura.
 
-### Variação como produto separado — confirmado, entra na fatia 2
+### Variação — DECIDIDO: não entra agora. Proposta pronta, com gatilho
 
-Na lavanderia, "lavagem de terno 2 peças" e "lavagem de paletó avulso" viraram
-dois produtos. O mesmo aconteceria com tamanho de pizza, ponto da carne,
-numeração de peça. Sem `variacoes`, o catálogo cresce como lista de combinações
-e o cliente cadastra o mesmo item cinco vezes.
+Revisto em 11/08/2026, ao abrir a fatia 2, olhando os 19 produtos reais
+cadastrados em vez da hipótese. **A necessidade não se confirmou.**
 
-**Isto deixou de ser hipótese.** A coluna `variacoes` (jsonb) já existe em
-`produtos` desde a migração 23, sem UI. Entra no desenho da fatia 2, junto com
-`adicionar_item` — que precisa saber qual variação foi escolhida para resolver o
-preço.
+O que o catálogo real mostrou, item a item:
+
+- "Moqueca para 2", "Picanha 600g", "Chopp 300ml" — **tamanho no nome**, e
+  funciona;
+- "Terno 2 peças" e "Passadoria avulsa" — **serviços distintos**, não variações
+  do mesmo item. O trabalho é outro, o preço é outro, o prazo é outro;
+- "Água com ou sem gás", "Caipirinha com vodka" — variação que **não muda
+  preço**: resolve em `observacao`, texto que pode vir do LLM sem risco;
+- o caso canônico **P/M/G com preços diferentes não apareceu** num cardápio
+  completo nem numa lista de serviços de lavanderia.
+
+**Consequência: `pedido_itens` NÃO tem coluna `variacao`.** Pedido é produto ×
+quantidade. `observacao` fica, para texto que não afeta preço.
+
+#### O achado estrutural que produziu essa decisão
+
+A especificação original da fatia 2 pedia `pedido_itens.variacao jsonb` **sem**
+definir variação no catálogo. Isso é a **trava 1 furada por outra porta**: sem
+fonte de verdade no catálogo, o conteúdo daquela coluna viria do LLM em texto
+livre — e variação afeta preço. Ou variação existe no catálogo e o servidor
+resolve, ou a coluna não deve existir. Meio-termo é o pior dos três.
+
+Escolhida a terceira via: cortar a coluna.
+
+#### Proposta pronta, para quando o gatilho disparar
+
+**Gatilho:** um cliente real com **o mesmo item em três tamanhos e preços
+diferentes**. Não "seria bom ter"; um catálogo concreto que não cabe em produtos
+separados.
+
+Desenho já discutido e aprovado no papel — retomar daqui, não do zero:
+
+```json
+variacoes = {
+  "rotulo": "Tamanho",
+  "obrigatoria": true,
+  "opcoes": [
+    { "chave": "p", "nome": "P", "preco_centavos": null },
+    { "chave": "g", "nome": "G", "preco_centavos": 5990 }
+  ]
+}
+```
+
+- **Um eixo só.** Dois eixos (tamanho × cor) é grade combinatória, N×M preços e
+  custo de token multiplicativo no `buscar_produtos` — é onde vira ERP.
+- **Preço opcional por opção**, absoluto e anulável. `null` herda o preço do
+  produto: P/M/G sem preço não obriga a digitar três vezes; terno 2 e 3 peças
+  preenche cada um. Absoluto e não delta porque é como o cliente pensa o preço
+  ("G custa 59,90"), e delta convida a erro de sinal.
+- **O agente manda TEXTO, o servidor resolve.** Normaliza (minúscula, sem
+  acento, trim) e casa contra as opções daquele produto. Sem correspondência,
+  devolve a lista válida como erro recuperável ("Temos P, M e G — qual?"). É a
+  trava 1 aplicada à variação: o LLM decide o quê, o servidor decide qual, e
+  erro vira turno de conversa em vez de preço errado.
+- **A `chave` nunca entra no contexto do LLM.** Existe para o banco, para o
+  snapshot no item e para a foto se ligar depois (ver seção de foto).
+  `buscar_produtos` devolve só os nomes.
+- **`obrigatoria: true`** faz `adicionar_item` sem variação perguntar em vez de
+  adicionar — senão entra pizza sem tamanho e o preço fica ambíguo.
+- **Descartados:** tabela `produto_variacoes` (compra estoque e SKU por variação
+  que ninguém pediu, custa join em todo retorno de tool e uma segunda tela),
+  dois eixos, estoque por variação, preço por delta.
+- **UI:** uma seção recolhida no formulário que já existe — "☐ Este produto tem
+  variações" → rótulo + linhas de (nome, preço opcional). Quem não usa não vê
+  nada novo.
+
+A coluna `variacoes jsonb` continua em `produtos` desde a migração 23, vazia e
+sem UI. Não atrapalha e evita uma migração quando o gatilho vier.
 
 ### Foto de produto — transporte VERIFICADO, implementação junto com `variacoes`
 
@@ -236,6 +298,33 @@ Por isso **todo sub-workflow de venda começa checando `tool_ativa`** via
 O "endgame" do `docs/ADICIONAR-TOOL.md` — AI Agent montando tools e system prompt
 a partir de `api_n8n_tools_ativas` — vale fazer perto de 3–4 tools. Vendas soma
 pelo menos 3, então a decisão chega junto.
+
+## Ideia futura: memória de longo prazo por cliente
+
+**Sem código.** Registrada em 11/08/2026 para não se perder.
+
+Hoje a memória é por conversa (`Redis Chat Memory`, chave
+`tenant_{id}_memory_{conversation_id}`) e morre com ela. Um cliente recorrente
+recomeça do zero toda vez.
+
+Desenho: tabela `clientes` chaveada por **(`tenant_id`, `telefone`)**, com
+preferências que o agente lê no início da conversa e escreve quando aprende algo
+— alergia, endereço de entrega, "sempre sem cebola", forma de pagamento
+preferida.
+
+**O limite é o que define a ideia: escopo de PREFERÊNCIA, nunca de PEDIDO.**
+
+Memória é escrita pelo LLM. Carrinho em memória significa **total vindo do
+modelo** — a trava 1, exatamente. O carrinho fica no banco, em `pedidos` e
+`pedido_itens`, resolvido pelo servidor, e nada nessa tabela pode influenciar
+preço ou quantidade. Preferência muda *como* se atende; não muda *quanto* custa.
+
+**Gatilho:** cliente recorrente pedindo a mesma coisa — quando repetir o pedido
+inteiro virar atrito visível na conversa, não antes.
+
+Ponto de atenção para quando vier: `telefone` como chave é dado pessoal e a
+tabela é escopada por tenant, então nasce com RLS e policy na mesma migração,
+como todas.
 
 ## Pagamento
 
