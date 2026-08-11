@@ -1,7 +1,7 @@
 -- 21b_credencial_chatwoot_contract  (fase CONTRACT)
 --
 -- Fecha a exposicao: remove `tenants.chatwoot_token`. Segunda metade do par
--- iniciado em 20260811120000_21a_credencial_chatwoot_expand.sql — leia o
+-- iniciado em 20260811133839_21a_credencial_chatwoot_expand.sql — leia o
 -- cabecalho de la para o motivo da vulnerabilidade e para as duas funcoes do
 -- n8n que dependiam da coluna.
 --
@@ -22,7 +22,7 @@
 -- varredura documentada la (28 funcoes, views, policies, indices, colunas) e
 -- pre-requisito e nao formalidade.
 --
--- Rollback: 20260811120500_21b_credencial_chatwoot_contract_rollback.sql
+-- Rollback: 20260811140000_21b_credencial_chatwoot_contract_rollback.sql
 
 begin;
 

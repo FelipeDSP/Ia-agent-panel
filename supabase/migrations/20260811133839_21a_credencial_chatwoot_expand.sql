@@ -74,7 +74,7 @@
 --
 -- Esta fase NAO destroi nada: nenhuma coluna cai, nenhum dado e apagado.
 --
--- Rollback: 20260811120000_21a_credencial_chatwoot_expand_rollback.sql
+-- Rollback: 20260811133839_21a_credencial_chatwoot_expand_rollback.sql
 
 -- ---------------------------------------------------------------------------
 -- 1. Tabela de credenciais, sem policy de tenant
