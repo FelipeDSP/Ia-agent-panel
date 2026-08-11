@@ -336,7 +336,7 @@ export async function conectarChatwoot(
   // quando ainda não há token guardado (primeira conexão).
   if (!token) {
     // Credencial vive em tenant_credenciais (segregada de tenants para o token
-    // nao vazar ao tenant_admin via RLS de linha — ver migracao 16).
+    // nao vazar ao tenant_admin via RLS de linha — ver migracao 21a).
     const { data: atual } = await supabase
       .from('tenant_credenciais')
       .select('chatwoot_token')
@@ -354,7 +354,7 @@ export async function conectarChatwoot(
   }
 
   // account_id/url (nao-sensiveis) ficam em tenants; o token vai para a tabela
-  // segregada (migracao 16). Grava a conta primeiro para o UNIQUE de account_id
+  // segregada (migracao 21a). Grava a conta primeiro para o UNIQUE de account_id
   // reprovar antes de tocar na credencial.
   const { error } = await supabase
     .from('tenants')
@@ -482,7 +482,7 @@ export async function excluirTenant(
 
   if (error) return { erro: `Não foi possível excluir: ${error.message}` };
 
-  // A credencial vive em tabela separada (migracao 16): limpa junto.
+  // A credencial vive em tabela separada (migracao 21a): limpa junto.
   await supabase.from('tenant_credenciais').delete().eq('tenant_id', tenantId);
 
   revalidatePath('/admin/tenants');

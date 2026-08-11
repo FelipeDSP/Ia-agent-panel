@@ -39,7 +39,7 @@ Guia prático para provisionar uma capacidade nova do agente (ex.: `agendar_hora
      ```
      com `queryReplacement = {{ $json.tenant_id }}`. `chatwoot_url` vem de
      `tenants`; `chatwoot_token` vem de `tenant_credenciais` (segregado na
-     migração 16 — RLS não filtra coluna, e o token é credencial da agência);
+     migração 21a — RLS não filtra coluna, e o token é credencial da agência);
      `tool_ativa`/`config` vêm de `tenant_tools` para aquele `<tool_nome>`.
      A tool nunca lê o token direto de tabela — só por esta função, que é
      `SECURITY DEFINER` e é o que dá acesso a `tenant_credenciais`.
