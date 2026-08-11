@@ -37,9 +37,12 @@ Guia prático para provisionar uma capacidade nova do agente (ex.: `agendar_hora
      SELECT chatwoot_url, chatwoot_token, tool_ativa, config
      FROM public.api_n8n_config_tool($1::uuid, '<tool_nome>');
      ```
-     com `queryReplacement = {{ $json.tenant_id }}`. `chatwoot_url`/`chatwoot_token`
-     vêm da tabela `tenants` (nível do cliente); `tool_ativa`/`config` vêm de
-     `tenant_tools` para aquele `<tool_nome>`.
+     com `queryReplacement = {{ $json.tenant_id }}`. `chatwoot_url` vem de
+     `tenants`; `chatwoot_token` vem de `tenant_credenciais` (segregado na
+     migração 16 — RLS não filtra coluna, e o token é credencial da agência);
+     `tool_ativa`/`config` vêm de `tenant_tools` para aquele `<tool_nome>`.
+     A tool nunca lê o token direto de tabela — só por esta função, que é
+     `SECURITY DEFINER` e é o que dá acesso a `tenant_credenciais`.
    - **Retorno Sucesso** (Set): a string que volta pro agente descrevendo o resultado.
 
 2. **Ligar no workflow principal** (`Agente Multi-Tenant (Supabase)`): adicione um nó
@@ -77,7 +80,14 @@ Guia prático para provisionar uma capacidade nova do agente (ex.: `agendar_hora
   idem (do `Extrair e Filtrar`). Violar isso vaza dados entre clientes.
 - **`tool_nome` idêntico** entre catálogo, `tenant_tools` e n8n.
 - **Paridade com produção:** a Acqua roda no mesmo banco via n8n. Antes de mexer em
-  `api_n8n_tools_ativas`/`api_n8n_config_tool`, garanta retorno idêntico ao anterior.
+  `api_n8n_tools_ativas`/`api_n8n_config_tool`, garanta retorno idêntico ao anterior —
+  o n8n consome por **nome de coluna**, então renomear campo de retorno quebra o
+  sub-workflow sem erro no banco.
+- **Dropar coluna não avisa quem depende dela.** Corpo de função plpgsql é texto
+  opaco para o `pg_depend`: o `drop column` passa verde e a função só estoura na
+  primeira chamada em runtime. Antes de remover coluna, varra as funções de
+  verdade (`pg_get_functiondef` em todas, procurando o nome da coluna) — grep nos
+  arquivos de migração não basta, porque nem toda função no banco está versionada.
 - **Chatwoot:** finalizar = `POST .../conversations/{id}/toggle_status` com
   `{status:"resolved"}`. Mensagem *outgoing* não reabre conversa resolvida; só
   *incoming* do cliente reabre.
