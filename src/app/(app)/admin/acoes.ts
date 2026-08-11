@@ -9,6 +9,7 @@ import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarConfigTenantSuper, validarCriacaoTenant } from '@/lib/tenants/schema';
 import { criarUsuario, ehEmailDuplicado } from '@/lib/supabase/admin-usuarios';
+import { TOOLS_BASELINE } from '@/lib/tools/registro';
 import {
   HORARIO_PADRAO,
   TOOL_TRANSFERIR,
@@ -63,8 +64,37 @@ export async function criarTenant(
     return { erro: `Não foi possível criar o cliente: ${error.message}` };
   }
 
+  // Baseline do produto: as três tools entram contratadas e LIGADAS, sem clique.
+  // Antes eram três contratações manuais por cliente novo, e esquecer
+  // `busca_conhecimento` deixava o agente respondendo sem base de conhecimento —
+  // falha cara e silenciosa. `config` vazio: o default do horário mora no
+  // sub-workflow, e a agência preenche a sessão do WAHA quando houver.
+  const { error: erroTools } = await supabase.from('tenant_tools').insert(
+    TOOLS_BASELINE.map((tool_nome) => ({
+      tenant_id: data.id,
+      tool_nome,
+      contratado: true,
+      ativo: true,
+      config: {},
+    })),
+  );
+
   revalidatePath('/admin/tenants');
-  return { sucesso: `Cliente "${validado.valor.slug}" criado.` };
+
+  // O tenant existe mesmo se o provisionamento falhar — não dá para desfazer a
+  // criação aqui sem transação. Falha visível é melhor que cliente novo com
+  // agente mudo e ninguém sabendo por quê.
+  if (erroTools) {
+    return {
+      sucesso:
+        `Cliente "${validado.valor.slug}" criado, mas os módulos padrão NÃO foram ` +
+        `provisionados (${erroTools.message}). Contrate-os na aba Módulos do cliente.`,
+    };
+  }
+
+  return {
+    sucesso: `Cliente "${validado.valor.slug}" criado com os módulos padrão ligados.`,
+  };
 }
 
 /**
@@ -603,10 +633,16 @@ export async function salvarTransferirHumanoAgencia(
  * Contrata / descontrata um módulo (tool) para um tenant — a decisão comercial
  * da §4.2. Só super admin (a §4.1 impede o cliente de fazer isto pela API).
  *
- * Contratar cria a linha em tenant_tools com contratado=true e DESLIGADA
- * (ativo=false): o cliente liga no painel dele depois de configurar. Se a linha
- * já existe (ex.: a infra de transferir_humano já a criou), só alterna
- * `contratado`, preservando config e ativo. Descontratar mantém a linha (config
+ * Contratar cria a linha em tenant_tools com contratado=true e JÁ LIGADA
+ * (ativo=true). As três tools do produto são baseline: o cliente desliga o que
+ * não quiser no switch de "Meus módulos" (opt-out), em vez de precisar ligar uma
+ * a uma. Enquanto isto inseria ativo=false, todo módulo contratado por aqui
+ * nascia preso em desligado — o card do cliente nem tinha switch, e só
+ * transferir_humano escapava porque o formulário dele gravava `ativo`.
+ *
+ * Se a linha já existe (ex.: a infra de transferir_humano já a criou), só
+ * alterna `contratado`, preservando config e ativo — recontratar não repõe o
+ * que o cliente desligou de propósito. Descontratar mantém a linha (config
  * intacto), então recontratar restaura o que o cliente tinha.
  *
  * tenant_id e tool_nome vêm do form da rota de agência; o gate no servidor
@@ -648,7 +684,7 @@ export async function definirContratacao(
       tenant_id: tenantId,
       tool_nome: toolNome,
       contratado: true,
-      ativo: false,
+      ativo: true,
       config: {},
     });
     if (error) return { erro: `Não foi possível contratar: ${error.message}` };
@@ -657,7 +693,7 @@ export async function definirContratacao(
   revalidatePath(`/admin/tenants/${tenantId}`);
   return {
     sucesso: contratar
-      ? 'Módulo contratado. O cliente liga e configura no painel dele.'
+      ? 'Módulo contratado e ligado. O cliente ajusta ou desliga no painel dele.'
       : 'Módulo descontratado. A configuração fica guardada caso recontrate.',
   };
 }

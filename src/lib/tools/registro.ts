@@ -41,3 +41,23 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
 export function definicaoTool(nome: string): DefinicaoTool | null {
   return REGISTRO_TOOLS[nome] ?? null;
 }
+
+/**
+ * Tools de baseline do produto: todo cliente tem, desde o primeiro dia.
+ *
+ * São provisionadas automaticamente na criação do tenant (contratado + ativo) e,
+ * quando contratadas à mão, entram já ligadas. O switch de "Meus módulos" existe
+ * como OPT-OUT — o cliente desliga o que não quiser — e não como opt-in.
+ *
+ * A razão de não ser opt-in: `busca_conhecimento` desligada é agente sem base de
+ * conhecimento, respondendo do nada. Um esquecimento no provisionamento não pode
+ * ter esse custo.
+ *
+ * Precisam existir em `catalogo_tools` (FK de tenant_tools.tool_nome). As três
+ * estão lá desde a migração 20.
+ */
+export const TOOLS_BASELINE = [
+  'busca_conhecimento',
+  TOOL_TRANSFERIR,
+  'resolver_conversa',
+] as const;

@@ -41,10 +41,28 @@ export function FormularioTransferir({
           tenant_tools.ativo. Aqui fica só o aviso de estado, para o cliente não
           configurar horário achando que o módulo já está no ar. */}
       {ativo ? (
-        <p className="text-xs text-muted-foreground">
-          Módulo ligado. O agente pode passar a conversa para um atendente dentro do horário
-          abaixo e pausa o bot naquela conversa.
-        </p>
+        <>
+          <p className="text-xs text-muted-foreground">
+            Módulo ligado. O agente pode passar a conversa para um atendente dentro do horário
+            abaixo e pausa o bot naquela conversa.
+          </p>
+          {/* Sem canal de aviso, transferir é silencioso: o bot pausa e fica só a
+              nota privada no Chatwoot. Como o módulo entra ligado por padrão, o
+              cliente pode nunca ter escolhido isso — o aviso diz onde olhar. */}
+          {!notificarAtual ? (
+            <Alert>
+              <strong>Você não recebe aviso quando alguém pede atendimento.</strong> A conversa é
+              pausada e fica marcada no <strong>Chatwoot</strong> — é lá que você acompanha e
+              responde. Ninguém é notificado por WhatsApp.
+              {temSessao ? (
+                <> Para receber aviso, ligue a notificação abaixo e informe o número.</>
+              ) : (
+                <> Se quiser aviso no WhatsApp, fale com a agência: o canal ainda não foi
+                  configurado para você.</>
+              )}
+            </Alert>
+          ) : null}
+        </>
       ) : (
         <Alert>
           Este módulo está <strong>desligado</strong>. Você pode ajustar o horário e o aviso
