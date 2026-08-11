@@ -112,53 +112,80 @@ e o cliente cadastra o mesmo item cinco vezes.
 `adicionar_item` — que precisa saber qual variação foi escolhida para resolver o
 preço.
 
-### Foto de produto — em aberto, decidir junto com `variacoes`
+### Foto de produto — transporte VERIFICADO, implementação junto com `variacoes`
 
-Levantado em 11/08/2026. **Nada implementado.** Registrado porque a decisão
-depende de uma verificação que ainda não foi feita, e fazer o modelo de dados
-antes dela é chutar.
+Testado em 11/08/2026 contra o sandbox real (ChatYou, `chatwoot_account_id = 1`,
+inbox "WA - Testes", conversa 1864). **Nada implementado** — a decisão de modelo
+espera `variacoes`, pelo motivo no fim desta seção.
 
-**Mais de uma foto por produto** é requisito desde o começo, não evolução: uma
-peça de roupa tem frente, verso e detalhe; um prato tem foto do prato e da mesa.
+#### O que o teste respondeu
 
-**O que decide o modelo é o lado do agente, não o do painel.** A pergunta é como
-o Chatwoot aceita a imagem na mensagem que o agente envia:
+**1. O token de Agent Bot envia anexo.** Envia mensagem de texto (é o que o
+agente já faz hoje) e envia anexo pelo mesmo endpoint. A recusa documentada em
+`docs/DIAGNOSTICO-CREDENCIAL-CHATWOOT.md` vale para a API de *plataforma*
+(listar conversas), não para o envio — são caminhos diferentes.
 
-- se aceita **URL**, o bucket pode ficar privado e o n8n manda uma URL assinada —
-  mas aí o TTL da assinatura tem que cobrir o tempo até o WhatsApp buscar o
-  arquivo, e isso é um prazo que não controlamos;
-- se exige **upload multipart** dos bytes, o n8n baixa do Storage e reenvia ao
-  Chatwoot. O bucket fica totalmente privado e o isolamento entre clientes não
-  depende de URL nenhuma. **É o caminho mais seguro** — e o mais trabalhoso no
-  workflow.
+**2. URL no corpo NÃO funciona.** `POST .../messages` com
+`attachments: [{ file_type: 'image', data_url: '<url assinada>' }]` devolve
+**422**:
 
-Antes de modelar, verificar **nesta ordem**:
+```
+Could not find or build blob: expected attachable, got #<ActionController::Parameters ...>
+```
 
-1. o token de **Agent Bot** consegue enviar anexo? Sabemos que ele é recusado em
-   endpoints de leitura da API de plataforma (ver
-   `docs/DIAGNOSTICO-CREDENCIAL-CHATWOOT.md`); enviar anexo é outro endpoint e
-   precisa de teste próprio. Se não conseguir, o resto da discussão muda —
-   seria preciso um token de usuário, com implicação de segurança;
-2. o endpoint de mensagem aceita URL ou exige multipart;
-3. o WhatsApp carrega legenda junto da imagem, ou exige mensagem separada. Isso
-   muda o texto que a tool de venda devolve.
+O parâmetro `attachments` do Chatwoot é ActiveStorage: espera o arquivo, não um
+link. Não há TTL a calibrar porque não há URL nossa em jogo.
 
-**Storage:** hoje existe um bucket só, `kb-arquivos`, privado, limitado a
-PDF/DOCX/TXT e 10MB (migração 14). Foto de produto precisa de bucket novo — o
-MIME type não bate e o propósito é outro. O padrão de path a seguir é o de lá:
-`{tenant_id}/{uuid}.{ext}`, com RLS de Storage escopando por tenant.
+**3. Multipart funciona.** `attachments[]` com os bytes, `content-type`
+`multipart/form-data`: **200**, anexo criado com `file_type: "image"`.
 
-**Modelo de dados — a armadilha:** a vontade natural é `fotos jsonb` em
-`produtos`, uma lista de paths. Funciona até aparecer o pedido óbvio seguinte,
-que é **foto por variação** — camisa azul e vermelha não podem mostrar a mesma
-imagem. Como `variacoes` também está em aberto (seção acima), as duas coisas
-devem ser desenhadas **juntas**: fazer foto agora e variação depois obriga a
-remodelar foto.
+**4. E o achado que decide a arquitetura: o Chatwoot RE-HOSPEDA a imagem.** O
+`data_url` que ele devolve aponta para o próprio Chatwoot:
 
-**Limpeza:** produto usa soft delete, então arquivo no Storage sobrevive à
-exclusão. Precisa de uma regra explícita — ou o arquivo fica (barato, e o
-cliente pode restaurar), ou entra uma rotina de limpeza. Decidir junto, não
-depois.
+```
+https://app.chatyou.chat/rails/active_storage/blobs/redirect/<blob>/picanha.png
+```
+
+Confirmado nos logs de Storage do Supabase: durante todo o teste o objeto foi
+buscado **duas vezes, ambas pelo nosso próprio script** (user-agent `node`).
+Nenhuma requisição do Chatwoot, do WhatsApp ou de qualquer origem externa.
+
+#### O que isso implica
+
+- **O bucket fica privado, sem exceção.** Nenhuma URL nossa chega ao WhatsApp.
+- **A pergunta do TTL da URL assinada morreu.** O único consumidor da URL é o
+  próprio n8n, dentro da execução do workflow — segundos, não o prazo
+  incontrolável de um fetch do WhatsApp. Uma assinatura curta basta.
+- **O fluxo é:** n8n baixa do Storage (URL assinada curta) → reenvia ao Chatwoot
+  em multipart → o Chatwoot hospeda e entrega ao WhatsApp. Duas transferências
+  de bytes por foto enviada, o que importa para produto com várias fotos.
+- **Falta medir** o custo dessas duas transferências com imagem de tamanho real
+  (o teste usou 1,7 KB). Foto de cardápio tem centenas de KB; vale checar limite
+  de tamanho do Chatwoot e o tempo do round-trip antes de mandar 3 fotos numa
+  resposta.
+- **Falta confirmar** se o WhatsApp entrega legenda junto da imagem ou exige
+  mensagem separada — muda o texto que a tool de venda devolve.
+
+#### Storage
+
+Existe um bucket só, `kb-arquivos`: privado, 10MB, e aceita apenas PDF, DOCX e
+TXT (migração 14). Foto precisa de bucket novo — o MIME type não bate. O padrão
+de path a seguir é o de lá: `{tenant_id}/{uuid}.{ext}`, com RLS de Storage
+escopando por tenant.
+
+#### Por que não implementar agora
+
+A saída natural é `fotos jsonb` em `produtos`, uma lista de paths. Funciona até
+chegar o pedido óbvio seguinte, que é **foto por variação** — camisa azul e
+vermelha não mostram a mesma imagem. Como `variacoes` está em aberto (seção
+acima), fazer foto agora e variação depois obriga a remodelar foto. **As duas se
+desenham juntas, na fatia 2.**
+
+#### Exclusão — decidido: o arquivo fica
+
+Produto tem soft delete para preservar histórico de pedido; apagar a imagem
+quebraria a visualização de um pedido antigo. Limpeza vira job quando o volume
+justificar, não regra agora.
 
 ### Paginação da tela de catálogo — gatilho definido
 
