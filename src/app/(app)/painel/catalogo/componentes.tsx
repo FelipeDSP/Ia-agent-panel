@@ -20,6 +20,8 @@ import { Select } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
 import { centavosParaReais, formatarBRL } from '@/lib/vendas/dinheiro';
+
+import { FotoProduto } from './componentes-foto';
 import { UNIDADES } from '@/lib/vendas/schema';
 
 export type Produto = {
@@ -31,6 +33,8 @@ export type Produto = {
   sku: string | null;
   estoque: number | null;
   disponivel: boolean;
+  /** URL assinada de vida curta, ou null se o produto não tem foto. */
+  fotoUrl: string | null;
 };
 
 function ErroCampo({ msg }: { msg?: string }) {
@@ -340,6 +344,8 @@ export function GestaoCatalogo({ produtosIniciais }: { produtosIniciais: Produto
                   key={p.id}
                   className="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
                 >
+                  <FotoProduto produtoId={p.id} nome={p.nome} fotoUrl={p.fotoUrl} />
+
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{p.nome}</span>

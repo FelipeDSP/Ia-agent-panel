@@ -12,13 +12,28 @@ export default async function PaginaCatalogo() {
   // regra 6 do CLAUDE.md. `deletado_em is null` porque a exclusão é soft.
   const { data, error } = await supabase
     .from('produtos')
-    .select('id, nome, descricao, preco_centavos, unidade, sku, estoque, disponivel')
+    .select('id, nome, descricao, preco_centavos, unidade, sku, estoque, disponivel, foto_path')
     .eq('tenant_id', usuario.tenantId)
     .is('deletado_em', null)
     .order('nome', { ascending: true });
 
   if (error) {
     return <Alert variant="destructive">Não foi possível carregar o catálogo.</Alert>;
+  }
+
+  // URLs assinadas em LOTE: uma chamada para a tela toda, não uma por produto.
+  // Vida curta de propósito — a miniatura é reaberta a cada carregamento, e uma
+  // assinatura longa vazando daria acesso à foto por horas. O bucket é privado
+  // (migração 34), então esta é a única forma de a tela enxergar o arquivo.
+  const comFoto = (data ?? []).filter((p) => p.foto_path);
+  const urlPorPath = new Map<string, string>();
+  if (comFoto.length > 0) {
+    const { data: assinadas } = await supabase.storage
+      .from('produto-fotos')
+      .createSignedUrls(comFoto.map((p) => p.foto_path as string), 300);
+    for (const a of assinadas ?? []) {
+      if (a.signedUrl && a.path) urlPorPath.set(a.path, a.signedUrl);
+    }
   }
 
   const produtos: Produto[] = (data ?? []).map((p) => ({
@@ -32,6 +47,7 @@ export default async function PaginaCatalogo() {
     sku: (p.sku as string | null) ?? null,
     estoque: (p.estoque as number | null) ?? null,
     disponivel: p.disponivel as boolean,
+    fotoUrl: p.foto_path ? (urlPorPath.get(p.foto_path as string) ?? null) : null,
   }));
 
   return (
