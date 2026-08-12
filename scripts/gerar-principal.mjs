@@ -115,7 +115,7 @@ if (!agenteAtual) throw new Error('nenhum AI Agent encontrado — o workflow nao
 const smAtual = agenteAtual.parameters.options.systemMessage;
 const corte = smAtual.indexOf('{{');
 if (corte < 0) throw new Error('systemMessage sem a expressao do prompt do tenant');
-const CAUDA = smAtual.slice(corte); // "{{ $('Resolve Tenant').item.json.system_prompt }}"
+const CAUDA = smAtual.slice(corte); // a expressao que injeta o system_prompt do tenant
 const fixoAtual = smAtual.slice(1, corte);
 
 const RE_SECOES_VENDAS = /## Ferramenta: consultar_catalogo[\s\S]*?(?=## Regras gerais)/;
@@ -183,8 +183,11 @@ w.nodes.push({
       "         select 1 from public.api_n8n_tools_ativas($1::uuid)\n" +
       "         where tool_nome = 'vendas'\n" +
       "       ) then 'vendas' else 'basico' end AS perfil;",
-    options: { queryReplacement: "={{ [ $('Resolve Tenant').item.json.tenant_id ] }}" },
+    options: { queryReplacement: "={{ [ $('Resolve Tenant').first().json.tenant_id ] }}" },
   },
+  // `.first()` e nao `.item`: o acessor por linhagem para de resolver depois da
+  // cadeia do LPOP (Split Out -> pop -> Limit), e o `Resolve Tenant` emite uma
+  // linha so, entao os dois sao equivalentes quando o linking funciona.
   type: 'n8n-nodes-base.postgres',
   typeVersion: 2.6,
   position: [-544, -64],
@@ -227,7 +230,7 @@ w.nodes.push({
 w.nodes.push({
   parameters: {
     errorMessage:
-      "=Perfil de tools nao resolvido para o tenant {{ $('Resolve Tenant').item.json.tenant_id }}. " +
+      "=Perfil de tools nao resolvido para o tenant {{ $('Resolve Tenant').first().json.tenant_id }}. " +
       'O no "Tools Ativas" deveria devolver "vendas" ou "basico" e nao devolveu. ' +
       'A execucao para aqui de proposito: seguir no perfil basico faria um cliente que ' +
       'contratou vendas perder as tools em silencio.',

@@ -198,6 +198,43 @@ fora do cofre do n8n — mais `NODE_FUNCTION_ALLOW_EXTERNAL` para importar o
 cliente. Tirar segredo do cofre para dentro do container é o oposto do que a
 migração 21 fez com o token do Chatwoot, e por isso foi descartado.
 
+## `.first()` e não `.item` — item linking quebrado (12/08/2026)
+
+`$('No').item` resolve por **item linking**: o n8n rastreia a linhagem do item
+corrente até o nó citado. A cadeia do LPOP (`Split Out → pop → Limit → Postgres`)
+quebra essa linhagem, e a partir dali `.item` para de resolver.
+
+Custou três execuções para aparecer inteiro, porque cada camada falhou de um
+jeito diferente:
+
+| execução | nó | sintoma |
+|---|---|---|
+| 3951563 | `AI Agent Vendas` | prompt vazio → "No prompt specified" |
+| 3952035 | `Credencial (resposta)` | parâmetro `undefined` → "Query Parameters must be a string…" |
+| — | `Estima Tokens` | `system_prompt` vazio e memória 0, **em silêncio** |
+
+O terceiro é o pior e quase passou: o nó tinha `try/catch` com comentário vazio
+em cada leitura, então seguia com os valores zerados e o rateio simplesmente
+encolhia. Nenhum erro, nenhum log. Agora cada falha entra em `_faltou`, que sai
+no output do nó — vazio é o esperado; com algo dentro, o rateio está
+subestimando.
+
+**A correção é uniforme:** todos os nós citados por expressão neste workflow
+emitem **exatamente um item** por execução (um GET no Redis, uma linha do
+Postgres, um item do Code, o webhook). Então `.first()` é equivalente ao `.item`
+quando o linking funciona, e continua funcionando quando não. Foram 72
+ocorrências.
+
+`npm run n8n:sincronia` falha se qualquer `.item` voltar — inclusive vindo de um
+export feito depois de editar pela UI.
+
+**Por que só apareceu agora:** antes da fatia 3 o caminho era
+`Limpa Acumulo → AI Agent`, um salto só, e o linking sobrevivia. A fatia 3
+inseriu `Tools Ativas` (Postgres, que cria itens novos) e o conserto do debounce
+inseriu `Split Out` e `Limit`. Cada um sozinho talvez passasse; juntos, não.
+
+---
+
 ## Nota de manutenção — editar por automação
 
 Mutação de **parâmetro** no store Pinia + Save persiste. Mutação **estrutural**

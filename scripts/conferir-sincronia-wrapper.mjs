@@ -203,6 +203,28 @@ console.log('\n  -- 6. o debounce nao chama o agent com lista vazia --');
     '"outra execucao responde" nao pode virar erro — acontece o tempo todo');
 }
 
+console.log('\n  -- 7. nenhuma leitura por item linking (.item) --');
+// `$('X').item` resolve rastreando a linhagem do item corrente ate o no X. A
+// cadeia do LPOP (Split Out -> pop -> Limit -> Postgres) quebra essa linhagem, e
+// dali em diante `.item` para de resolver. O estrago apareceu em tres formas
+// diferentes, todas na mesma causa:
+//
+//   AI Agent Vendas         prompt vazio  -> "No prompt specified"  (3951563)
+//   Credencial (resposta)   parametro undefined -> query invalida    (3952035)
+//   Estima Tokens           system_prompt '' e memoria 0, EM SILENCIO
+//
+// O terceiro e o pior: nao quebra nada visivel, so encolhe o rateio.
+//
+// Todo no citado neste workflow emite exatamente UM item por execucao, entao
+// `.first()` e equivalente quando o linking funciona e continua funcionando
+// quando nao.
+{
+  const bruto = JSON.stringify(w.nodes);
+  const usos = [...bruto.matchAll(/\$\('([^']+)'\)\.item\./g)].map((m) => m[1]);
+  checar('nenhum no usa .item', usos.length === 0,
+    `${usos.length} uso(s): ${[...new Set(usos)].join(', ')} — troque por .first()`);
+}
+
 console.log('\n  -- extras --');
 checar('contextWindowLength = 20', no('Redis Chat Memory')?.parameters?.contextWindowLength === 20);
 for (const a of agents) {

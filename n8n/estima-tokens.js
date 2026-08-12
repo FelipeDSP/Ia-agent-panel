@@ -71,6 +71,23 @@
 // Antes desta calibracao o mesmo calculo errava de 1,5x a 10x.
 // ============================================================================
 
+// ----------------------------------------------------------------------------
+// POR QUE `.first()` E NAO `.item` (12/08/2026)
+// ----------------------------------------------------------------------------
+// O acessor `.item` resolve por ITEM LINKING: o n8n rastreia a linhagem do item
+// corrente ate o no citado. (Escrito assim, sem a forma literal com cifrao e
+// parenteses, porque n8n-validar.mjs varre comentario e acusaria referencia
+// orfa a um no chamado "No".) A cadeia do LPOP (Split Out -> pop -> Limit ->
+// Postgres) quebra essa linhagem, e a partir dai `.item` para de resolver.
+//
+// Aqui o estrago era mudo: cada leitura estava dentro de um try/catch com
+// comentario vazio, entao o no seguia com system_prompt '' e memoria 0 e o
+// rateio simplesmente encolhia. O `_faltou` existe para isso nao se repetir.
+//
+// Todos os nos citados emitem EXATAMENTE UM item por execucao (um GET no Redis,
+// uma linha do Postgres, um item do Code), entao `.first()` e equivalente ao
+// `.item` quando o linking funciona -- e continua funcionando quando nao.
+//
 // A saida do agent vem por $input, e NAO por referencia ao agent pelo nome: a
 // fatia 3 tem DOIS agents e so um executa. Referenciar por nome quebraria no
 // perfil que nao casasse com o nome escrito — e o $input nao precisa saber de
@@ -83,10 +100,16 @@ const textoSaida = agent?.output ?? '';
 // esta antes do Switch, no caminho unico. Fallback `basico` de proposito — aqui
 // e MEDICAO, e errar cobrando a menos e melhor que a mais. (No roteamento o
 // sinal e oposto: la nao ha fallback, ver o no `Vende?`.)
+// Toda leitura de outro no que falhar entra aqui e sai no `_faltou`. Antes os
+// catch eram comentario vazio: o no seguia com system_prompt '' e memoria 0, e
+// o rateio mentia sem nada no log. Foi assim que o `.item` quebrado passou
+// despercebido — o unico sintoma era um numero um pouco menor.
+const faltou = [];
+
 let perfil = 'basico';
 try {
-  perfil = $('Tools Ativas').item.json.perfil ?? 'basico';
-} catch (e) { /* sem o no no contexto: assume basico */ }
+  perfil = $('Tools Ativas').first().json.perfil ?? 'basico';
+} catch (e) { faltou.push('Tools Ativas:' + String(e && e.message).slice(0, 40)); }
 
 // Os dois wrappers e os dois S saem do gerador, da mesma fonte do System Message
 // de cada agent. `npm run n8n:sincronia` falha se divergirem.
@@ -149,14 +172,15 @@ for (const [nome, fn] of formas) {
 // ----------------------------------------------------------------------------
 let systemPrompt = '';
 try {
-  systemPrompt = $('Resolve Tenant').item.json.system_prompt ?? '';
-} catch (e) { /* sem tenant no contexto: segue sem o system_prompt */ }
+  systemPrompt = $('Resolve Tenant').first().json.system_prompt ?? '';
+} catch (e) { faltou.push('Resolve Tenant'); }
 
 let mensagens = '';
 try {
-  const lista = $('Lista Depois').item.json.lista_depois;
+  const lista = $('Lista Depois').first().json.lista_depois;
   mensagens = Array.isArray(lista) ? lista.join('\n') : (lista ?? '');
 } catch (e) {
+  faltou.push('Lista Depois');
   mensagens = agent?.input ?? '';
 }
 
@@ -173,8 +197,8 @@ const chamadas = 1 + passos;
 // crescendo com o tamanho da conversa, o que tornava o rateio nao-uniforme.
 let historicoChars = 0;
 try {
-  historicoChars = Number($('Sync Conversa').item.json.historico_chars) || 0;
-} catch (e) { /* sem sync no contexto: segue sem memoria contabilizada */ }
+  historicoChars = Number($('Sync Conversa').first().json.historico_chars) || 0;
+} catch (e) { faltou.push('Sync Conversa'); }
 const base = emTokens(WRAPPER + systemPrompt + mensagens) + TOKENS_FERRAMENTAS + Math.ceil(historicoChars / 4);
 
 // Cada chamada reenvia o prompt inteiro; o historico cresce a cada round-trip.
@@ -200,5 +224,8 @@ return [{
     _estimado_entrada: estimado_entrada,
     _historico_chars: historicoChars,
     _perfil: perfil,
+    // Vazio e o esperado. Com algo dentro, o rateio esta subestimando: cada
+    // entrada aqui e um pedaco do prompt que o no nao conseguiu medir.
+    _faltou: faltou,
   },
 }];
