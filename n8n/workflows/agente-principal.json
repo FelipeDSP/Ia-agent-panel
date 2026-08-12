@@ -132,7 +132,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ============================================================================\n// EXTRACAO + FILTRAGEM + SANITIZACAO — corpo do no \"Extrair e Filtrar\"\n//\n// ESTE ARQUIVO E A FONTE. O JSON do workflow recebe uma copia injetada por\n// scripts/gerar-principal.mjs, que substitui o marcador __FILTRO_TEXTO__ pelo\n// conteudo de n8n/filtro-texto.js. Editar o no pela UI e perder a alteracao na\n// proxima geracao — edite aqui.\n//\n// POR QUE VIROU ARQUIVO (12/08/2026). Era o no de MAIOR exposicao do repo ainda\n// vivendo como string dentro de JSON: 66 linhas, primeiro no depois do webhook,\n// no caminho de todo cliente. Se ele quebra, nao ha degradacao parcial — o fluxo\n// inteiro para antes de resolver o tenant. O `Consolida Resultado` provou o\n// custo dessa forma de guardar codigo no mesmo dia.\n//\n// Funde 7 nos do fluxo antigo. Retorna SEMPRE 1 item com `acao`:\n//   ignorar | midia | bloqueado | processar\n//\n// NAO carrega token nem URL: isso vem do banco (multi-tenant).\n// ============================================================================\n\nconst body   = $json.body || {};\nconst sender = body.sender || {};\nconst conv   = body.conversation || {};\n\nconst base = {\n  conversation_id: conv.id ?? null,\n  chatwoot_account_id: body.account?.id ?? null,\n  contact_name: sender.name || 'Cliente',\n  phone: (sender.phone_number || '').replace(/\\D/g, '') || null\n};\n\nconst out = (acao, extra = {}) => [{ json: { ...base, acao, ...extra } }];\n\n// 1. Grupo de WhatsApp\nif ((sender.identifier || '').endsWith('@g.us')) {\n  return out('ignorar', { motivo: 'grupo' });\n}\n\n// 2. Contato tecnico da integracao\nif (base.contact_name === 'Integração WhatsApp') {\n  return out('ignorar', { motivo: 'integracao' });\n}\n\n// 3. Story mention do Instagram\nconst primeira = conv.messages?.[0]?.content || '';\nconst tipoAnexo = body.content_attributes?.image_type || '';\nif (primeira.includes('mentioned you in the story') || tipoAnexo === 'story_mention') {\n  return out('ignorar', { motivo: 'story_mention' });\n}\n\n// 4. Midia sem texto\nconst texto = (body.content || '').trim();\nconst temAnexo = Array.isArray(body.attachments) && body.attachments.length > 0;\nif (!texto) {\n  return temAnexo ? out('midia') : out('ignorar', { motivo: 'sem_texto' });\n}\n\n// 5. Prompt injection + 6. Sanitizacao\n// O bloco abaixo e injetado de n8n/filtro-texto.js e e o MESMO usado no filtro\n// da transcricao de audio. Nao edite aqui: edite a fonte.\n// ============================================================================\n// FILTRO DE TEXTO — blocklist de injection + sanitizacao\n//\n// ESTE ARQUIVO E A FONTE, E E COMPARTILHADO. O gerador injeta este bloco em\n// TODO no que precisa filtrar texto de cliente. Hoje: o `Extrair e Filtrar` (o\n// texto digitado). Na fatia de audio, tambem o `Filtra Transcricao`.\n//\n// POR QUE COMPARTILHADO E NAO COPIADO. Um audio transcrito e texto do cliente\n// que entra no fluxo DEPOIS do `Extrair e Filtrar` — sem passar pelo mesmo\n// filtro, alguem fala \"esquece suas instrucoes\" numa nota de voz e passa direto.\n// Duas copias da blocklist divergem: uma ganha padrao novo, a outra nao, e o\n// buraco fica no caminho que ninguem olhou. `npm run n8n:sincronia` falha se os\n// blocos deixarem de ser identicos byte a byte.\n//\n// As funcoes ficam no escopo do no. Nao ha import em node Code do n8n — por isso\n// injecao por gerador, e nao `require`.\n// ============================================================================\n\nconst PADROES_INJECTION = [\n  'ignore', 'esquece', 'nova regra', 'system:', 'knowledge-base',\n  '<knowledge', '</knowledge', 'act as', 'you are now',\n  'ignore as instruções', 'ignore suas instruções', 'esqueça suas regras',\n  'novo comportamento', 'mude seu comportamento', 'agora você pode',\n  'a partir de agora', 'suas regras mudaram', 'instrução do sistema',\n  'ignore o prompt', 'ignore tudo', 'finja que', 'pretend',\n  'jailbreak', 'dan mode', 'developer mode'\n];\n\nfunction contemInjection(texto) {\n  const lower = (texto || '').toLowerCase();\n  return PADROES_INJECTION.some((p) => lower.includes(p));\n}\n\n// Tira tag HTML e conteudo entre colchetes. O colchete importa mais do que\n// parece: e o formato que o modelo imitou ao fabricar \"[Used tools: ...]\", e e\n// como um cliente escreveria algo se passando por marcacao de sistema.\nfunction sanitizar(texto) {\n  return (texto || '').replace(/<[^>]*>/g, '').replace(/\\[.*?\\]/g, '').trim();\n}\n\nif (contemInjection(texto)) {\n  return out('bloqueado');\n}\n\nconst mensagem = sanitizar(texto);\nif (!mensagem) {\n  return out('ignorar', { motivo: 'vazio_pos_sanitizacao' });\n}\n\nreturn out('processar', { mensagem });\n"
+        "jsCode": "// ============================================================================\n// EXTRACAO + FILTRAGEM + SANITIZACAO — corpo do no \"Extrair e Filtrar\"\n//\n// ESTE ARQUIVO E A FONTE. O JSON do workflow recebe uma copia injetada por\n// scripts/gerar-principal.mjs, que substitui o marcador __FILTRO_TEXTO__ pelo\n// conteudo de n8n/filtro-texto.js. Editar o no pela UI e perder a alteracao na\n// proxima geracao — edite aqui.\n//\n// POR QUE VIROU ARQUIVO (12/08/2026). Era o no de MAIOR exposicao do repo ainda\n// vivendo como string dentro de JSON: 66 linhas, primeiro no depois do webhook,\n// no caminho de todo cliente. Se ele quebra, nao ha degradacao parcial — o fluxo\n// inteiro para antes de resolver o tenant. O `Consolida Resultado` provou o\n// custo dessa forma de guardar codigo no mesmo dia.\n//\n// Funde 7 nos do fluxo antigo. Retorna SEMPRE 1 item com `acao`:\n//   ignorar | midia | bloqueado | processar\n//\n// NAO carrega token nem URL: isso vem do banco (multi-tenant).\n// ============================================================================\n\nconst body   = $json.body || {};\nconst sender = body.sender || {};\nconst conv   = body.conversation || {};\n\nconst base = {\n  conversation_id: conv.id ?? null,\n  chatwoot_account_id: body.account?.id ?? null,\n  contact_name: sender.name || 'Cliente',\n  phone: (sender.phone_number || '').replace(/\\D/g, '') || null\n};\n\nconst out = (acao, extra = {}) => [{ json: { ...base, acao, ...extra } }];\n\n// 1. Grupo de WhatsApp\nif ((sender.identifier || '').endsWith('@g.us')) {\n  return out('ignorar', { motivo: 'grupo' });\n}\n\n// 2. Contato tecnico da integracao\nif (base.contact_name === 'Integração WhatsApp') {\n  return out('ignorar', { motivo: 'integracao' });\n}\n\n// 3. Story mention do Instagram\nconst primeira = conv.messages?.[0]?.content || '';\nconst tipoAnexo = body.content_attributes?.image_type || '';\nif (primeira.includes('mentioned you in the story') || tipoAnexo === 'story_mention') {\n  return out('ignorar', { motivo: 'story_mention' });\n}\n\n// 4. Midia sem texto\nconst texto = (body.content || '').trim();\nconst temAnexo = Array.isArray(body.attachments) && body.attachments.length > 0;\nif (!texto) {\n  if (!temAnexo) return out('ignorar', { motivo: 'sem_texto' });\n\n  // O ramo de audio precisa destes campos, e so ele os le. Para todo o resto a\n  // `acao` continua sendo 'midia' exatamente como antes — o acrescimo e aditivo.\n  //\n  // Confirmado contra webhook real de nota de voz (12/08/2026):\n  //   file_type \"audio\" | file_size 5124 | extension null\n  //   data_url  .../active_storage/blobs/redirect/<token>/no-filename.oga\n  //\n  // A EXTENSAO vem da URL, nao do campo `extension`: ele veio null no payload\n  // real. E ela importa porque a API de transcricao decide o parser pelo nome do\n  // arquivo no multipart — mandar `.bin` faz a chamada falhar.\n  const a = body.attachments[0] || {};\n  const url = String(a.data_url || '').split('?')[0];\n  const casa = url.match(/\\.([a-z0-9]{2,5})$/i);\n\n  return out('midia', {\n    anexo: {\n      file_type: a.file_type ?? null,\n      data_url: a.data_url ?? null,\n      file_size: Number(a.file_size) || 0,\n      extensao: casa ? casa[1].toLowerCase() : ''\n    }\n  });\n}\n\n// 5. Prompt injection + 6. Sanitizacao\n// O bloco abaixo e injetado de n8n/filtro-texto.js e e o MESMO usado no filtro\n// da transcricao de audio. Nao edite aqui: edite a fonte.\n// ============================================================================\n// FILTRO DE TEXTO — blocklist de injection + sanitizacao\n//\n// ESTE ARQUIVO E A FONTE, E E COMPARTILHADO. O gerador injeta este bloco em\n// TODO no que precisa filtrar texto de cliente. Hoje: o `Extrair e Filtrar` (o\n// texto digitado). Na fatia de audio, tambem o `Filtra Transcricao`.\n//\n// POR QUE COMPARTILHADO E NAO COPIADO. Um audio transcrito e texto do cliente\n// que entra no fluxo DEPOIS do `Extrair e Filtrar` — sem passar pelo mesmo\n// filtro, alguem fala \"esquece suas instrucoes\" numa nota de voz e passa direto.\n// Duas copias da blocklist divergem: uma ganha padrao novo, a outra nao, e o\n// buraco fica no caminho que ninguem olhou. `npm run n8n:sincronia` falha se os\n// blocos deixarem de ser identicos byte a byte.\n//\n// As funcoes ficam no escopo do no. Nao ha import em node Code do n8n — por isso\n// injecao por gerador, e nao `require`.\n// ============================================================================\n\nconst PADROES_INJECTION = [\n  'ignore', 'esquece', 'nova regra', 'system:', 'knowledge-base',\n  '<knowledge', '</knowledge', 'act as', 'you are now',\n  'ignore as instruções', 'ignore suas instruções', 'esqueça suas regras',\n  'novo comportamento', 'mude seu comportamento', 'agora você pode',\n  'a partir de agora', 'suas regras mudaram', 'instrução do sistema',\n  'ignore o prompt', 'ignore tudo', 'finja que', 'pretend',\n  'jailbreak', 'dan mode', 'developer mode'\n];\n\nfunction contemInjection(texto) {\n  const lower = (texto || '').toLowerCase();\n  return PADROES_INJECTION.some((p) => lower.includes(p));\n}\n\n// Tira tag HTML e conteudo entre colchetes. O colchete importa mais do que\n// parece: e o formato que o modelo imitou ao fabricar \"[Used tools: ...]\", e e\n// como um cliente escreveria algo se passando por marcacao de sistema.\nfunction sanitizar(texto) {\n  return (texto || '').replace(/<[^>]*>/g, '').replace(/\\[.*?\\]/g, '').trim();\n}\n\nif (contemInjection(texto)) {\n  return out('bloqueado');\n}\n\nconst mensagem = sanitizar(texto);\nif (!mensagem) {\n  return out('ignorar', { motivo: 'vazio_pos_sanitizacao' });\n}\n\nreturn out('processar', { mensagem });\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -305,29 +305,6 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT chatwoot_url, chatwoot_token FROM public.api_n8n_credencial_chatwoot($1::uuid);",
-        "options": {
-          "queryReplacement": "={{ [ $('Resolve Tenant').first().json.tenant_id ] }}"
-        }
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        -2496,
-        3744
-      ],
-      "id": "15dc6497-7585-4081-8ed2-e65110810a1d",
-      "name": "Credencial (midia)",
-      "credentials": {
-        "postgres": {
-          "id": "MehTUROZlPmHG8kW",
-          "name": "Agent ia Supabase"
-        }
-      }
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "={{ $json.chatwoot_url }}/api/v1/accounts/{{ $('Extrair e Filtrar').first().json.chatwoot_account_id }}/conversations/{{ $('Extrair e Filtrar').first().json.conversation_id }}/messages",
         "sendHeaders": true,
@@ -352,7 +329,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -2272,
+        -2064,
         3744
       ],
       "id": "d9529c6d-59d4-4930-835d-b4c4c749349f",
@@ -475,7 +452,7 @@
       "parameters": {
         "operation": "push",
         "list": "=tenant_{{ $('Resolve Tenant').first().json.tenant_id }}_conv_{{ $('Extrair e Filtrar').first().json.conversation_id }}_acumulo",
-        "messageData": "={{ $('Extrair e Filtrar').first().json.mensagem }}",
+        "messageData": "={{ $('Mensagem Pronta').first().json.mensagem }}",
         "tail": true
       },
       "type": "n8n-nodes-base.redis",
@@ -821,9 +798,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'entrada', $7::text, 0, 0, $6::text) AS log_entrada,\n       public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'saida', $3::text, $4::int, $5::int, $6::text) AS log_saida;",
+        "query": "SELECT public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'entrada', $7::text, 0, 0, $6::text, $8::numeric) AS log_entrada,\n       public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'saida', $3::text, $4::int, $5::int, $6::text) AS log_saida;",
         "options": {
-          "queryReplacement": "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id, $('Estima Tokens').first().json.output, $('Estima Tokens').first().json.tokens_entrada, $('Estima Tokens').first().json.tokens_saida, $('Resolve Tenant').first().json.modelo, $('Lista Depois').first().json.lista_depois ] }}"
+          "queryReplacement": "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id, $('Estima Tokens').first().json.output, $('Estima Tokens').first().json.tokens_entrada, $('Estima Tokens').first().json.tokens_saida, $('Resolve Tenant').first().json.modelo, $('Lista Depois').first().json.lista_depois, $('Mensagem Pronta').first().json.audio_segundos ] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -1555,6 +1532,407 @@
       ],
       "name": "Perfil Nao Resolvido",
       "id": "perfil-erro0000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT tool_ativa, conversa_pausada, chatwoot_url, chatwoot_token,\n       limite_bytes, msg_audio_longo, msg_audio_falhou\n  FROM public.api_n8n_pode_transcrever($1::uuid, $2::bigint);",
+        "options": {
+          "queryReplacement": "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2496,
+        3744
+      ],
+      "name": "Config Audio",
+      "id": "audio-config000000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "notes": "Substitui o \"Credencial (midia)\". Uma query com as quatro perguntas do ramo: contratou, conversa pausada, credencial do Chatwoot e config do modulo. Quem nao contratou recebe tool_ativa=false e segue para o mesmo aviso de sempre — o caminho nao cresce para ele.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e-audio",
+              "leftValue": "={{ $('Extrair e Filtrar').first().json.anexo.file_type }}",
+              "rightValue": "audio",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "contratado",
+              "leftValue": "={{ $json.tool_ativa }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2288,
+        3744
+      ],
+      "name": "Audio Contratado?",
+      "id": "audio-contratado-0000000000000000000",
+      "notes": "Imagem, documento e video seguem para o aviso de sempre — o escopo do modulo e SO audio. file_type \"audio\" confirmado em webhook real de nota de voz (12/08/2026).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "nao-pausada",
+              "leftValue": "={{ $('Config Audio').first().json.conversa_pausada }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2288,
+        4288
+      ],
+      "name": "Conversa Ativa?",
+      "id": "conversa-ativa-000000000000000000000",
+      "notes": "Humano assumiu: nao transcreve. E o UNICO desperdicio real do desenho — sem isto, cada audio que o cliente mandasse durante o atendimento humano seria baixado e transcrito para ser descartado no \"Nao Pausado?\". Sem saida no ramo falso: quem responde e a pessoa.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "curto",
+              "leftValue": "={{ $('Extrair e Filtrar').first().json.anexo.file_size }}",
+              "rightValue": "={{ $('Config Audio').first().json.limite_bytes }}",
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2064,
+        4288
+      ],
+      "name": "Audio Curto?",
+      "id": "audio-curto-000000000000000000000000",
+      "notes": "Corte por BYTES, que e proxy de duracao — o webhook nao traz duracao. ~270 KB ~= 3 min de nota de voz. A duracao exata so existe depois de transcrever, e vai para mensagens_log justamente para calibrar este corte com dado real.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Extrair e Filtrar').first().json.anexo.data_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $('Config Audio').first().json.chatwoot_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1840,
+        4288
+      ],
+      "name": "Baixa Anexo",
+      "id": "audio-baixa0000000000000000000000000",
+      "notes": "O data_url e do PROPRIO Chatwoot, que re-hospeda o arquivo (active_storage) — nao e URL do WhatsApp. Por isso precisa do token do tenant para baixar.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "name": "response_format",
+              "value": "verbose_json"
+            },
+            {
+              "name": "language",
+              "value": "pt"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1616,
+        4288
+      ],
+      "name": "Transcreve",
+      "id": "audio-transcreve00000000000000000000",
+      "credentials": {
+        "openAiApi": {
+          "id": "B4TZHIczm0tpk2wS",
+          "name": "OpenAi Chatyou"
+        }
+      },
+      "notes": "Usa a credencial OpenAI que ja existe no n8n, por predefinedCredentialType: a chave nao aparece em lugar nenhum do JSON. O audio do cliente final SAI daqui para a OpenAI — ver docs/LGPD-TRANSCRICAO-AUDIO.md.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// FILTRA TRANSCRICAO — corpo do no que trata o retorno da transcricao\n//\n// ESTE ARQUIVO E A FONTE. O gerador injeta o bloco de n8n/filtro-texto.js no\n// lugar do marcador __FILTRO_TEXTO__ e grava o resultado no no. O MESMO bloco\n// vai para o `Extrair e Filtrar` — `npm run n8n:sincronia` falha se os dois\n// deixarem de ser identicos byte a byte.\n//\n// POR QUE O FILTRO RODA DE NOVO AQUI. O `Extrair e Filtrar` filtra o texto\n// DIGITADO. Audio transcrito e texto do cliente que entra no fluxo depois disso:\n// sem passar pela mesma blocklist, alguem fala \"esquece suas instrucoes\" numa\n// nota de voz e chega ao modelo sem filtro nenhum. O canal e outro, o ataque e o\n// mesmo.\n//\n// Devolve `status`, e quem roteia e o no seguinte:\n//   ok         -> segue para o Mensagem Pronta\n//   bloqueado  -> vai para o caminho de bloqueio que o texto ja tem\n//   vazio      -> avisa que nao entendeu e NAO chama o agente\n// ============================================================================\n\nconst resposta = $input.first().json ?? {};\n\n// `verbose_json` devolve { text, duration, language, segments }. O `duration` e\n// a duracao EXATA em segundos, e e o que vai para mensagens_log.audio_segundos —\n// o file_size do webhook e so o proxy que decidiu se valia a pena transcrever.\nconst bruto = String(resposta.text ?? '').trim();\nconst duracao = Number(resposta.duration);\n\n// ============================================================================\n// FILTRO DE TEXTO — blocklist de injection + sanitizacao\n//\n// ESTE ARQUIVO E A FONTE, E E COMPARTILHADO. O gerador injeta este bloco em\n// TODO no que precisa filtrar texto de cliente. Hoje: o `Extrair e Filtrar` (o\n// texto digitado). Na fatia de audio, tambem o `Filtra Transcricao`.\n//\n// POR QUE COMPARTILHADO E NAO COPIADO. Um audio transcrito e texto do cliente\n// que entra no fluxo DEPOIS do `Extrair e Filtrar` — sem passar pelo mesmo\n// filtro, alguem fala \"esquece suas instrucoes\" numa nota de voz e passa direto.\n// Duas copias da blocklist divergem: uma ganha padrao novo, a outra nao, e o\n// buraco fica no caminho que ninguem olhou. `npm run n8n:sincronia` falha se os\n// blocos deixarem de ser identicos byte a byte.\n//\n// As funcoes ficam no escopo do no. Nao ha import em node Code do n8n — por isso\n// injecao por gerador, e nao `require`.\n// ============================================================================\n\nconst PADROES_INJECTION = [\n  'ignore', 'esquece', 'nova regra', 'system:', 'knowledge-base',\n  '<knowledge', '</knowledge', 'act as', 'you are now',\n  'ignore as instruções', 'ignore suas instruções', 'esqueça suas regras',\n  'novo comportamento', 'mude seu comportamento', 'agora você pode',\n  'a partir de agora', 'suas regras mudaram', 'instrução do sistema',\n  'ignore o prompt', 'ignore tudo', 'finja que', 'pretend',\n  'jailbreak', 'dan mode', 'developer mode'\n];\n\nfunction contemInjection(texto) {\n  const lower = (texto || '').toLowerCase();\n  return PADROES_INJECTION.some((p) => lower.includes(p));\n}\n\n// Tira tag HTML e conteudo entre colchetes. O colchete importa mais do que\n// parece: e o formato que o modelo imitou ao fabricar \"[Used tools: ...]\", e e\n// como um cliente escreveria algo se passando por marcacao de sistema.\nfunction sanitizar(texto) {\n  return (texto || '').replace(/<[^>]*>/g, '').replace(/\\[.*?\\]/g, '').trim();\n}\n\nconst semSaida = (status, extra = {}) => [{\n  json: {\n    status,\n    mensagem: '',\n    audio_segundos: Number.isFinite(duracao) ? duracao : null,\n    ...extra\n  }\n}];\n\n// Transcricao vazia acontece: audio mudo, ruido, corte na gravacao. Nao e erro\n// da API — ela responde 200 com texto vazio. Tratar como falha explicita evita\n// o agente ser chamado com prompt vazio, que e o mesmo modo de falha que a\n// execucao 3951563 mostrou.\nif (!bruto) {\n  return semSaida('vazio', { motivo: 'transcricao_vazia' });\n}\n\nif (contemInjection(bruto)) {\n  return semSaida('bloqueado', { motivo: 'injection_no_audio' });\n}\n\nconst mensagem = sanitizar(bruto);\nif (!mensagem) {\n  return semSaida('vazio', { motivo: 'vazio_pos_sanitizacao' });\n}\n\nreturn [{\n  json: {\n    status: 'ok',\n    mensagem,\n    audio_segundos: Number.isFinite(duracao) ? duracao : null,\n    // Guardado para calibrar o proxy: o corte por bytes so vale enquanto a\n    // relacao bytes/segundo se mantiver. Com o par medido em execucao real, o\n    // limite deixa de ser aritmetica de bitrate.\n    _file_size: Number($('Extrair e Filtrar').first().json.anexo?.file_size) || 0\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1392,
+        4288
+      ],
+      "name": "Filtra Transcricao",
+      "id": "audio-filtra000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "t-ok",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "ok",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "ok"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "t-bloqueado",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "bloqueado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "bloqueado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "t-vazio",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "vazio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "vazio"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "inesperado"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1168,
+        4288
+      ],
+      "name": "Roteia Transcricao",
+      "id": "audio-roteia000000000000000000000000",
+      "notes": "bloqueado reusa o caminho que o texto ja tem (Credencial (bloqueio) -> Envia Resposta Bloqueada): injection falada e injection. O fallback existe para status inesperado nao virar silencio.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config Audio').first().json.chatwoot_url }}/api/v1/accounts/{{ $('Extrair e Filtrar').first().json.chatwoot_account_id }}/conversations/{{ $('Extrair e Filtrar').first().json.conversation_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $('Config Audio').first().json.chatwoot_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ content: $('Config Audio').first().json.msg_audio_longo, message_type: 'outgoing', private: false }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2064,
+        4480
+      ],
+      "name": "Avisa Audio Longo",
+      "id": "avisa-audio-longo0000000000000000000"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config Audio').first().json.chatwoot_url }}/api/v1/accounts/{{ $('Extrair e Filtrar').first().json.chatwoot_account_id }}/conversations/{{ $('Extrair e Filtrar').first().json.conversation_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $('Config Audio').first().json.chatwoot_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ content: $('Config Audio').first().json.msg_audio_falhou, message_type: 'outgoing', private: false }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1168,
+        4480
+      ],
+      "name": "Avisa Audio Falhou",
+      "id": "avisa-audio-falhou000000000000000000"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// MENSAGEM PRONTA — ponto de convergencia dos dois caminhos\n//\n// ESTE ARQUIVO E A FONTE, injetado por scripts/gerar-principal.mjs.\n//\n// O QUE ELE E. O `Acumula Mensagem` precisa de UM lugar de onde ler `mensagem`,\n// venha ela do texto digitado ou da transcricao de um audio. Dois nos alimentam\n// este aqui e apenas um executa por invocacao:\n//\n//   Roteia Acao[0] processar ─────────────────────────────┐\n//                                                          ├→ Mensagem Pronta\n//   ...audio... → Filtra Transcricao (status ok) ──────────┘\n//\n// POR QUE ELE E PERIGOSO. E no novo no caminho de TODO cliente, e o\n// `Acumula Mensagem` passou a depender dele. Se ele emitir vazio, o acumulo\n// grava vazio, o agente e chamado sem prompt e a execucao morre com\n// \"No prompt specified\" — exatamente a falha da execucao 3951563, por outra\n// porta.\n//\n// POR ISSO ELE FALHA ALTO. Sem `mensagem` utilizavel ele LANCA, e a execucao\n// aparece vermelha com a origem no texto do erro. A alternativa — emitir vazio e\n// seguir — trocaria um erro visivel por um agente respondendo do nada, que e o\n// modo de falha que este projeto mais pagou caro.\n// ============================================================================\n\nconst item = $input.first()?.json ?? {};\n\nconst mensagem = typeof item.mensagem === 'string' ? item.mensagem.trim() : '';\n\nif (!mensagem) {\n  // De onde veio ajuda a debugar: o caminho de texto so chega aqui com\n  // `acao === 'processar'`, que garante mensagem nao vazia; entao vazio aqui\n  // aponta para o ramo de audio ou para fiacao errada.\n  const origem = item.status ? `transcricao (status=${item.status})` : 'texto digitado';\n  throw new Error(\n    'Mensagem Pronta sem mensagem utilizavel — origem: ' + origem + '. ' +\n    'Seguir daqui gravaria acumulo vazio e chamaria o agente sem prompt. ' +\n    'A execucao para de proposito; ver n8n/mensagem-pronta.js.'\n  );\n}\n\nreturn [{\n  json: {\n    mensagem,\n    // NULL em texto digitado. So o audio preenche, e e o que alimenta o\n    // mensagens_log.audio_segundos — unidade de cobranca propria, que nao se\n    // soma a token.\n    audio_segundos: Number.isFinite(Number(item.audio_segundos)) ? Number(item.audio_segundos) : null\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2640,
+        3440
+      ],
+      "name": "Mensagem Pronta",
+      "id": "mensagem-pronta000000000000000000000",
+      "notes": "Ponto de convergencia: o Acumula Mensagem le daqui, venha o texto do teclado ou da transcricao. FALHA ALTO se nao houver mensagem — emitir vazio gravaria acumulo vazio e chamaria o agente sem prompt.",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -1624,14 +2002,14 @@
       "main": [
         [
           {
-            "node": "Sync Conversa",
+            "node": "Mensagem Pronta",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Credencial (midia)",
+            "node": "Config Audio",
             "type": "main",
             "index": 0
           }
@@ -1639,17 +2017,6 @@
         [
           {
             "node": "Credencial (bloqueio)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Credencial (midia)": {
-      "main": [
-        [
-          {
-            "node": "Avisa Midia Nao Suportada",
             "type": "main",
             "index": 0
           }
@@ -2049,6 +2416,141 @@
         [
           {
             "node": "Estima Tokens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Audio": {
+      "main": [
+        [
+          {
+            "node": "Audio Contratado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audio Contratado?": {
+      "main": [
+        [
+          {
+            "node": "Conversa Ativa?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Avisa Midia Nao Suportada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversa Ativa?": {
+      "main": [
+        [
+          {
+            "node": "Audio Curto?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Audio Curto?": {
+      "main": [
+        [
+          {
+            "node": "Baixa Anexo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Avisa Audio Longo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixa Anexo": {
+      "main": [
+        [
+          {
+            "node": "Transcreve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcreve": {
+      "main": [
+        [
+          {
+            "node": "Filtra Transcricao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtra Transcricao": {
+      "main": [
+        [
+          {
+            "node": "Roteia Transcricao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Roteia Transcricao": {
+      "main": [
+        [
+          {
+            "node": "Mensagem Pronta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Credencial (bloqueio)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Avisa Audio Falhou",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Avisa Audio Falhou",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensagem Pronta": {
+      "main": [
+        [
+          {
+            "node": "Sync Conversa",
             "type": "main",
             "index": 0
           }

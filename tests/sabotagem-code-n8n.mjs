@@ -45,6 +45,16 @@ const CASOS = [
     quebrar: (js) => js.replace(/^(\s*)return\b/gm, '$1// return'),
   },
   {
+    // O no de MAIOR exposicao do repo, convertido para arquivo em 12/08. A
+    // conversao e justamente o momento em que o escapamento aninhado erra: uma
+    // quebra de linha dentro de string literal e o que derrubou o
+    // `Consolida Resultado` e parou a busca na base de TODOS os tenants.
+    nome: 'escape perdido no Extrair e Filtrar',
+    arq: 'n8n/workflows/agente-principal.json',
+    no: 'Extrair e Filtrar',
+    quebrar: (js) => js.replace("'Integração WhatsApp'", "'Integração" + NOVA_LINHA + "WhatsApp'"),
+  },
+  {
     nome: 'chave a mais',
     arq: 'n8n/workflows/Tool - Transferir para Humano (Multi-Tenant).json',
     no: 'Avalia Horario',

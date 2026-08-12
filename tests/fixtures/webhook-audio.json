@@ -1,0 +1,79 @@
+{
+  "_sobre": [
+    "Webhook REAL de nota de voz do WhatsApp, capturado em 12/08/2026 no inbox de testes.",
+    "REDIGIDO: telefone, nome, avatares, pubsub_token e o token assinado do data_url foram",
+    "trocados por marcadores. A ESTRUTURA e os campos que o codigo le estao intactos —",
+    "file_type, file_size, extensao no fim da URL, content null, transcribed_text vazio.",
+    "Redigido porque o payload original tem PII de uma pessoa real e uma URL assinada."
+  ],
+  "account": { "id": 1, "name": "ChatYou" },
+  "additional_attributes": {},
+  "content_attributes": {},
+  "content_type": "text",
+  "content": null,
+  "conversation": {
+    "can_reply": true,
+    "channel": "Channel::Api",
+    "id": 1864,
+    "inbox_id": 189,
+    "messages": [
+      {
+        "id": 4917212,
+        "content": null,
+        "conversation_id": 1864,
+        "message_type": 0,
+        "content_type": "text",
+        "sender_type": "Contact",
+        "attachments": [
+          {
+            "id": 1046758,
+            "message_id": 4917212,
+            "file_type": "audio",
+            "account_id": 1,
+            "extension": null,
+            "data_url": "https://app.chatyou.chat/rails/active_storage/blobs/redirect/REDIGIDO--REDIGIDO/no-filename.oga",
+            "thumb_url": "",
+            "file_size": 5124,
+            "width": null,
+            "height": null,
+            "transcribed_text": ""
+          }
+        ]
+      }
+    ],
+    "status": "pending",
+    "unread_count": 10
+  },
+  "created_at": "2026-08-12T17:55:34.479Z",
+  "id": 4917212,
+  "inbox": { "id": 189, "name": "WA - Testes" },
+  "message_type": "incoming",
+  "private": false,
+  "sender": {
+    "account": { "id": 1, "name": "ChatYou" },
+    "custom_attributes": { "waha_whatsapp_jid": "REDIGIDO@c.us" },
+    "email": null,
+    "id": 592426,
+    "identifier": null,
+    "name": "REDIGIDO",
+    "phone_number": "+550000000000",
+    "blocked": false
+  },
+  "source_id": null,
+  "attachments": [
+    {
+      "id": 1046758,
+      "message_id": 4917212,
+      "file_type": "audio",
+      "account_id": 1,
+      "extension": null,
+      "data_url": "https://app.chatyou.chat/rails/active_storage/blobs/redirect/REDIGIDO--REDIGIDO/no-filename.oga",
+      "thumb_url": "",
+      "file_size": 5124,
+      "width": null,
+      "height": null,
+      "transcribed_text": ""
+    }
+  ],
+  "event": "message_created"
+}

@@ -480,6 +480,355 @@ if (semComentarios.includes("$('AI Agent")) {
 // ---------------------------------------------------------------------------
 no('Redis Chat Memory').parameters.contextWindowLength = 20;
 
+// ---------------------------------------------------------------------------
+// 8. Modulo de audio: transcricao antes do fluxo comum
+// ---------------------------------------------------------------------------
+// DESENHO. O audio entra pelo mesmo `Roteia Acao[1]` que ja trata midia, e o
+// texto transcrito reentra no fluxo por um ponto de convergencia unico:
+//
+//   Roteia Acao[0] processar ────────────────────────────────────────┐
+//                                                                     ├→ Mensagem Pronta → Sync Conversa
+//   Roteia Acao[1] midia → Config Audio → Audio Contratado?           │
+//                            ├ nao → Avisa Midia Nao Suportada        │
+//                            └ sim → Conversa Ativa?                  │
+//                                     ├ nao → (nada: humano atende)   │
+//                                     └ sim → Audio Curto?            │
+//                                              ├ nao → Avisa Audio Longo
+//                                              └ sim → Baixa Anexo → Transcreve
+//                                                       → Filtra Transcricao → Roteia Transcricao
+//                                                            ok        ──────┘
+//                                                            bloqueado → Credencial (bloqueio)
+//                                                            vazio     → Avisa Audio Falhou
+//
+// TRANSCREVER ANTES DO DEBOUNCE, e nao depois. A premissa de que se pagaria por
+// transcricao descartada nao se sustenta: o `Acumula Mensagem` (RPUSH) roda
+// ANTES do `Wait Debounce`, entao a mensagem que morre no `Ultima Mensagem?` ja
+// esta no acumulador e vai ser respondida pela execucao que sobrevive. Todo
+// audio precisa virar texto de qualquer forma. Depois do debounce exigiria
+// guardar arquivo no Redis, que hoje guarda texto.
+//
+// O UNICO desperdicio real e conversa pausada, e por isso o `Conversa Ativa?`
+// existe — a resposta vem da mesma query do `Config Audio`, sem round-trip novo.
+//
+// BLOQUEIO REUSA O CAMINHO DO TEXTO. Injection falada e injection: mesmo ataque,
+// mesmo tratamento, dois nos a menos.
+
+const AUDIO_NOS = [
+  'Config Audio', 'Audio Contratado?', 'Conversa Ativa?', 'Audio Curto?',
+  'Baixa Anexo', 'Transcreve', 'Filtra Transcricao', 'Roteia Transcricao',
+  'Avisa Audio Longo', 'Avisa Audio Falhou', 'Mensagem Pronta',
+];
+
+// Idempotencia: remove o que a rodada anterior criou, e tambem o no antigo que
+// o `Config Audio` substitui.
+for (const nome of [...AUDIO_NOS, 'Credencial (midia)']) {
+  w.nodes = w.nodes.filter((n) => n.name !== nome);
+  delete w.connections[nome];
+}
+
+const CRED_REDIS_HTTP = { httpHeaderAuth: undefined }; // os avisos usam token do proprio item
+const idDe = (s) => s.padEnd(36, '0').slice(0, 36);
+
+// Aviso ao cliente: mesmo formato dos que ja existem. O token e a url vem do
+// item que desceu do `Config Audio` pelos IFs.
+const avisoChatwoot = (nome, exprMensagem, pos) => ({
+  parameters: {
+    method: 'POST',
+    url:
+      "={{ $('Config Audio').first().json.chatwoot_url }}/api/v1/accounts/" +
+      "{{ $('Extrair e Filtrar').first().json.chatwoot_account_id }}/conversations/" +
+      "{{ $('Extrair e Filtrar').first().json.conversation_id }}/messages",
+    sendHeaders: true,
+    headerParameters: {
+      parameters: [
+        { name: 'api_access_token', value: "={{ $('Config Audio').first().json.chatwoot_token }}" },
+        { name: 'Content-Type', value: 'application/json' },
+      ],
+    },
+    sendBody: true,
+    contentType: 'raw',
+    rawContentType: 'application/json',
+    body: `={{ JSON.stringify({ content: ${exprMensagem}, message_type: 'outgoing', private: false }) }}`,
+    options: {},
+  },
+  type: 'n8n-nodes-base.httpRequest',
+  typeVersion: 4.2,
+  position: pos,
+  name: nome,
+  id: idDe(nome.toLowerCase().replace(/[^a-z]+/g, '-')),
+});
+
+w.nodes.push({
+  parameters: {
+    operation: 'executeQuery',
+    query:
+      'SELECT tool_ativa, conversa_pausada, chatwoot_url, chatwoot_token,\n' +
+      '       limite_bytes, msg_audio_longo, msg_audio_falhou\n' +
+      '  FROM public.api_n8n_pode_transcrever($1::uuid, $2::bigint);',
+    options: {
+      queryReplacement:
+        "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id ] }}",
+    },
+  },
+  type: 'n8n-nodes-base.postgres',
+  typeVersion: 2.6,
+  position: [-2496, 3744],
+  name: 'Config Audio',
+  id: idDe('audio-config'),
+  credentials: CRED_PG,
+  notes:
+    'Substitui o "Credencial (midia)". Uma query com as quatro perguntas do ramo: contratou, ' +
+    'conversa pausada, credencial do Chatwoot e config do modulo. Quem nao contratou recebe ' +
+    'tool_ativa=false e segue para o mesmo aviso de sempre — o caminho nao cresce para ele.',
+  notesInFlow: true,
+});
+
+const ifNo = (nome, cond, pos, nota) => ({
+  parameters: {
+    conditions: {
+      options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 },
+      conditions: cond,
+      combinator: 'and',
+    },
+    options: {},
+  },
+  type: 'n8n-nodes-base.if',
+  typeVersion: 2.2,
+  position: pos,
+  name: nome,
+  id: idDe(nome.toLowerCase().replace(/[^a-z]+/g, '-')),
+  notes: nota,
+  notesInFlow: Boolean(nota),
+});
+
+w.nodes.push(ifNo('Audio Contratado?', [
+  {
+    id: 'e-audio',
+    leftValue: "={{ $('Extrair e Filtrar').first().json.anexo.file_type }}",
+    rightValue: 'audio',
+    operator: { type: 'string', operation: 'equals' },
+  },
+  {
+    id: 'contratado',
+    leftValue: '={{ $json.tool_ativa }}',
+    rightValue: true,
+    operator: { type: 'boolean', operation: 'true', singleValue: true },
+  },
+], [-2288, 3744],
+  'Imagem, documento e video seguem para o aviso de sempre — o escopo do modulo e SO audio. ' +
+  'file_type "audio" confirmado em webhook real de nota de voz (12/08/2026).'));
+
+w.nodes.push(ifNo('Conversa Ativa?', [
+  {
+    id: 'nao-pausada',
+    leftValue: "={{ $('Config Audio').first().json.conversa_pausada }}",
+    rightValue: false,
+    operator: { type: 'boolean', operation: 'false', singleValue: true },
+  },
+], [-2288, 4288],
+  'Humano assumiu: nao transcreve. E o UNICO desperdicio real do desenho — sem isto, cada audio ' +
+  'que o cliente mandasse durante o atendimento humano seria baixado e transcrito para ser ' +
+  'descartado no "Nao Pausado?". Sem saida no ramo falso: quem responde e a pessoa.'));
+
+w.nodes.push(ifNo('Audio Curto?', [
+  {
+    id: 'curto',
+    leftValue: "={{ $('Extrair e Filtrar').first().json.anexo.file_size }}",
+    rightValue: "={{ $('Config Audio').first().json.limite_bytes }}",
+    operator: { type: 'number', operation: 'lte' },
+  },
+], [-2064, 4288],
+  'Corte por BYTES, que e proxy de duracao — o webhook nao traz duracao. ~270 KB ~= 3 min de nota ' +
+  'de voz. A duracao exata so existe depois de transcrever, e vai para mensagens_log justamente ' +
+  'para calibrar este corte com dado real.'));
+
+w.nodes.push({
+  parameters: {
+    url: "={{ $('Extrair e Filtrar').first().json.anexo.data_url }}",
+    sendHeaders: true,
+    headerParameters: {
+      parameters: [
+        { name: 'api_access_token', value: "={{ $('Config Audio').first().json.chatwoot_token }}" },
+      ],
+    },
+    options: { response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } },
+  },
+  type: 'n8n-nodes-base.httpRequest',
+  typeVersion: 4.2,
+  position: [-1840, 4288],
+  name: 'Baixa Anexo',
+  id: idDe('audio-baixa'),
+  notes:
+    'O data_url e do PROPRIO Chatwoot, que re-hospeda o arquivo (active_storage) — nao e URL do ' +
+    'WhatsApp. Por isso precisa do token do tenant para baixar.',
+  notesInFlow: true,
+});
+
+w.nodes.push({
+  parameters: {
+    method: 'POST',
+    url: 'https://api.openai.com/v1/audio/transcriptions',
+    authentication: 'predefinedCredentialType',
+    nodeCredentialType: 'openAiApi',
+    sendBody: true,
+    contentType: 'multipart-form-data',
+    bodyParameters: {
+      parameters: [
+        { parameterType: 'formBinaryData', name: 'file', inputDataFieldName: 'data' },
+        { name: 'model', value: 'whisper-1' },
+        // verbose_json e o que devolve `duration` — a duracao EXATA, que vira
+        // mensagens_log.audio_segundos. Com `json` simples viria so o texto e o
+        // rateio de audio teria de ser estimado, que e o que nao queremos.
+        { name: 'response_format', value: 'verbose_json' },
+        { name: 'language', value: 'pt' },
+      ],
+    },
+    options: {},
+  },
+  type: 'n8n-nodes-base.httpRequest',
+  typeVersion: 4.2,
+  position: [-1616, 4288],
+  name: 'Transcreve',
+  id: idDe('audio-transcreve'),
+  credentials: { openAiApi: { id: 'B4TZHIczm0tpk2wS', name: 'OpenAi Chatyou' } },
+  notes:
+    'Usa a credencial OpenAI que ja existe no n8n, por predefinedCredentialType: a chave nao ' +
+    'aparece em lugar nenhum do JSON. O audio do cliente final SAI daqui para a OpenAI — ver ' +
+    'docs/LGPD-TRANSCRICAO-AUDIO.md.',
+  notesInFlow: true,
+});
+
+w.nodes.push({
+  parameters: { jsCode: '' }, // preenchido logo abaixo, a partir do arquivo
+  type: 'n8n-nodes-base.code',
+  typeVersion: 2,
+  position: [-1392, 4288],
+  name: 'Filtra Transcricao',
+  id: idDe('audio-filtra'),
+});
+
+w.nodes.push({
+  parameters: {
+    rules: {
+      values: ['ok', 'bloqueado', 'vazio'].map((chave) => ({
+        conditions: {
+          options: { caseSensitive: true, typeValidation: 'strict', version: 2 },
+          conditions: [{
+            id: `t-${chave}`,
+            leftValue: '={{ $json.status }}',
+            rightValue: chave,
+            operator: { type: 'string', operation: 'equals' },
+          }],
+          combinator: 'and',
+        },
+        outputKey: chave,
+      })),
+    },
+    options: { fallbackOutput: 'extra', renameFallbackOutput: 'inesperado' },
+  },
+  type: 'n8n-nodes-base.switch',
+  typeVersion: 3.2,
+  position: [-1168, 4288],
+  name: 'Roteia Transcricao',
+  id: idDe('audio-roteia'),
+  notes:
+    'bloqueado reusa o caminho que o texto ja tem (Credencial (bloqueio) -> Envia Resposta ' +
+    'Bloqueada): injection falada e injection. O fallback existe para status inesperado nao ' +
+    'virar silencio.',
+  notesInFlow: true,
+});
+
+w.nodes.push(avisoChatwoot(
+  'Avisa Audio Longo',
+  "$('Config Audio').first().json.msg_audio_longo",
+  [-2064, 4480]
+));
+
+w.nodes.push(avisoChatwoot(
+  'Avisa Audio Falhou',
+  "$('Config Audio').first().json.msg_audio_falhou",
+  [-1168, 4480]
+));
+
+w.nodes.push({
+  parameters: { jsCode: '' }, // preenchido abaixo
+  type: 'n8n-nodes-base.code',
+  typeVersion: 2,
+  position: [-2640, 3440],
+  name: 'Mensagem Pronta',
+  id: idDe('mensagem-pronta'),
+  notes:
+    'Ponto de convergencia: o Acumula Mensagem le daqui, venha o texto do teclado ou da ' +
+    'transcricao. FALHA ALTO se nao houver mensagem — emitir vazio gravaria acumulo vazio e ' +
+    'chamaria o agente sem prompt.',
+  notesInFlow: true,
+});
+
+// Corpo dos dois nos Code novos, do arquivo, com o filtro compartilhado.
+for (const [nome, arquivo, precisaFiltro] of [
+  ['Filtra Transcricao', 'filtra-transcricao.js', true],
+  ['Mensagem Pronta', 'mensagem-pronta.js', false],
+]) {
+  let corpoNo = fs.readFileSync(path.join(RAIZ, 'n8n', arquivo), 'utf8');
+  if (precisaFiltro) corpoNo = injetarFiltro(corpoNo, `n8n/${arquivo}`);
+  try {
+    // eslint-disable-next-line no-new-func
+    new Function('$input', '$json', corpoNo);
+  } catch (e) {
+    throw new Error(`${arquivo} nao compila apos a injecao: ${e.message}`);
+  }
+  no(nome).parameters.jsCode = corpoNo;
+}
+
+// O `Audio Contratado?` entrou entre o `Config Audio` e o aviso, no lugar onde o
+// aviso estava. Empurrar e inevitavel — inserir no exige largura. Vai pelo
+// LAYOUT e nao por `position` direto porque o `restaurarLayout()` roda depois e
+// devolveria a coordenada antiga; e idempotente, porque na proxima geracao o
+// snapshot ja le a nova.
+if (LAYOUT['Avisa Midia Nao Suportada']) {
+  LAYOUT['Avisa Midia Nao Suportada'].position = [-2064, 3744];
+}
+
+// Fiacao ---------------------------------------------------------------------
+const cx = (destino) => [{ node: destino, type: 'main', index: 0 }];
+
+w.connections['Roteia Acao'] = {
+  main: [cx('Mensagem Pronta'), cx('Config Audio'), cx('Credencial (bloqueio)')],
+};
+w.connections['Config Audio'] = { main: [cx('Audio Contratado?')] };
+w.connections['Audio Contratado?'] = { main: [cx('Conversa Ativa?'), cx('Avisa Midia Nao Suportada')] };
+// Ramo falso sem saida de proposito: humano esta atendendo.
+w.connections['Conversa Ativa?'] = { main: [cx('Audio Curto?'), []] };
+w.connections['Audio Curto?'] = { main: [cx('Baixa Anexo'), cx('Avisa Audio Longo')] };
+w.connections['Baixa Anexo'] = { main: [cx('Transcreve')] };
+w.connections['Transcreve'] = { main: [cx('Filtra Transcricao')] };
+w.connections['Filtra Transcricao'] = { main: [cx('Roteia Transcricao')] };
+w.connections['Roteia Transcricao'] = {
+  main: [cx('Mensagem Pronta'), cx('Credencial (bloqueio)'), cx('Avisa Audio Falhou'), cx('Avisa Audio Falhou')],
+};
+w.connections['Mensagem Pronta'] = { main: [cx('Sync Conversa')] };
+
+// O `Acumula Mensagem` passa a ler do ponto de convergencia. E a UNICA leitura
+// de `mensagem` no workflow — verificado antes de mexer.
+{
+  const ac = no('Acumula Mensagem');
+  ac.parameters.messageData = "={{ $('Mensagem Pronta').first().json.mensagem }}";
+}
+
+// `audio_segundos` entra como oitavo parametro do registro da mensagem de
+// ENTRADA. Unidade propria: nao se soma a token (migracao 32).
+{
+  const reg = no('Registra Mensagem');
+  reg.parameters.query =
+    "SELECT public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'entrada', $7::text, 0, 0, $6::text, $8::numeric) AS log_entrada,\n" +
+    "       public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'saida', $3::text, $4::int, $5::int, $6::text) AS log_saida;";
+  reg.parameters.options.queryReplacement =
+    "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id, " +
+    "$('Estima Tokens').first().json.output, $('Estima Tokens').first().json.tokens_entrada, " +
+    "$('Estima Tokens').first().json.tokens_saida, $('Resolve Tenant').first().json.modelo, " +
+    "$('Lista Depois').first().json.lista_depois, $('Mensagem Pronta').first().json.audio_segundos ] }}";
+}
+
 const novosNoCanvas = restaurarLayout();
 
 fs.writeFileSync(ARQ, JSON.stringify(w, null, 2) + '\n');

@@ -295,6 +295,57 @@ console.log('\n  -- 9. filtro de texto identico em todo no que filtra --');
     artesanais.map((n) => n.name).join(', '));
 }
 
+console.log('\n  -- 10. modulo de audio: convergencia e travas --');
+// O `Mensagem Pronta` e PONTO UNICO DE FALHA NOVO no caminho de TODO cliente: o
+// `Acumula Mensagem` passou a depender dele. Se ele emitir vazio, o acumulo
+// grava vazio, o agente e chamado sem prompt e a execucao morre — a falha da
+// execucao 3951563 por outra porta.
+{
+  const acumula = no('Acumula Mensagem');
+  checar('Acumula Mensagem le do ponto de convergencia',
+    /\$\('Mensagem Pronta'\)/.test(String(acumula?.parameters?.messageData)),
+    `le de: ${acumula?.parameters?.messageData}`);
+
+  const mp = no('Mensagem Pronta');
+  checar('Mensagem Pronta FALHA ALTO sem mensagem',
+    /throw new Error/.test(mp?.parameters?.jsCode ?? ''),
+    'sem o throw ele emitiria vazio e o acumulo gravaria vazio — em silencio');
+
+  // Os dois caminhos precisam chegar la; se um deles perder a ligacao, aquele
+  // tipo de mensagem some do fluxo sem erro.
+  const chegam = Object.entries(w.connections)
+    .filter(([, v]) => (v.main ?? []).some((s) => (s ?? []).some((d) => d.node === 'Mensagem Pronta')))
+    .map(([k]) => k);
+  checar('texto e transcricao convergem no Mensagem Pronta',
+    chegam.includes('Roteia Acao') && chegam.includes('Roteia Transcricao'),
+    `chegam: ${chegam.join(', ')}`);
+
+  checar('Mensagem Pronta entrega ao Sync Conversa',
+    (w.connections['Mensagem Pronta']?.main?.[0] ?? []).some((d) => d.node === 'Sync Conversa'));
+
+  // Injection falada e injection: mesmo ataque, mesmo tratamento.
+  checar('transcricao bloqueada reusa o caminho de bloqueio do texto',
+    (w.connections['Roteia Transcricao']?.main?.[1] ?? []).some((d) => d.node === 'Credencial (bloqueio)'));
+
+  // Sem isto o `duration` nao vem e `audio_segundos` viraria estimativa — o
+  // oposto do motivo de a coluna existir.
+  const tr = no('Transcreve');
+  const params = tr?.parameters?.bodyParameters?.parameters ?? [];
+  checar('Transcreve pede verbose_json (traz a duracao exata)',
+    params.some((p) => p.name === 'response_format' && p.value === 'verbose_json'));
+  checar('Transcreve usa a credencial do n8n, sem chave no JSON',
+    tr?.parameters?.authentication === 'predefinedCredentialType' &&
+    !/sk-[A-Za-z0-9]/.test(JSON.stringify(tr?.parameters ?? {})));
+
+  // Quem nao contratou tem que cair no aviso de sempre, sem passar por nada novo.
+  checar('quem nao contratou vai direto ao aviso de midia',
+    (w.connections['Audio Contratado?']?.main?.[1] ?? []).some((d) => d.node === 'Avisa Midia Nao Suportada'));
+
+  // Ramo falso vazio de PROPOSITO: humano esta atendendo, quem responde e ele.
+  checar('conversa pausada nao transcreve e nao responde',
+    (w.connections['Conversa Ativa?']?.main?.[1] ?? []).length === 0);
+}
+
 console.log('\n  -- extras --');
 checar('contextWindowLength = 20', no('Redis Chat Memory')?.parameters?.contextWindowLength === 20);
 for (const a of agents) {

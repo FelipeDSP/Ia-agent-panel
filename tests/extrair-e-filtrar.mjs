@@ -21,7 +21,11 @@
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
 
-const REF_ANTES = process.env.REF_ANTES || '9273aa1';
+// O "antes" e o commit da CONVERSAO para arquivo. A fatia de audio acrescentou
+// `anexo` ao ramo de midia, que e mudanca INTENCIONAL e aditiva — por isso a
+// comparacao abaixo ignora esse campo e ele ganha assercoes proprias, contra o
+// webhook real.
+const REF_ANTES = process.env.REF_ANTES || '81378c2';
 const ARQ = 'n8n/workflows/agente-principal.json';
 
 const pegarCorpo = (json) => {
@@ -35,13 +39,26 @@ const antes = pegarCorpo(execSync(`git show ${REF_ANTES}:${ARQ}`, { encoding: 'u
 const depois = pegarCorpo(fs.readFileSync(ARQ, 'utf8'));
 
 // eslint-disable-next-line no-new-func
-const rodar = (corpo, body) => {
+const executar = (corpo, body) => {
   try {
-    return JSON.stringify(new Function('$json', corpo)({ body }));
+    return new Function('$json', corpo)({ body });
   } catch (e) {
-    return 'ERRO: ' + e.message;
+    return { erro: e.message };
   }
 };
+
+// `anexo` e adicao intencional da fatia de audio. A DECISAO (acao, mensagem,
+// motivo) tem de ser identica; o campo novo nao conta como divergencia.
+const semAnexo = (saida) => {
+  if (!Array.isArray(saida)) return JSON.stringify(saida);
+  return JSON.stringify(saida.map((i) => {
+    const j = { ...(i.json ?? {}) };
+    delete j.anexo;
+    return j;
+  }));
+};
+
+const rodar = (corpo, body) => semAnexo(executar(corpo, body));
 
 const CASOS = [
   ['grupo', { sender: { identifier: '5511999@g.us' }, content: 'oi' }],
@@ -66,6 +83,10 @@ const CASOS = [
 
 let ok = 0;
 const falhas = [];
+const checar = (nome, cond, det = '') => {
+  if (cond) { ok++; console.log(`  OK    ${nome}`); }
+  else { falhas.push(`${nome}${det ? ' — ' + det : ''}`); console.log(`  FALHA ${nome}${det ? ' — ' + det : ''}`); }
+};
 
 console.log('\n== Extrair e Filtrar: antes x depois ==\n');
 console.log(`  "antes" = ${REF_ANTES}\n`);
@@ -76,7 +97,9 @@ for (const [nome, body] of CASOS) {
   const a = rodar(antes, body);
   const d = rodar(depois, body);
   try {
-    const acao = JSON.parse(d)?.[0]?.json?.acao;
+    // `semAnexo` já devolve o `json` interno de cada item, então a ação está no
+    // primeiro nível — não sob `.json` como na saída crua do nó.
+    const acao = JSON.parse(d)?.[0]?.acao;
     if (acao) acoesVistas.add(acao);
   } catch { /* saida de erro nao tem acao */ }
 
@@ -101,6 +124,28 @@ if (faltando.length === 0) {
 } else {
   falhas.push(`acao sem caso de teste: ${faltando.join(', ')}`);
   console.log(`  FALHA acao sem caso de teste: ${faltando.join(', ')}`);
+}
+
+// ---------------------------------------------------------------------------
+// O `anexo`, contra o webhook REAL de nota de voz
+// ---------------------------------------------------------------------------
+// Sem isto o campo novo passaria sem teste: a comparação acima o ignora de
+// propósito. O payload é o capturado em 12/08, redigido — a estrutura é a real,
+// não uma que eu inventei achando que o Chatwoot manda assim.
+{
+  const real = JSON.parse(fs.readFileSync('tests/fixtures/webhook-audio.json', 'utf8'));
+  const saida = executar(depois, real);
+  const j = saida?.[0]?.json ?? {};
+
+  checar('webhook de áudio real cai em acao=midia', j.acao === 'midia', String(j.acao));
+  checar('anexo.file_type = audio', j.anexo?.file_type === 'audio', String(j.anexo?.file_type));
+  checar('anexo.file_size numérico', j.anexo?.file_size === 5124, String(j.anexo?.file_size));
+  checar('anexo.data_url preservado', String(j.anexo?.data_url || '').includes('active_storage'));
+  // O campo `extension` do Chatwoot veio NULL no payload real; a extensão tem de
+  // sair da URL, senão o multipart da transcrição manda arquivo sem extensão.
+  checar('extensao derivada da URL, não do campo extension',
+    j.anexo?.extensao === 'oga', String(j.anexo?.extensao));
+  checar('conversation_id lido do payload real', j.conversation_id === 1864, String(j.conversation_id));
 }
 
 // O filtro tem que estar injetado de verdade, e não sobrar a DIRETIVA.

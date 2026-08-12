@@ -47,6 +47,25 @@ Consultado em 12/08/2026 em
 até 30 dias nos logs da OpenAI. Isso precisa ser dito a quem contrata, com essas
 palavras, não com "é seguro".
 
+### A consequência prática, que não é nota de rodapé
+
+**O impedimento para um cliente com exigência de LGPD mais rígida são os 30 dias
+de retenção — não o treinamento.** O treinamento é o que as pessoas perguntam, e
+a resposta é confortável: não treina. A retenção é o que ninguém pergunta, e é a
+que impede.
+
+E o peso disso é maior em áudio do que em texto. **Nota de voz de WhatsApp
+costuma carregar mais dado sensível do que mensagem digitada**: as pessoas falam
+nome completo, endereço com número e complemento, às vezes CPF ou dado de saúde
+— coisas que hesitariam em digitar, mas dizem sem pensar porque estão falando.
+Um mesmo pedido vira "quero a lavagem" por escrito e "aqui é a Maria da Silva,
+rua tal, 340, apartamento 21, o CPF é..." em áudio.
+
+Somando as duas coisas: o módulo faz dado sensível de terceiro sair da nossa
+infraestrutura e ficar até 30 dias em log de um fornecedor. **Isso é parte do
+que se contrata**, e tem que estar dito antes da assinatura — não descoberto
+depois.
+
 ---
 
 ## O que isso obriga

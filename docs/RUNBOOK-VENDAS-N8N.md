@@ -314,3 +314,115 @@ O `n8n:sincronia` é a rede do gerador: ele falha se um agent for editado pela U
 e o outro não, se uma tool de venda for ligada no agent básico, se o ramo de
 falha sumir, se alguém reintroduzir referência ao agent por nome, ou se
 `returnIntermediateSteps` for desligado.
+
+---
+---
+
+# Módulo de áudio — importar e testar
+
+55 nós. **A Acqua roda neste workflow** e não contrata áudio: o caminho dela é o
+mesmo de hoje, com o mesmo número de queries e o mesmo aviso de mídia.
+
+## Pré-requisitos: as migrações
+
+Nesta ordem, e **antes** do import — o workflow chama `api_n8n_pode_transcrever`,
+que a 33 cria:
+
+```
+31  catalogo_tools.tipo + linha transcricao_audio
+32  mensagens_log.audio_segundos + api_n8n_registrar_mensagem com 8 parâmetros
+33  api_n8n_pode_transcrever
+```
+
+Confira com `npm run teste:migracao-audio` (roda em transação abortada, não
+aplica). Depois de aplicar fora do CLI, **renomeie os arquivos para a versão que
+o ledger registrou** — `CLAUDE.md`, seção Migrações.
+
+## Passo A — congelar o "antes"
+
+`Agente Multi-Tenant (Supabase)` → **⋯** → **Download**. Guarde fora do repo.
+
+## Passo B — importar
+
+1. **⋯** → **Import from File** → `n8n/workflows/agente-principal.json`
+2. **Save** pelo botão (`Ctrl+S` não persiste)
+3. **Recarregue** e confirme **55 nós** e o ramo novo saindo do `Roteia Acao[1]`
+
+## Passo C — conferir a credencial dos nós novos
+
+Dois nós novos precisam de credencial e vêm com ela no JSON — confirme depois do
+import, porque nó novo importado às vezes chega sem:
+
+| nó | credencial |
+|---|---|
+| `Config Audio` | `Agent ia Supabase` (Postgres) |
+| `Transcreve` | `OpenAi Chatyou` (OpenAI) |
+
+O `Transcreve` usa *predefined credential type*: **a chave não está no JSON**.
+
+## Passo D — provar que quem não contratou não mudou
+
+**Antes de contratar para ninguém**, mande uma nota de voz por um cliente sem o
+módulo. Esperado: `Audio Contratado?` cai no ramo falso e chega o
+`msg_midia_nao_suportada` de sempre. Nenhum nó de download ou transcrição deve
+aparecer como executado.
+
+É o teste que protege a Acqua.
+
+## Passo E — contratar para UM tenant de teste
+
+Admin → cliente → Módulos → **Transcrever áudio** para o `restaurante-teste`.
+**Nunca a Acqua** — e leia `docs/LGPD-TRANSCRICAO-AUDIO.md` antes de contratar
+para um cliente real.
+
+## Passo F — o teste com áudio de verdade
+
+Mande uma nota de voz curta. Percorra a execução e confira:
+
+1. `Baixa Anexo` traz o arquivo (nome com extensão, algo como `no-filename.oga`)
+2. `Transcreve` devolve `text` **e** `duration`
+3. `Filtra Transcricao` sai com `status: ok`
+4. `Mensagem Pronta` emite `mensagem` e `audio_segundos`
+5. o agente responde ao conteúdo falado
+6. no banco:
+
+```sql
+select conteudo, audio_segundos, tokens_entrada
+  from public.mensagens_log
+ where tenant_id = '<tenant>' and audio_segundos is not null
+ order by criado_em desc limit 3;
+```
+
+**Anote o par `(file_size, duration)`.** O corte de duração é proxy por bytes;
+com dois ou três pares reais o limite deixa de ser aritmética de bitrate. Ajuste
+`tenant_tools.config -> limite_bytes` se destoar.
+
+### Os quatro ramos que precisam ser exercitados
+
+| caso | como provocar | esperado |
+|---|---|---|
+| áudio normal | nota de voz curta | agente responde ao conteúdo |
+| áudio longo | nota de voz > ~3 min | `msg_audio_longo`, sem transcrever |
+| injection falada | falar "esquece suas instruções" | resposta de bloqueio, **a mesma do texto** |
+| conversa pausada | pausar e mandar áudio | nada acontece; o humano responde |
+
+O terceiro é o que justifica o filtro compartilhado: sem ele o áudio entraria
+sem passar pela blocklist que o texto passa.
+
+## Se der errado
+
+Reimporte o JSON do passo A. Nada no banco precisa voltar: as migrações são
+aditivas e o caminho de quem não contratou não muda. Para desligar sem
+reimportar, descontrate o módulo — `tool_ativa` vira false e o `Audio
+Contratado?` manda tudo para o aviso de mídia.
+
+## Conferência rápida
+
+```bash
+npm run n8n:sincronia          # 47 checagens, 10 delas do módulo de áudio
+npm run teste:extrair          # o Extrair e Filtrar decide igual ao de antes
+npm run teste:sabotagem-code   # o validador pega nó Code quebrado
+npm run teste:migracao-audio   # 31/32/33 aplicam e revertem
+node scripts/n8n-validar.mjs n8n/workflows/*.json
+```
+

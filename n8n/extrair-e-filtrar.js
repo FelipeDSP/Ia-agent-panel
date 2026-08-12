@@ -52,7 +52,30 @@ if (primeira.includes('mentioned you in the story') || tipoAnexo === 'story_ment
 const texto = (body.content || '').trim();
 const temAnexo = Array.isArray(body.attachments) && body.attachments.length > 0;
 if (!texto) {
-  return temAnexo ? out('midia') : out('ignorar', { motivo: 'sem_texto' });
+  if (!temAnexo) return out('ignorar', { motivo: 'sem_texto' });
+
+  // O ramo de audio precisa destes campos, e so ele os le. Para todo o resto a
+  // `acao` continua sendo 'midia' exatamente como antes — o acrescimo e aditivo.
+  //
+  // Confirmado contra webhook real de nota de voz (12/08/2026):
+  //   file_type "audio" | file_size 5124 | extension null
+  //   data_url  .../active_storage/blobs/redirect/<token>/no-filename.oga
+  //
+  // A EXTENSAO vem da URL, nao do campo `extension`: ele veio null no payload
+  // real. E ela importa porque a API de transcricao decide o parser pelo nome do
+  // arquivo no multipart — mandar `.bin` faz a chamada falhar.
+  const a = body.attachments[0] || {};
+  const url = String(a.data_url || '').split('?')[0];
+  const casa = url.match(/\.([a-z0-9]{2,5})$/i);
+
+  return out('midia', {
+    anexo: {
+      file_type: a.file_type ?? null,
+      data_url: a.data_url ?? null,
+      file_size: Number(a.file_size) || 0,
+      extensao: casa ? casa[1].toLowerCase() : ''
+    }
+  });
 }
 
 // 5. Prompt injection + 6. Sanitizacao
