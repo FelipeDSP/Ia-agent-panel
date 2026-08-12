@@ -30,7 +30,7 @@
 -- 14 linhas de tenant_tools tem `contratado = true` e nao sentem nada. A Acqua
 -- nao e afetada.
 --
--- ROLLBACK: 20260812120000_30_config_tool_exige_contratado_rollback.sql
+-- ROLLBACK: 20260812151805_30_config_tool_exige_contratado_rollback.sql
 
 begin;
 

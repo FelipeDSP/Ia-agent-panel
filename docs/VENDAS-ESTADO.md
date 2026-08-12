@@ -37,6 +37,57 @@ em texto**, o que reinjeta o estado a cada turno.
 Mesmo princípio do `tenant_id`, que já vem do webhook e nunca do LLM:
 **o LLM decide o quê, o servidor decide quanto.**
 
+## Regra de produto: o catálogo é a fonte única de preço
+
+**Quando um tenant contrata vendas, o preço válido é o do catálogo, e a base de
+conhecimento não deve conter tabela de preços.**
+
+Não é preferência de organização. Os dois lugares guardam a mesma informação e
+nada os mantém em acordo, então eles divergem — e a divergência é cobrada do
+cliente final:
+
+1. o agente responde uma pergunta de preço lendo a base (`busca_conhecimento`);
+2. o cliente aceita e pede o item;
+3. `adicionar_item` grava o preço do **catálogo**, que é o comportamento correto
+   e decidido na fatia 2 — preço nunca vem do parâmetro nem do texto;
+4. o cliente viu um número e vai pagar outro.
+
+Nenhuma instrução de prompt conserta isso. É dado inconsistente: o modelo pode
+acertar em 9 conversas e errar na décima, e o erro chega como cobrança indevida.
+
+### Consequência para o onboarding do módulo
+
+Contratar vendas passa a incluir um passo: **migrar os preços do documento para
+o catálogo e remover a tabela de preços do documento**. Antes disso, o módulo não
+está pronto para o cliente, mesmo que tecnicamente funcione.
+
+Fora desse caso a base pode ter preço à vontade — para um tenant que não vende,
+uma tabela de preços na base é exatamente o que ela deve ter. O problema só
+existe quando há duas fontes.
+
+### Mitigação até o dado ficar consistente
+
+O `Tool - Busca KB Multi-Tenant` acrescenta um aviso ao final dos trechos quando
+o tenant tem vendas contratada, dizendo que preço válido é o de
+`consultar_catalogo`. Sai da mesma query que já busca os chunks, sem round-trip
+novo.
+
+**Isso encurta a janela, não fecha.** É instrução ao modelo, mesma natureza
+probabilística das regras do wrapper. Não substitui a migração dos preços.
+
+### Pendência operacional: importação em lote no catálogo
+
+A tela de catálogo cadastra um produto por vez. Serve para dezenas; não serve
+para um cardápio de restaurante com 80 itens — o onboarding viraria digitação
+manual, e o custo cairia sobre a agência ou sobre o cliente, nos dois casos no
+pior momento (a venda acabou de ser fechada).
+
+**Não construir agora.** O gatilho é o primeiro cliente com cardápio grande
+contratando vendas. Até lá é especulação sobre um formato de importação que
+ninguém pediu.
+
+---
+
 ## Modelo de dados
 
 `produtos`, `pedidos`, `pedido_itens`. Rascunho em `vendas_core.sql` (fora do

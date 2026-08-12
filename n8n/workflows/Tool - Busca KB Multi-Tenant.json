@@ -75,7 +75,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT text, similarity\nFROM public.api_n8n_buscar_kb($1::uuid, $2::extensions.vector, 5, '{}'::jsonb)\nORDER BY similarity DESC;",
+        "query": "SELECT k.text, k.similarity,\n       -- Mesma consulta, sem round-trip novo: o agente precisa saber se ESTE\n       -- tenant vende, porque a base pode conter tabela de preco que nao e a\n       -- fonte da verdade quando existe catalogo.\n       exists(select 1 from public.api_n8n_tools_ativas($1::uuid) a\n               where a.tool_nome = 'vendas') AS vende\nFROM public.api_n8n_buscar_kb($1::uuid, $2::extensions.vector, 5, '{}'::jsonb) k\nORDER BY k.similarity DESC;",
         "options": {
           "queryReplacement": "={{ [ $json.tenant_id, $json.embedding_literal ] }}"
         }
@@ -98,7 +98,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Consolida os trechos num unico texto para o LLM.\n// Retorna string vazia explicita quando nao ha resultado, para o\n// agente saber que precisa transferir em vez de inventar resposta.\nconst itens = $input.all().map(i => i.json).filter(r => r && r.text);\n\nif (itens.length === 0) {\n  return [{ json: { resposta: 'NENHUM_RESULTADO: a base de conhecimento não contém informação sobre esta pergunta.' } }];\n}\n\nconst texto = itens\n  .map((r, i) => `[Trecho ${i + 1} | relevância ${Number(r.similarity).toFixed(3)}]\\n${r.text}`)\n  .join('\\n\\n---\\n\\n');\n\nreturn [{ json: { resposta: texto } }];"
+        "jsCode": "// Consolida os trechos num unico texto para o LLM.\n// Retorna string vazia explicita quando nao ha resultado, para o\n// agente saber que precisa transferir em vez de inventar resposta.\nconst itens = $input.all().map(i => i.json).filter(r => r && r.text);\n\nif (itens.length === 0) {\n  return [{ json: { resposta: 'NENHUM_RESULTADO: a base de conhecimento não contém informação sobre esta pergunta.' } }];\n}\n\nconst texto = itens\n  .map((r, i) => `[Trecho ${i + 1} | relevância ${Number(r.similarity).toFixed(3)}]\n${r.text}`)\n  .join('\n\n---\n\n');\n\n// AVISO DE FONTE DE PRECO.\n//\n// Quando o tenant tem vendas contratada, o catalogo e a fonte unica de preco --\n// a base de conhecimento e material de referencia. O documento do cliente pode\n// conter tabela de preco antiga: no restaurante-teste a base dizia 94,00 para um\n// prato que o catalogo cobra 149,90. Sem aviso o agente cota da base e o\n// adicionar_item grava do catalogo, e o cliente ve um preco e paga outro.\n//\n// ISTO NAO CONSERTA O DADO INCONSISTENTE, e nao se deve fingir que conserta: e\n// instrucao ao modelo, probabilistica. O conserto e o onboarding do modulo\n// migrar os precos do documento para o catalogo (ver docs/VENDAS-ESTADO.md).\n// O aviso existe para encurtar a janela ate isso acontecer.\nconst vende = itens.some(r => r.vende === true);\n\nconst AVISO =\n  'AVISO DE FONTE (instrucao interna, nao repasse ao cliente): este cliente tem ' +\n  'catalogo de vendas ativo. Preco e disponibilidade validos sao os de ' +\n  'consultar_catalogo. Valores que aparecam nos trechos acima sao referencia e ' +\n  'podem estar desatualizados — nao cote preco a partir deles.';\n\nreturn [{ json: { resposta: vende ? texto + '\n\n---\n\n' + AVISO : texto } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
