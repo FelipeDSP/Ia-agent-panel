@@ -20,7 +20,8 @@
     "teste:pedidos": "node tests/isolamento-pedidos.mjs",
     "teste:trava-vendas": "node tests/trava-vendas.mjs",
     "n8n:sincronia": "node scripts/conferir-sincronia-wrapper.mjs",
-    "teste:acqua-pronta": "node tests/acqua-pronta.mjs"
+    "teste:acqua-pronta": "node tests/acqua-pronta.mjs",
+    "n8n:tool-kb": "node scripts/gerar-tool-kb.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
