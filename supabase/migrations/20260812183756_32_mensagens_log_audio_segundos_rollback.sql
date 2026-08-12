@@ -25,7 +25,7 @@ end $$;
 drop function if exists public.api_n8n_registrar_mensagem(uuid, bigint, text, text, integer, integer, text, numeric);
 drop function if exists public.api_n8n_registrar_mensagem(uuid, bigint, text, text, integer, integer, text);
 
-create function public.api_n8n_registrar_mensagem(
+create or replace function public.api_n8n_registrar_mensagem(
   p_tenant_id uuid,
   p_conversation_id bigint,
   p_direcao text,

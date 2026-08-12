@@ -28,10 +28,10 @@ carregarEnv();
 const lim = (f) =>
   fs.readFileSync(RAIZ + 'supabase/migrations/' + f, 'utf8').replace(/^\s*(begin|commit)\s*;\s*$/gim, '');
 
-const M31 = lim('20260812180000_31_catalogo_tools_tipo.sql');
-const R31 = lim('20260812180000_31_catalogo_tools_tipo_rollback.sql');
-const M32 = lim('20260812180100_32_mensagens_log_audio_segundos.sql');
-const R32 = lim('20260812180100_32_mensagens_log_audio_segundos_rollback.sql');
+const M31 = lim('20260812183730_31_catalogo_tools_tipo.sql');
+const R31 = lim('20260812183730_31_catalogo_tools_tipo_rollback.sql');
+const M32 = lim('20260812183756_32_mensagens_log_audio_segundos.sql');
+const R32 = lim('20260812183756_32_mensagens_log_audio_segundos_rollback.sql');
 
 const c = new pg.Client({ connectionString: process.env.SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } });
 

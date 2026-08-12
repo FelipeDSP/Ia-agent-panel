@@ -18,7 +18,7 @@
 -- CONFIG POR TENANT vem de `tenant_tools.config`, o mesmo canal que o
 -- `transferir_humano` ja usa. Evita coluna nova em `tenants` para cada texto.
 --
--- ROLLBACK: 20260812183000_33_api_n8n_pode_transcrever_rollback.sql
+-- ROLLBACK: 20260812183844_33_api_n8n_pode_transcrever_rollback.sql
 
 begin;
 

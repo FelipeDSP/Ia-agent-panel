@@ -16,7 +16,7 @@
 -- quais capacidades estao ligadas. O `Vende?` so olha `vendas`. Nenhum consumidor
 -- existente le `tipo`, entao a coluna e aditiva de verdade.
 --
--- ROLLBACK: 20260812180000_31_catalogo_tools_tipo_rollback.sql
+-- ROLLBACK: 20260812183730_31_catalogo_tools_tipo_rollback.sql
 
 begin;
 
