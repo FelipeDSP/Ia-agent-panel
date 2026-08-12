@@ -156,9 +156,9 @@ if (WRAPPERS.basico.includes('consultar_catalogo')) throw new Error('wrapper bas
 // total, nao um paragrafo por proibicao.
 
 const REGRAS_TODOS = [
-  '- So afirme que registrou, transferiu, consultou ou encerrou algo DEPOIS de receber',
-  '  o retorno da ferramenta. Sem retorno, diga que nao consegue — nunca invente',
-  '  resultado, codigo de item, nem bloco no formato de chamada de ferramenta.',
+  '- So afirme que registrou, enviou, transferiu, consultou ou encerrou algo DEPOIS',
+  '  de receber o retorno da ferramenta. Sem retorno, diga que nao consegue — nunca',
+  '  invente resultado, codigo de item, nem bloco no formato de chamada de ferramenta.',
 ];
 
 // DOIS MOMENTOS, nao um. Na conversa de 12/08 o agente basico primeiro OFERECEU
@@ -187,6 +187,7 @@ const MARCADORES_REGRAS = [
   '- Voce NAO tem como registrar pedidos',           // v1
   '- A base de conhecimento pode conter cardapio',   // v1
   '- So afirme que registrou, transferiu',           // v2
+  '- So afirme que registrou, enviou, transferiu',   // v3, 12/08/2026
   '- Voce nao registra pedidos',                     // v2
   '- Cardapio e precos da base servem para INFORMAR', // v2
 ];

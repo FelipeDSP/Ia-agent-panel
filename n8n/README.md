@@ -235,6 +235,56 @@ inseriu `Split Out` e `Limit`. Cada um sozinho talvez passasse; juntos, não.
 
 ---
 
+## O export do n8n OMITE parâmetro em default
+
+Descoberto em 12/08/2026, ao aplicar um canvas exportado sobre o repo.
+
+**Ao exportar, o n8n não escreve parâmetro cujo valor bate com o default do
+node.** O JSON que volta é menor que o que entrou, e o que sumiu continua
+funcionando — pelo default. Não é bug: é como ele serializa.
+
+O efeito é uma erosão silenciosa a cada ciclo importar → editar na UI →
+exportar → commitar. Três parâmetros sumiram de uma vez naquele export:
+
+| nó | sumiu | o que ficou implícito |
+|---|---|---|
+| `Volta a Um Item` | `maxItems` (o `parameters` ficou `{}`) | o teto de **uma resposta por mensagem** |
+| `Baixa Anexo` | `outputPropertyName` | o nome do binário que a transcrição consome |
+| `Vende?` | os `outputKey` | os nomes das saídas do Switch na UI |
+
+**Nenhum quebrava nada.** O primeiro é o que importa: o teto que impede o
+`Split Out` de virar N mensagens no WhatsApp estava valendo por um default do
+n8n, não por algo escrito no JSON. Se uma versão futura mudar esse default,
+ninguém descobre por leitura do repo — descobre pelo cliente recebendo cinco
+mensagens seguidas.
+
+### O que fazer com isso
+
+**Não confie em diff de export para saber o que mudou.** Parâmetro ausente e
+parâmetro em default são indistinguíveis no arquivo, e o diff mostra remoção
+onde não houve mudança de comportamento.
+
+**Prefira regerar a colar o export.** `node scripts/gerar-principal.mjs` escreve
+os parâmetros explicitamente e preserva posição e id do canvas — é assim que o
+canvas organizado na UI e o código do repo convivem sem um apagar o outro.
+
+**O `n8n-validar.mjs` tem uma lista** (`SEM_DEFAULT`) dos parâmetros que não
+podem valer por default, com a razão de cada um. Ela cobre o que importa por
+**segurança** ou por **custo**, e cresce quando algo novo entrar nessa
+categoria. Hoje:
+
+```
+Volta a Um Item          maxItems               teto de uma resposta ao cliente
+Remove Lidos do Acumulo  tail                   LPOP x RPOP
+Baixa Anexo              outputPropertyName     binário que a transcrição consome
+Redis Chat Memory        contextWindowLength    memória = custo por mensagem
+Transcreve               bodyParameters         verbose_json traz a duração cobrada
+```
+
+Testado simulando o próprio export: apagar `maxItems` e `tail` reprova.
+
+---
+
 ## Nota de manutenção — editar por automação
 
 Mutação de **parâmetro** no store Pinia + Save persiste. Mutação **estrutural**

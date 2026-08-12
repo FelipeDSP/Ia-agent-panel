@@ -169,6 +169,42 @@ for (const caminho of arquivos) {
       }
     }
 
+    // 4d. parametros que NAO podem valer por default
+    //
+    // PROPRIEDADE DO n8n, nao bug pontual: ao exportar, ele OMITE parametro cujo
+    // valor bate com o default do node. Um ciclo importar-editar-exportar
+    // devolve um JSON menor, e o que sumiu continua funcionando -- pelo default.
+    //
+    // Descoberto em 12/08/2026 ao aplicar um canvas exportado: o
+    // `Volta a Um Item` voltou com `parameters: {}`. O `maxItems` tinha sumido, e
+    // com ele a garantia de UMA resposta por mensagem: o teto que impede o
+    // Split Out de virar N mensagens no WhatsApp estava valendo por um default do
+    // n8n, nao por algo escrito no JSON. Se uma versao futura mudar esse default,
+    // ninguem descobre por leitura -- descobre pelo cliente recebendo cinco
+    // mensagens.
+    //
+    // A lista abaixo e o registro do que NAO pode depender de default. Cresce
+    // quando algo novo passar a valer por seguranca ou por custo.
+    const SEM_DEFAULT = [
+      { no: 'Volta a Um Item', campo: 'maxItems', porque: 'teto de UMA resposta ao cliente' },
+      { no: 'Remove Lidos do Acumulo', campo: 'tail', porque: 'LPOP x RPOP — RPOP removeria a mensagem errada do acumulo' },
+      { no: 'Baixa Anexo', campo: 'options.response.response.outputPropertyName', porque: 'nome do binario que a transcricao consome' },
+      { no: 'Redis Chat Memory', campo: 'contextWindowLength', porque: 'tamanho da memoria = custo por mensagem' },
+      { no: 'Transcreve', campo: 'bodyParameters', porque: 'response_format=verbose_json e o que traz a duracao cobrada' },
+    ];
+
+    const valorEm = (obj, caminho) =>
+      caminho.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+
+    for (const regra of SEM_DEFAULT) {
+      if (n.name !== regra.no) continue;
+      if (valorEm(p, regra.campo) === undefined) {
+        problemas.push(
+          `"${n.name}": ${regra.campo} ausente — vale por default do n8n, e nao deveria (${regra.porque})`
+        );
+      }
+    }
+
     // 5. onError engolindo erro onde nao deve
     if (n.onError === 'continueRegularOutput' && /log|registra|billing|consumo/i.test(n.name)) {
       problemas.push(`"${n.name}": onError engolindo erro em no de log/billing`);
