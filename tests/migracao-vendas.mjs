@@ -13,6 +13,13 @@
  * aqui e a logica das funcoes — travas de preco, snapshot, status, unicidade —
  * e o isolamento que vem do filtro por p_tenant_id dentro delas.
  *
+ * ESCOPO POR CONVERSA. As consultas de inspecao filtram por `conversation_id`
+ * alem de `tenant_id`. Sem isso o teste enxerga pedido REAL do restaurante-teste
+ * — houve uma venda de verdade nele em 11/08/2026 — e compara os numeros dele
+ * com os esperados do teste. Doze assercoes quebraram assim. `numero` tambem e
+ * sequencial por tenant, entao o pedido do teste nao e mais o de numero 1.
+ *
+ *
  * Uso: node tests/migracao-vendas.mjs
  */
 
@@ -75,11 +82,11 @@ try {
   let r = await um('select public.api_n8n_adicionar_item($1,$2,$3,$4) v', [A, CONV_A, pA1.id, 2]);
   chk('adiciona e devolve o carrinho inteiro', r.v.includes('Pedido atual') && r.v.includes(pA1.nome), r.v.slice(0, 60));
   const item = await um(`select i.preco_unit_centavos, i.quantidade, i.nome_snapshot from public.pedido_itens i
-                         join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1`, [A]);
+                         join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1 and p.conversation_id=$2`, [A, CONV_A]);
   chk('preco gravado = preco do catalogo', item.preco_unit_centavos === pA1.preco_centavos,
       `item=${item.preco_unit_centavos} catalogo=${pA1.preco_centavos}`);
   chk('snapshot do nome congelado', item.nome_snapshot === pA1.nome);
-  const ped = await um(`select total_centavos, status, numero from public.pedidos where tenant_id=$1`, [A]);
+  const ped = await um(`select total_centavos, status, numero from public.pedidos where tenant_id=$1 and conversation_id=$2`, [A, CONV_A]);
   chk('total recalculado pelo trigger', ped.total_centavos === pA1.preco_centavos * 2, `total=${ped.total_centavos}`);
   chk('status inicial rascunho', ped.status === 'rascunho');
   chk('numero ainda nulo antes de fechar', ped.numero === null);
@@ -87,14 +94,14 @@ try {
   console.log('\n--- dois adicionar_item do mesmo produto SOMAM ---');
   await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4)', [A, CONV_A, pA1.id, 3]);
   const linhas = await um(`select count(*)::int n, max(quantidade) q from public.pedido_itens i
-                           join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1`, [A]);
+                           join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1 and p.conversation_id=$2`, [A, CONV_A]);
   chk('uma linha so, quantidade somada', linhas.n === 1 && linhas.q === 5, `linhas=${linhas.n} qtd=${linhas.q}`);
 
   console.log('\n--- produto de OUTRO tenant e recusado ---');
   r = await um('select public.api_n8n_adicionar_item($1,$2,$3,$4) v', [A, CONV_A, pB.id, 1]);
   chk('recusa produto_id alheio', r.v.includes('nao esta disponivel'), r.v.slice(0, 70));
   const nLinhas = await um(`select count(*)::int n from public.pedido_itens i
-                            join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1`, [A]);
+                            join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1 and p.conversation_id=$2`, [A, CONV_A]);
   chk('nada entrou no carrinho', nLinhas.n === 1, `${nLinhas.n} linha(s)`);
 
   console.log('\n--- produto invisivel (pausado) e recusado ---');
@@ -117,10 +124,10 @@ try {
   console.log('\n--- fechar_pedido ---');
   chk('tem_pedido_pendente = true com item', (await um('select public.api_n8n_tem_pedido_pendente($1,$2) v', [A, CONV_A])).v === true);
   r = await um(`select public.api_n8n_fechar_pedido($1,$2,$3::jsonb) v`, [A, CONV_A, JSON.stringify({ entrega: 'retirada' })]);
-  chk('fecha e devolve numero + resumo', /Pedido nº 1 fechado/.test(r.v) && r.v.includes('Total'), r.v.slice(0, 60));
-  const fech = await um(`select status, numero, total_centavos, metadados from public.pedidos where tenant_id=$1`, [A]);
+  chk('fecha e devolve numero + resumo', /Pedido nº \d+ fechado/.test(r.v) && r.v.includes('Total'), r.v.slice(0, 60));
+  const fech = await um(`select status, numero, total_centavos, metadados from public.pedidos where tenant_id=$1 and conversation_id=$2`, [A, CONV_A]);
   chk('status aguardando_pagamento', fech.status === 'aguardando_pagamento');
-  chk('numero atribuido', fech.numero === 1);
+  chk('numero atribuido', Number.isInteger(fech.numero) && fech.numero > 0, `numero=${fech.numero}`);
   chk('metadados mesclados', fech.metadados.entrega === 'retirada');
   chk('total = soma dos itens', fech.total_centavos === pA1.preco_centavos * 5);
 
@@ -129,7 +136,7 @@ try {
   chk('adicionar recusa com mensagem repassavel', r.v.includes('ja foi fechado'), r.v.slice(0, 60));
   r = await um('select public.api_n8n_remover_item($1,$2,$3) v', [A, CONV_A, pA1.id]);
   chk('remover recusa', r.v.includes('ja foi fechado'));
-  const intacto = await um(`select total_centavos from public.pedidos where tenant_id=$1`, [A]);
+  const intacto = await um(`select total_centavos from public.pedidos where tenant_id=$1 and conversation_id=$2`, [A, CONV_A]);
   chk('total do pedido fechado nao mudou', intacto.total_centavos === pA1.preco_centavos * 5);
 
   console.log('\n--- cancelar libera a conversa ---');
@@ -141,12 +148,12 @@ try {
 
   console.log('\n--- rascunho vazio NAO bloqueia resolver_conversa ---');
   await c.query(`delete from public.pedido_itens i using public.pedidos p
-                 where i.pedido_id=p.id and p.tenant_id=$1 and p.status='rascunho'`, [A]);
+                 where i.pedido_id=p.id and p.tenant_id=$1 and p.conversation_id=$2 and p.status='rascunho'`, [A, CONV_A]);
   chk('pendente=false com rascunho vazio', (await um('select public.api_n8n_tem_pedido_pendente($1,$2) v', [A, CONV_A])).v === false);
 
   console.log('\n--- ISOLAMENTO: tenant B nao alcanca pedido de A ---');
   await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4)', [A, CONV_A, pA1.id, 2]);
-  const idPedidoA = (await um(`select id from public.pedidos where tenant_id=$1 and status='rascunho'`, [A])).id;
+  const idPedidoA = (await um(`select id from public.pedidos where tenant_id=$1 and conversation_id=$2 and status='rascunho'`, [A, CONV_A])).id;
   r = await um('select public.api_n8n_ver_pedido($1,$2) v', [B, CONV_A]);
   chk('B com a MESMA conversation_id nao ve o pedido de A', r.v.includes('Nao ha pedido aberto'), r.v.slice(0, 50));
   r = await um('select public.api_n8n_adicionar_item($1,$2,$3,$4) v', [B, CONV_A, pA1.id, 1]);

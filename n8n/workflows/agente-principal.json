@@ -597,26 +597,6 @@
     },
     {
       "parameters": {
-        "operation": "delete",
-        "key": "=tenant_{{ $('Resolve Tenant').item.json.tenant_id }}_conv_{{ $('Extrair e Filtrar').item.json.conversation_id }}_acumulo"
-      },
-      "type": "n8n-nodes-base.redis",
-      "typeVersion": 1,
-      "position": [
-        -672,
-        3712
-      ],
-      "id": "3ee7bdc6-82f0-4b24-91fa-af400df8c287",
-      "name": "Limpa Acumulo",
-      "credentials": {
-        "redis": {
-          "id": "LB1ZVse5Xu9EM4pY",
-          "name": "Redis account"
-        }
-      }
-    },
-    {
-      "parameters": {
         "model": {
           "__rl": true,
           "mode": "id",
@@ -630,7 +610,7 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
       "position": [
-        432,
+        784,
         4464
       ],
       "id": "a34fae44-9252-4acd-8309-45ba314df104",
@@ -651,7 +631,7 @@
       "type": "@n8n/n8n-nodes-langchain.memoryRedisChat",
       "typeVersion": 1.5,
       "position": [
-        592,
+        944,
         4464
       ],
       "id": "3c86654f-1014-4e6b-a2ef-73790520fe63",
@@ -707,7 +687,7 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1024,
+        1376,
         4448
       ],
       "id": "8b4a88f7-1ba2-4a20-9631-cbb3d95bb3b5",
@@ -777,7 +757,7 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1184,
+        1536,
         4448
       ],
       "id": "aaf59f62-7091-4d5b-9c77-640f135ea2d3",
@@ -794,7 +774,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        672,
+        1024,
         3456
       ],
       "id": "2f4558bd-bf0d-42f1-b757-fbebde0ea7ae",
@@ -832,7 +812,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        896,
+        1248,
         3456
       ],
       "id": "00695837-e320-49bd-b2f0-61eed2298de4",
@@ -849,7 +829,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1104,
+        1456,
         3456
       ],
       "id": "baf02de3-dcfc-4363-b2be-fdf836ea760c",
@@ -1012,7 +992,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        208,
+        560,
         3440
       ],
       "id": "0bad0897-53c9-43d4-9038-db2170bd1662",
@@ -1075,7 +1055,7 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        864,
+        1216,
         4448
       ],
       "id": "7c2a3119-20de-4c2e-984a-d8f7ede8247d",
@@ -1125,7 +1105,7 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1344,
+        1696,
         4448
       ],
       "id": "f4f63438-062d-4a13-b55b-9a7f325893e2",
@@ -1215,7 +1195,7 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1504,
+        1856,
         4448
       ],
       "id": "f8ec51b8-d842-4847-ae5f-554bc5cae0e9",
@@ -1275,7 +1255,7 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1664,
+        2016,
         4448
       ],
       "id": "8b3ce4e7-e7da-4386-8b05-0215fcb0cf3b",
@@ -1325,7 +1305,7 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1824,
+        2176,
         4448
       ],
       "id": "4be75b95-0aea-4150-9478-b7fa75258ccb",
@@ -1381,6 +1361,63 @@
     },
     {
       "parameters": {
+        "fieldToSplitOut": "lista_depois",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        3712
+      ],
+      "name": "Separa Lidos",
+      "id": "debounce-split0000000000000000000000",
+      "notes": "Um item por mensagem lida pelo Lista Depois. Serve para o LPOP seguinte rodar exatamente N vezes.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "operation": "pop",
+        "list": "=tenant_{{ $('Resolve Tenant').item.json.tenant_id }}_conv_{{ $('Extrair e Filtrar').item.json.conversation_id }}_acumulo",
+        "propertyName": "removido",
+        "tail": false,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        3712
+      ],
+      "name": "Remove Lidos do Acumulo",
+      "id": "debounce-lpop00000000000000000000000",
+      "credentials": {
+        "redis": {
+          "id": "LB1ZVse5Xu9EM4pY",
+          "name": "Redis account"
+        }
+      },
+      "notes": "LPOP uma vez por item. Remove exatamente as N lidas, do comeco. O que chegou durante o debounce fica na lista.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "maxItems": 1,
+        "keep": "firstItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -368,
+        3712
+      ],
+      "name": "Volta a Um Item",
+      "id": "debounce-limit0000000000000000000000",
+      "notes": "O Split Out multiplicou os itens. Sem voltar a um, o agent roda uma vez por mensagem e o cliente recebe N respostas.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
         "promptType": "define",
         "text": "={{ ($('Lista Depois').item.json.lista_depois || []).join('\\n') }}",
         "options": {
@@ -1391,7 +1428,7 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -128,
+        224,
         3392
       ],
       "id": "agente-basico00000000000000000000000",
@@ -1411,7 +1448,7 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        -128,
+        224,
         3488
       ],
       "id": "agente-vendas00000000000000000000000",
@@ -1430,7 +1467,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -496,
+        -144,
         3712
       ],
       "name": "Tools Ativas",
@@ -1500,7 +1537,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        -320,
+        32,
         3696
       ],
       "name": "Vende?",
@@ -1513,7 +1550,7 @@
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
-        -128,
+        224,
         4000
       ],
       "name": "Perfil Nao Resolvido",
@@ -1700,7 +1737,7 @@
       "main": [
         [
           {
-            "node": "Limpa Acumulo",
+            "node": "Separa Lidos",
             "type": "main",
             "index": 0
           }
@@ -1708,17 +1745,6 @@
         [
           {
             "node": "Acumulo Sumiu?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Limpa Acumulo": {
-      "main": [
-        [
-          {
-            "node": "Tools Ativas",
             "type": "main",
             "index": 0
           }
@@ -1936,6 +1962,39 @@
           }
         ],
         []
+      ]
+    },
+    "Separa Lidos": {
+      "main": [
+        [
+          {
+            "node": "Remove Lidos do Acumulo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Lidos do Acumulo": {
+      "main": [
+        [
+          {
+            "node": "Volta a Um Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Volta a Um Item": {
+      "main": [
+        [
+          {
+            "node": "Tools Ativas",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Tools Ativas": {

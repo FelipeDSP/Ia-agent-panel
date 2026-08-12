@@ -18,7 +18,14 @@ begin;
 
 drop function if exists public.api_n8n_tem_pedido_pendente(uuid, bigint);
 drop function if exists public.api_n8n_cancelar_pedido(uuid, bigint);
+-- Duas assinaturas de proposito. A migracao 28 trocou o p_metadados de jsonb
+-- para text, entao em producao a que EXISTE e a de text; a de jsonb so aparece
+-- se a 28 ja tiver sido revertida. Dropar so uma deixa a outra viva apontando
+-- para tabelas que a 25 vai remover logo abaixo -- funcao orfa que falha de
+-- runtime, o mesmo modo de falha que a migracao 16 teve com a coluna do
+-- chatwoot_token (corpo de plpgsql e texto, pg_depend nao enxerga).
 drop function if exists public.api_n8n_fechar_pedido(uuid, bigint, jsonb);
+drop function if exists public.api_n8n_fechar_pedido(uuid, bigint, text);
 drop function if exists public.api_n8n_ver_pedido(uuid, bigint);
 drop function if exists public.api_n8n_remover_item(uuid, bigint, uuid);
 drop function if exists public.api_n8n_adicionar_item(uuid, bigint, uuid, integer, text);

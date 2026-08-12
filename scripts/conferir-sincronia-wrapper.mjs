@@ -111,8 +111,8 @@ for (const p of perfis) {
 console.log('\n  -- 4. Tools Ativas resolve o perfil antes do Switch --');
 checar('no "Tools Ativas" existe', Boolean(no('Tools Ativas')));
 checar('no "Vende?" existe', Boolean(no('Vende?')));
-checar('Limpa Acumulo -> Tools Ativas',
-  (w.connections['Limpa Acumulo']?.main?.[0] ?? []).some((d) => d.node === 'Tools Ativas'));
+checar('Volta a Um Item -> Tools Ativas',
+  (w.connections['Volta a Um Item']?.main?.[0] ?? []).some((d) => d.node === 'Tools Ativas'));
 checar('Tools Ativas -> Vende?',
   (w.connections['Tools Ativas']?.main?.[0] ?? []).some((d) => d.node === 'Vende?'));
 // Roteamento nao cai em perfil nenhum por engano: perfil nao resolvido e bug.
@@ -154,9 +154,40 @@ console.log('\n  -- 6. o debounce nao chama o agent com lista vazia --');
   );
   checar('Ultima Mensagem? exige lista_depois nao vazia', naoVazia,
     'sem isso 0 == 0 aprova e o agent e chamado sem prompt');
-  checar('o ramo true passa pelo Limpa Acumulo',
-    (w.connections['Ultima Mensagem?']?.main?.[0] ?? []).some((d) => d.node === 'Limpa Acumulo'),
-    'a guarda precisa ficar ANTES do delete, nao depois');
+  checar('o ramo true entra no Separa Lidos',
+    (w.connections['Ultima Mensagem?']?.main?.[0] ?? []).some((d) => d.node === 'Separa Lidos'),
+    'a guarda precisa ficar ANTES de remover do acumulo, nao depois');
+
+  // O DEL apagava a chave inteira, levando junto mensagem que chegou durante a
+  // espera. O LPOP remove so as lidas. Se alguem trocar de volta por delete, a
+  // perda silenciosa volta.
+  const rem = no('Remove Lidos do Acumulo');
+  checar('o acumulo e limpo por LPOP, nao por DELETE',
+    rem?.parameters?.operation === 'pop' && rem?.parameters?.tail === false,
+    `operation=${rem?.parameters?.operation} tail=${rem?.parameters?.tail} — delete apaga o que chegou durante a espera`);
+  // `Limpa Redis Debounce` tambem apaga a chave do acumulo, e esta CERTO: ele
+  // fica no ramo de pausa (Pausa Conversa -> ...). Quando um humano assume a
+  // conversa, descartar o que estava acumulado e o comportamento desejado — o
+  // agente nao deve responder aquelas mensagens. So o caminho do agente e que
+  // nao pode apagar a chave inteira.
+  const deletesIndevidos = w.nodes.filter(
+    (n) =>
+      n.parameters?.operation === 'delete' &&
+      /_acumulo/.test(String(n.parameters?.key)) &&
+      n.name !== 'Limpa Redis Debounce'
+  );
+  checar('nenhum delete no acumulo fora do ramo de pausa', deletesIndevidos.length === 0,
+    deletesIndevidos.map((n) => n.name).join(', '));
+
+  // O Split Out multiplica os itens de proposito, para o LPOP rodar N vezes. Sem
+  // voltar a UM item o agent roda uma vez por mensagem e o cliente recebe N
+  // respostas — falha visivel para o cliente final, que e a pior que existe.
+  const lim = no('Volta a Um Item');
+  checar('volta a um item antes do agent',
+    (lim?.type ?? '').includes('limit') && Number(lim?.parameters?.maxItems) === 1,
+    'sem isso o Split Out faz o agent rodar N vezes e o cliente recebe N respostas');
+  checar('o Split Out separa lista_depois',
+    no('Separa Lidos')?.parameters?.fieldToSplitOut === 'lista_depois');
 
   // O ramo false junta dois casos: "a lista cresceu, outra execucao responde"
   // (normal, silencioso) e "a chave foi apagada" (corrida, mensagem perdida).

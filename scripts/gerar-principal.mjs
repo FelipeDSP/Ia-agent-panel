@@ -242,11 +242,19 @@ w.nodes.push({
 // ---------------------------------------------------------------------------
 // 5. Ligacoes
 // ---------------------------------------------------------------------------
-// O trecho do debounce NAO muda: `Ultima Mensagem?` segue com a saida false
-// desconectada (mensagem que nao e a ultima morre ali, que e o desenho).
-// So o que vem depois do `Limpa Acumulo` muda.
+// O trecho do debounce e mantido como esta no arquivo — o gerador NAO o
+// reescreve. Ele mudou depois da fatia 3 (guarda de lista vazia, ramo de
+// corrida visivel, e o DEL virou LPOP), e cravar a ligacao aqui ressuscitava o
+// `Limpa Acumulo`, que nao existe mais. O gerador cuida do roteamento por
+// perfil; quem entrega o item ao `Tools Ativas` e o debounce, e ele se governa.
 
-w.connections['Limpa Acumulo'] = { main: [[{ node: 'Tools Ativas', type: 'main', index: 0 }]] };
+const entradaTools = Object.entries(w.connections).find(([, v]) =>
+  (v.main ?? []).some((s) => (s ?? []).some((d) => d.node === 'Tools Ativas'))
+);
+if (!entradaTools) {
+  console.error('ERRO: ninguem alimenta o "Tools Ativas". O debounce foi desligado do roteamento.');
+  process.exit(1);
+}
 w.connections['Tools Ativas'] = { main: [[{ node: 'Vende?', type: 'main', index: 0 }]] };
 w.connections['Vende?'] = {
   main: [

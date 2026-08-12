@@ -153,35 +153,50 @@ vai responder, a lista tem pelo menos um item; vazia só acontece se a chave foi
 apagada. O caso normal — que roda o tempo todo — continua silencioso; a corrida
 vira execução vermelha com a conversa e o tenant na mensagem.
 
-### O conserto de raiz: LTRIM — e por que ainda não foi feito
+### O conserto de raiz: LPOP no lugar do DELETE
 
-O certo é o `Limpa Acumulo` remover **só os itens lidos** em vez da chave
-inteira: `LTRIM key N -1`, com `N` = tamanho lido pelo `Lista Depois`. O que
-chegou durante a espera sobrevive e a próxima execução o processa.
+Feito em 12/08/2026. O `Limpa Acumulo` (DEL na chave inteira) foi **removido** e
+substituído por três nós:
 
-Dois obstáculos, ambos verificados:
+```
+Ultima Mensagem? --true--> Separa Lidos --> Remove Lidos do Acumulo --> Volta a Um Item --> Tools Ativas
+                           (Split Out)      (Redis pop, tail=false)     (Limit 1)
+```
 
-**1. O node Redis do n8n não tem LTRIM.** Conferido no fonte
-(`packages/nodes-base/nodes/Redis/Redis.node.ts`), as operações são: `delete`,
-`get`, `incr`, `info`, `keys`, `llen`, `pop`, `publish`, `push`, `set`.
-
-**2. O Code node não acessa credencial, por design.** Não existe
-`$credentials`; `$getCredentials()` e `this.getCredentials()` não estão
-definidos no sandbox. Então um Code node com cliente Redis próprio precisaria da
-senha do Redis vinda de outro lugar — `$env`, ou seja, a credencial duplicada
-nas variáveis de ambiente do container, fora do cofre do n8n — **e** de
-`NODE_FUNCTION_ALLOW_EXTERNAL` para poder importar o cliente. É uma decisão de
-infraestrutura, não uma escolha de implementação.
-
-**Caminho que não precisa de nenhum dos dois:** `pop` com `tail: false` é
-`LPOP` (confirmado no fonte: `client[tail ? 'rPop' : 'lPop']`). Remover os `N`
-lidos = `N` execuções do node Redis em modo `pop`. Como o n8n roda um node uma
-vez por item de entrada, um `Split Out` sobre `lista_depois` faz o `pop`
-executar exatamente `N` vezes, sem nó de loop.
+O `Split Out` sobre `lista_depois` cria um item por mensagem lida. Como o n8n
+executa um node **uma vez por item de entrada**, o node Redis seguinte roda
+exatamente `N` vezes — removendo as `N` lidas, do começo. O que chegou durante o
+debounce permanece na lista, e a próxima execução o processa.
 
 Não é atômico, mas é correto para este uso: `push` só acrescenta no fim e `pop`
-com `tail: false` só remove do começo, então os `N` removidos são exatamente os
-`N` lidos, e o que chegou depois permanece.
+com `tail: false` só remove do começo (no fonte:
+`client[tail ? 'rPop' : 'lPop']`), então os `N` removidos são exatamente os `N`
+lidos.
+
+**O `Volta a Um Item` não é enfeite.** O `Split Out` multiplicou os itens de
+propósito; sem voltar a um, o `Tools Ativas`, o `Vende?` e o agent recebem `N`
+itens, **o agent roda `N` vezes e o cliente recebe `N` respostas**. É a falha
+mais visível que este fluxo consegue produzir. `npm run n8n:sincronia` falha se
+o `Limit` sumir ou se `maxItems` deixar de ser 1.
+
+`Limpa Redis Debounce` continua fazendo DEL na mesma chave, e está certo: ele
+fica no ramo de pausa. Quando um humano assume a conversa, descartar o acúmulo é
+o desejado — o agente não deve responder aquelas mensagens.
+
+### Por que não um Code node com cliente Redis
+
+Era o caminho óbvio para `LTRIM key N -1`, e não dá:
+
+**O node Redis do n8n não tem LTRIM.** No fonte (`Redis.node.ts`) as operações
+são `delete`, `get`, `incr`, `info`, `keys`, `llen`, `pop`, `publish`, `push`,
+`set`.
+
+**O Code node não acessa credencial, por design.** Não existe `$credentials`;
+`$getCredentials()` e `this.getCredentials()` não existem no sandbox. A senha do
+Redis teria de vir de `$env` — credencial duplicada no ambiente do container,
+fora do cofre do n8n — mais `NODE_FUNCTION_ALLOW_EXTERNAL` para importar o
+cliente. Tirar segredo do cofre para dentro do container é o oposto do que a
+migração 21 fez com o token do Chatwoot, e por isso foi descartado.
 
 ## Nota de manutenção — editar por automação
 

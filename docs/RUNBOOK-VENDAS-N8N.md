@@ -224,7 +224,11 @@ importar por cima:
    - dois nós `AI Agent Basico` e `AI Agent Vendas`
    - `Tools Ativas` → `Vende?` entre o `Limpa Acumulo` e os agents
    - `Perfil Nao Resolvido` pendurado na terceira saída do `Vende?`
-   - **41 nós**
+   - o trecho do debounce terminando em
+     `Separa Lidos -> Remove Lidos do Acumulo -> Volta a Um Item -> Tools Ativas`
+     (o `Limpa Acumulo` **não existe mais** — ver `n8n/README.md`)
+   - `Ultima Mensagem?` com a saída `false` indo para `Acumulo Sumiu?`
+   - **45 nós**
 
 Recarregar não é zelo: "Saved" já apareceu sem ter salvo neste projeto.
 
