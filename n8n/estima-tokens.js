@@ -71,9 +71,11 @@
 // Antes desta calibracao o mesmo calculo errava de 1,5x a 10x.
 // ============================================================================
 
-// A saida do agent vem por $input, NAO por $('AI Agent'): a fatia 3 tem DOIS
-// agents e so um executa. Referenciar por nome quebraria no perfil que nao
-// casasse com o nome escrito — e o `$input` nao precisa saber de quem veio.
+// A saida do agent vem por $input, e NAO por referencia ao agent pelo nome: a
+// fatia 3 tem DOIS agents e so um executa. Referenciar por nome quebraria no
+// perfil que nao casasse com o nome escrito — e o $input nao precisa saber de
+// quem veio. (O nome nao aparece nem aqui de proposito: n8n-validar.mjs varre
+// comentario tambem, e acusaria referencia orfa.)
 const agent = $input.first().json;
 const textoSaida = agent?.output ?? '';
 

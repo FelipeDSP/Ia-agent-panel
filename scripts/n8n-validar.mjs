@@ -81,6 +81,55 @@ for (const caminho of arquivos) {
       }
     }
 
+    // 4b. aridade e expressao decapitada no queryReplacement
+    //
+    // POR QUE ISTO EXISTE. O `Registra Mensagem` passou tres commits com um
+    // elemento a mais na lista: `.item.json.lista_depois`, sem o `$('Lista
+    // Depois')` na frente. Sobrou de uma insercao minha que emitiu DOIS
+    // elementos onde cabia um. A expressao inteira deixa de avaliar — nao e
+    // "um parametro errado", e o no todo parando.
+    //
+    // Nao foi pego por nada: a checagem de referencia orfa procura `$('X')`
+    // com X inexistente, e aqui o `$('X')` simplesmente nao existe. E o
+    // gerador so preserva este campo, entao regerar nao consertava.
+    //
+    // Duas checagens, porque pegam coisas diferentes: a aridade acha elemento
+    // sobrando ou faltando mesmo que cada um seja valido; a decapitacao acha
+    // expressao quebrada mesmo com a contagem certa.
+    if (typeof p.query === 'string' && typeof qr === 'string' && qr.includes('[')) {
+      const dentro = qr.slice(qr.indexOf('[') + 1, qr.lastIndexOf(']'));
+
+      // Split so nas virgulas de topo — `$('X')` e chamadas aninhadas tem as suas.
+      const elems = [];
+      let atual = '';
+      let prof = 0;
+      let aspa = null;
+      for (const ch of dentro) {
+        if (aspa) { atual += ch; if (ch === aspa) aspa = null; continue; }
+        if (ch === "'" || ch === '"' || ch === '`') { aspa = ch; atual += ch; continue; }
+        if ('([{'.includes(ch)) prof++;
+        if (')]}'.includes(ch)) prof--;
+        if (ch === ',' && prof === 0) { elems.push(atual.trim()); atual = ''; continue; }
+        atual += ch;
+      }
+      if (atual.trim()) elems.push(atual.trim());
+
+      const usados = [...p.query.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
+      const maior = usados.length ? Math.max(...usados) : 0;
+      if (maior > 0 && elems.length !== maior) {
+        problemas.push(
+          `"${n.name}": query usa $1..$${maior} mas queryReplacement tem ${elems.length} elemento(s)`
+        );
+      }
+
+      // Um elemento que comeca em `.` ou `)` perdeu o objeto da frente.
+      elems.forEach((e, i) => {
+        if (/^[.)]/.test(e)) {
+          problemas.push(`"${n.name}": queryReplacement[${i}] decapitado: "${e}"`);
+        }
+      });
+    }
+
     // 5. onError engolindo erro onde nao deve
     if (n.onError === 'continueRegularOutput' && /log|registra|billing|consumo/i.test(n.name)) {
       problemas.push(`"${n.name}": onError engolindo erro em no de log/billing`);
