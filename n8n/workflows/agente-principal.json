@@ -569,6 +569,15 @@
                 "type": "number",
                 "operation": "equals"
               }
+            },
+            {
+              "id": "d2",
+              "leftValue": "={{ ($json.lista_depois || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
             }
           ],
           "combinator": "and"
@@ -582,7 +591,9 @@
         3728
       ],
       "id": "0bbe9c1b-9e01-42b9-abc6-a19fa10bd4a2",
-      "name": "Ultima Mensagem?"
+      "name": "Ultima Mensagem?",
+      "notes": "A condicao d1 (antes == depois) sozinha deixa passar o caso 0 == 0: quando outra execucao da MESMA conversa ja rodou o Limpa Acumulo, as duas leituras vem vazias e o IF aprova. O agent era chamado sem prompt e estourava \"No prompt specified\" (execucao 3951004). Pior: o Limpa Acumulo rodava nesse caminho e apagava mensagem que tivesse chegado no meio. A d2 exige lista nao vazia.",
+      "notesInFlow": true
     },
     {
       "parameters": {

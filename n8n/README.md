@@ -95,6 +95,69 @@ const s = document.querySelector('#app').__vue_app__
 s.allNodes.find(n => n.name === '<nó>').parameters
 ```
 
+## A corrida do debounce (execução 3951004)
+
+O acúmulo de mensagens usa uma chave por conversa no Redis:
+
+```
+Acumula Mensagem (RPUSH)  ->  Lista Antes (GET)  ->  Wait Debounce
+  ->  Lista Depois (GET)  ->  Ultima Mensagem? (IF)  ->  Limpa Acumulo (DEL)  ->  agent
+```
+
+A ideia do `Ultima Mensagem?` é: se a lista não cresceu durante a espera, eu sou
+a última mensagem e respondo por todas. Se cresceu, outra execução responde e eu
+paro.
+
+**O furo:** a condição era só `antes == depois`. Duas execuções concorrentes na
+mesma conversa produzem `0 == 0`, que aprova.
+
+```
+t=0.00   A: RPUSH        lista = [A]
+t=0.01   A: Lista Antes  antes_A = [A]          A espera 8s
+t=8.00   A: Lista Depois depois_A = [A]         1 == 1  -> aprova
+t=8.00   B: RPUSH        lista = [A, B]
+t=8.01   A: Limpa Acumulo (DEL)                 lista = <apagada>
+t=8.02   B: Lista Antes  antes_B = []           <- leu depois do DEL
+t=16.0   B: Lista Depois depois_B = []
+         B: Ultima Mensagem?  0 == 0  -> APROVA
+         B: agent com prompt vazio -> "No prompt specified"
+```
+
+Dois estragos, não um:
+
+1. o agent é chamado sem prompt e a execução morre;
+2. **o `Limpa Acumulo` roda nesse caminho** e apaga a chave — levando junto
+   qualquer mensagem que tenha chegado no meio.
+
+**A correção** é a condição `d2` no `Ultima Mensagem?`: `lista_depois.length > 0`.
+Fica **antes** do `Limpa Acumulo` de propósito — uma guarda depois do delete
+evitaria só o estrago 1. `npm run n8n:sincronia` falha se a `d2` sumir.
+
+### O que a guarda NÃO resolve
+
+A mensagem `B` do exemplo continua sem resposta: ela foi apagada pelo `DEL` da
+execução `A`, e agora a execução `B` para em silêncio em vez de estourar.
+
+A causa é o `Limpa Acumulo` apagar a chave inteira em vez de remover só os itens
+que foram lidos. O certo seria `LTRIM key N -1`, que preserva o que chegou
+depois — **o node Redis do n8n não expõe `LTRIM`** (só `get`, `set`, `delete`,
+`incr`, `keys`, `publish`, `push`, `pop`), então não dá para fazer sem sair do
+node.
+
+**Por que não usar o fallback para a mensagem do `Extrair e Filtrar`:** ele
+resolveria a perda, mas cria resposta duplicada no caso simétrico — se a
+execução `A` tiver lido `B` antes de limpar, `B` já foi respondida, e responder
+de novo faz o agente reprocessar um pedido. Num agente que cria pedido, duplicar
+é pior que perder. Trocar uma falha silenciosa por outra visível só compensa se
+a visível for a menos danosa, e aqui não é.
+
+A janela é de milissegundos (entre o `Lista Depois` e o `Limpa Acumulo` de outra
+execução) e exige duas mensagens quase simultâneas na mesma conversa. Fica
+registrado; se aparecer em produção, o caminho é trocar o `DEL` por remoção
+parcial, o que exige um Code node com cliente Redis próprio.
+
+---
+
 ## Nota de manutenção — editar por automação
 
 Mutação de **parâmetro** no store Pinia + Save persiste. Mutação **estrutural**

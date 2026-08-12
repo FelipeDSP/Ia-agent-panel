@@ -138,6 +138,27 @@ for (const n of w.nodes) {
 }
 checar('nenhum no referencia agent por nome', refs === 0, `${refs} referencia(s)`);
 
+console.log('\n  -- 6. o debounce nao chama o agent com lista vazia --');
+// A condicao "antes == depois" sozinha aprova o caso 0 == 0, que acontece
+// quando outra execucao da mesma conversa ja limpou a chave do Redis. O agent
+// era chamado sem prompt (execucao 3951004) e o Limpa Acumulo ainda rodava,
+// apagando mensagem que tivesse chegado no meio.
+{
+  const ult = no('Ultima Mensagem?');
+  const conds = ult?.parameters?.conditions?.conditions ?? [];
+  const naoVazia = conds.some(
+    (c) =>
+      /lista_depois/.test(String(c.leftValue)) &&
+      c.operator?.operation === 'gt' &&
+      Number(c.rightValue) === 0
+  );
+  checar('Ultima Mensagem? exige lista_depois nao vazia', naoVazia,
+    'sem isso 0 == 0 aprova e o agent e chamado sem prompt');
+  checar('o ramo true passa pelo Limpa Acumulo',
+    (w.connections['Ultima Mensagem?']?.main?.[0] ?? []).some((d) => d.node === 'Limpa Acumulo'),
+    'a guarda precisa ficar ANTES do delete, nao depois');
+}
+
 console.log('\n  -- extras --');
 checar('contextWindowLength = 20', no('Redis Chat Memory')?.parameters?.contextWindowLength === 20);
 for (const a of agents) {
