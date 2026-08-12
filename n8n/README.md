@@ -133,30 +133,55 @@ Dois estragos, não um:
 Fica **antes** do `Limpa Acumulo` de propósito — uma guarda depois do delete
 evitaria só o estrago 1. `npm run n8n:sincronia` falha se a `d2` sumir.
 
-### O que a guarda NÃO resolve
+### A guarda não devolve a mensagem — mas agora ela aparece
 
-A mensagem `B` do exemplo continua sem resposta: ela foi apagada pelo `DEL` da
-execução `A`, e agora a execução `B` para em silêncio em vez de estourar.
+A mensagem `B` do exemplo continua sem resposta: foi apagada pelo `DEL` da
+execução `A`. A guarda `d2` impede o estouro e impede o delete indevido, **mas
+não recupera a mensagem**.
 
-A causa é o `Limpa Acumulo` apagar a chave inteira em vez de remover só os itens
-que foram lidos. O certo seria `LTRIM key N -1`, que preserva o que chegou
-depois — **o node Redis do n8n não expõe `LTRIM`** (só `get`, `set`, `delete`,
-`incr`, `keys`, `publish`, `push`, `pop`), então não dá para fazer sem sair do
-node.
+Trocar estouro por parada silenciosa seria piorar, do ponto de vista do cliente
+final: ele simplesmente não é respondido e ninguém fica sabendo. Por isso o ramo
+`false` do `Ultima Mensagem?` foi separado em dois:
 
-**Por que não usar o fallback para a mensagem do `Extrair e Filtrar`:** ele
-resolveria a perda, mas cria resposta duplicada no caso simétrico — se a
-execução `A` tiver lido `B` antes de limpar, `B` já foi respondida, e responder
-de novo faz o agente reprocessar um pedido. Num agente que cria pedido, duplicar
-é pior que perder. Trocar uma falha silenciosa por outra visível só compensa se
-a visível for a menos danosa, e aqui não é.
+```
+Ultima Mensagem?  --false-->  Acumulo Sumiu?  --sim-->  Acumulo Sumiu (corrida)  [stopAndError]
+                                              --nao-->  (nada: outra execucao responde)
+```
 
-A janela é de milissegundos (entre o `Lista Depois` e o `Limpa Acumulo` de outra
-execução) e exige duas mensagens quase simultâneas na mesma conversa. Fica
-registrado; se aparecer em produção, o caminho é trocar o `DEL` por remoção
-parcial, o que exige um Code node com cliente Redis próprio.
+`lista_depois.length == 0` separa os casos com precisão: quando outra execução
+vai responder, a lista tem pelo menos um item; vazia só acontece se a chave foi
+apagada. O caso normal — que roda o tempo todo — continua silencioso; a corrida
+vira execução vermelha com a conversa e o tenant na mensagem.
 
----
+### O conserto de raiz: LTRIM — e por que ainda não foi feito
+
+O certo é o `Limpa Acumulo` remover **só os itens lidos** em vez da chave
+inteira: `LTRIM key N -1`, com `N` = tamanho lido pelo `Lista Depois`. O que
+chegou durante a espera sobrevive e a próxima execução o processa.
+
+Dois obstáculos, ambos verificados:
+
+**1. O node Redis do n8n não tem LTRIM.** Conferido no fonte
+(`packages/nodes-base/nodes/Redis/Redis.node.ts`), as operações são: `delete`,
+`get`, `incr`, `info`, `keys`, `llen`, `pop`, `publish`, `push`, `set`.
+
+**2. O Code node não acessa credencial, por design.** Não existe
+`$credentials`; `$getCredentials()` e `this.getCredentials()` não estão
+definidos no sandbox. Então um Code node com cliente Redis próprio precisaria da
+senha do Redis vinda de outro lugar — `$env`, ou seja, a credencial duplicada
+nas variáveis de ambiente do container, fora do cofre do n8n — **e** de
+`NODE_FUNCTION_ALLOW_EXTERNAL` para poder importar o cliente. É uma decisão de
+infraestrutura, não uma escolha de implementação.
+
+**Caminho que não precisa de nenhum dos dois:** `pop` com `tail: false` é
+`LPOP` (confirmado no fonte: `client[tail ? 'rPop' : 'lPop']`). Remover os `N`
+lidos = `N` execuções do node Redis em modo `pop`. Como o n8n roda um node uma
+vez por item de entrada, um `Split Out` sobre `lista_depois` faz o `pop`
+executar exatamente `N` vezes, sem nó de loop.
+
+Não é atômico, mas é correto para este uso: `push` só acrescenta no fim e `pop`
+com `tail: false` só remove do começo, então os `N` removidos são exatamente os
+`N` lidos, e o que chegou depois permanece.
 
 ## Nota de manutenção — editar por automação
 

@@ -1333,6 +1333,54 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "vazio",
+              "leftValue": "={{ ($('Lista Depois').item.json.lista_depois || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -896,
+        4000
+      ],
+      "name": "Acumulo Sumiu?",
+      "id": "debounce-sumiu0000000000000000000000",
+      "notes": "Separa \"outra execucao responde\" (normal, silencioso) de \"a chave foi apagada\" (corrida, mensagem perdida).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "errorMessage": "=Acumulo do debounce vazio para a conversa {{ $('Extrair e Filtrar').item.json.conversation_id }} do tenant {{ $('Resolve Tenant').item.json.tenant_id }}. Outra execucao da MESMA conversa rodou o Limpa Acumulo (DEL na chave inteira) enquanto esta esperava o debounce, e a mensagem do cliente foi apagada junto — ela NAO foi respondida. Esta execucao para aqui para o problema aparecer; sem isso ela terminaria em silencio. Conserto de raiz: trocar o DEL por remocao parcial (LTRIM). Ver n8n/README.md, secao \"A corrida do debounce\"."
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        -672,
+        4000
+      ],
+      "name": "Acumulo Sumiu (corrida)",
+      "id": "debounce-sumiu-erro00000000000000000"
+    },
+    {
+      "parameters": {
         "promptType": "define",
         "text": "={{ ($('Lista Depois').item.json.lista_depois || []).join('\\n') }}",
         "options": {
@@ -1656,6 +1704,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Acumulo Sumiu?",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -1869,6 +1924,18 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "Acumulo Sumiu?": {
+      "main": [
+        [
+          {
+            "node": "Acumulo Sumiu (corrida)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     },
     "Tools Ativas": {

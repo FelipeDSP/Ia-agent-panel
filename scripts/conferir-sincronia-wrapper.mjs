@@ -157,6 +157,19 @@ console.log('\n  -- 6. o debounce nao chama o agent com lista vazia --');
   checar('o ramo true passa pelo Limpa Acumulo',
     (w.connections['Ultima Mensagem?']?.main?.[0] ?? []).some((d) => d.node === 'Limpa Acumulo'),
     'a guarda precisa ficar ANTES do delete, nao depois');
+
+  // O ramo false junta dois casos: "a lista cresceu, outra execucao responde"
+  // (normal, silencioso) e "a chave foi apagada" (corrida, mensagem perdida).
+  // Sem separar, o segundo termina em silencio — e silencio que ninguem ve ja
+  // custou caro duas vezes neste projeto.
+  checar('o ramo false vai para o Acumulo Sumiu?',
+    (w.connections['Ultima Mensagem?']?.main?.[1] ?? []).some((d) => d.node === 'Acumulo Sumiu?'),
+    'sem isso a corrida termina em silencio');
+  checar('a anomalia para a execucao com erro',
+    (no('Acumulo Sumiu (corrida)')?.type ?? '').includes('stopAndError'));
+  checar('o caso normal segue silencioso',
+    (w.connections['Acumulo Sumiu?']?.main?.[1] ?? []).length === 0,
+    '"outra execucao responde" nao pode virar erro — acontece o tempo todo');
 }
 
 console.log('\n  -- extras --');
