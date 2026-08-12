@@ -232,7 +232,11 @@ console.log('\n  -- 8. proibicoes explicitas no wrapper --');
 {
   for (const p of perfis) {
     checar(`wrapper "${p}" proibe afirmar acao sem retorno de ferramenta`,
-      /So afirme que registrou, transferiu, consultou ou encerrou/.test(wrappers[p] ?? ''),
+      // Casa a lista de verbos SEM cravar a ordem nem o conjunto: a regra ganhou
+      // "enviou" em 12/08 e vai ganhar outros quando houver tool nova. O que nao
+      // pode faltar e a clausula, e que ela cite ENVIAR — o verbo da tool de
+      // foto, e o que faltava quando o agente prometeu pedido que nao registrou.
+      /So afirme que registrou[^.]*enviou[^.]*DEPOIS/.test(wrappers[p] ?? ''),
       'sem isso o modelo narra ferramenta que nao chamou');
   }
 
