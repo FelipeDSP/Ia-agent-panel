@@ -52,6 +52,27 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
       'O preço vem sempre do catálogo.',
     temConfigCliente: false,
   },
+  /**
+   * NÃO é tool do modelo — é etapa do fluxo. O agente não a chama e não sabe
+   * que ela existe; quando ligada, a nota de voz já chega a ele como texto.
+   *
+   * Por isso `tipo: 'capacidade_fluxo'`: `resumo` aqui descreve o que o
+   * OPERADOR contrata, não uma capacidade que o modelo decide usar.
+   *
+   * Fora de TOOLS_BASELINE: o áudio do cliente final sai da nossa
+   * infraestrutura e vai para a OpenAI. Ligar isso por padrão seria decidir
+   * sobre dado de terceiro sem ninguém ter escolhido — ver
+   * docs/LGPD-TRANSCRICAO-AUDIO.md.
+   */
+  transcricao_audio: {
+    nome: 'transcricao_audio',
+    tipo: 'capacidade_fluxo',
+    rotulo: 'Transcrever áudio',
+    resumo:
+      'Nota de voz do cliente vira texto antes de chegar ao agente. ' +
+      'O áudio é enviado para a OpenAI — confira as implicações antes de contratar.',
+    temConfigCliente: false,
+  },
 };
 
 /** Definição de UI de uma tool, ou null se não estiver registrada. */

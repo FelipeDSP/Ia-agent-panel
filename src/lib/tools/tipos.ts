@@ -20,9 +20,26 @@ export type CorteConfig = {
   agencia: readonly string[];
 };
 
+/**
+ * O que a entrada é, de fato.
+ *
+ * `tool_modelo`   — o agente a chama como ferramenta. `resumo` descreve uma
+ *                   capacidade que o modelo decide usar.
+ * `capacidade_fluxo` — etapa do fluxo n8n; o modelo nunca a invoca e nem sabe
+ *                   que existe. Transcrição de áudio é o primeiro caso: roda
+ *                   antes de o modelo entrar na conversa.
+ *
+ * Espelha `catalogo_tools.tipo` (migração 31). Vive nos dois lugares porque o
+ * painel não lê o catálogo e o n8n não lê o registry — mas o valor é o mesmo, e
+ * divergir é bug.
+ */
+export type TipoModulo = 'tool_modelo' | 'capacidade_fluxo';
+
 export type DefinicaoTool = {
   /** Identificador estável = tenant_tools.tool_nome = catalogo_tools.tool_nome. */
   nome: string;
+  /** Tool que o modelo chama, ou etapa do fluxo. Default: 'tool_modelo'. */
+  tipo?: TipoModulo;
   /** Rótulo exibido no painel (cliente e admin). Fonte de UI. */
   rotulo: string;
   /** Resumo curto do que a tool faz, para admin e cliente entenderem. */
