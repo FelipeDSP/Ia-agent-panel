@@ -1,4 +1,9 @@
-# Runbook — importar a fatia 2 de vendas no n8n
+# Runbook — importar vendas no n8n
+
+> **Fatia 2** (tools de venda no ar) está nos passos 0–6 abaixo e **já foi
+> executada** — o restaurante-teste fechou uma venda real.
+> **Fatia 3** (dois agents por perfil) é a seção no fim do arquivo: *Fatia 3 —
+> importar os dois agents*. É a que está pendente.
 
 O que fazer na UI do n8n para colocar as tools de venda no ar. **Este é o único
 passo da fatia 2 que a Acqua sente**: o workflow principal é compartilhado por
@@ -169,3 +174,139 @@ npm run n8n:sincronia      # System Message do AI Agent == WRAPPER do Estima Tok
 npm run teste:trava-vendas # nenhum pedido para quem não contratou
 node scripts/n8n-validar.mjs n8n/workflows/agente-principal.json
 ```
+
+---
+---
+
+# Fatia 3 — importar os dois agents
+
+O que muda: o agente deixa de carregar tools que o tenant não contratou. Um
+`Switch` roteia para `AI Agent Basico` (3 tools) ou `AI Agent Vendas` (7).
+
+**A Acqua sente este passo** — o principal é compartilhado. O ganho é dela: hoje
+ela paga o schema das 4 tools de venda que nunca contratou, em toda mensagem.
+
+**Comportamento visível não muda para ninguém.** O wrapper do perfil `vendas` é
+byte a byte o system message que está em produção hoje; o de `basico` é o mesmo
+menos as seções de venda. Se algo mudar para o restaurante-teste, é bug.
+
+### Antes de importar — já conferido daqui
+
+Não precisa refazer, mas é o que dá segurança para seguir:
+
+- **`api_n8n_tools_ativas` existe em produção** e responde. É a função que o nó
+  `Tools Ativas` chama; se não existisse, o fluxo quebraria para **todos**, não
+  só para vendas.
+- **O roteamento já resolve certo contra o banco de produção:**
+  `acqua-lavanderia → basico`, `restaurante-teste → vendas`.
+- **Os 7 `workflowId` estão reais no JSON**, não placeholders. Diferente da
+  fatia 2, **não há IDs para reapontar**.
+- **`Tools Ativas` já vem com a credencial** `Agent ia Supabase` (o gerador
+  copiou do `Resolve Tenant`). Nó novo importado às vezes chega sem — este não.
+
+---
+
+## Passo 3.0 — congelar o "antes"
+
+O principal em produção hoje é o da fatia 2, de agent único. Exporte antes de
+importar por cima:
+
+1. Abra `Agente Multi-Tenant (Supabase)` → **⋯** → **Download**
+2. Guarde fora do repo. É o rollback.
+
+---
+
+## Passo 3.1 — importar o principal
+
+1. **⋯** → **Import from File** → `n8n/workflows/agente-principal.json`
+2. **Save** — pelo botão. `Ctrl+S` não persiste (`n8n/README.md`).
+3. **Recarregue a página** e confirme que ficou:
+   - dois nós `AI Agent Basico` e `AI Agent Vendas`
+   - `Tools Ativas` → `Vende?` entre o `Limpa Acumulo` e os agents
+   - `Perfil Nao Resolvido` pendurado na terceira saída do `Vende?`
+   - **41 nós**
+
+Recarregar não é zelo: "Saved" já apareceu sem ter salvo neste projeto.
+
+---
+
+## Passo 3.2 — conferir os sub-nós compartilhados
+
+`OpenAI Chat Model` e `Redis Chat Memory` são **um só**, ligados nos **dois**
+agents — não duplicados. No canvas, cada um deve ter duas linhas saindo.
+
+Se o import tiver duplicado, apague a cópia e religue: duas memórias Redis
+significam dois históricos para a mesma conversa.
+
+---
+
+## Passo 3.3 — provar o roteamento nos dois sentidos
+
+Com o workflow ativo, uma mensagem por cliente:
+
+| tenant | perfil esperado | como confirmar |
+|---|---|---|
+| `restaurante-teste` | `vendas` | executa o `AI Agent Vendas`; pedir um item ainda funciona |
+| qualquer sem vendas | `basico` | executa o `AI Agent Basico`; o outro fica cinza |
+
+Na execução, o `Estima Tokens` devolve `_perfil` — é o diagnóstico mais rápido.
+
+**O ramo `Perfil Nao Resolvido` não deve executar nunca.** Se executar, a
+execução falha com erro explícito e o cliente não recebe resposta. É de
+propósito: cair no básico faria quem contratou vendas perder as tools em
+silêncio, e o sintoma chegaria como "o agente não entendeu meu pedido".
+
+---
+
+## Passo 3.4 — medir o S do perfil básico
+
+O `S` de vendas (622) foi medido. O de básico (**266**) é regra de três e está
+marcado `medido: false` no gerador. Como `r = 3,112` já é conhecido, **uma
+execução no perfil básico basta**:
+
+1. Descontrate **Vendas** do `restaurante-teste` (Admin → Módulos)
+2. Mande **uma** mensagem simples, sem tool call
+3. Na execução, anote:
+   - `tokenUsageEstimate.promptTokens` do sub-nó `OpenAI Chat Model` → **real**
+   - `_estimado_entrada` e `_historico_chars` do `Estima Tokens`
+4. Resolva `S = real − (texto + memória) / 3,112`
+5. Ponha o número em `scripts/gerar-principal.mjs` (`S:` do perfil `basico`,
+   e `medido: true`), rode `node scripts/gerar-principal.mjs`, reimporte
+6. **Recontrate Vendas** para o `restaurante-teste`
+
+Errar isso não quebra nada visível — só faz o rateio mentir. Por isso é passo
+separado, com número anotado.
+
+---
+
+## Passo 3.5 — confirmar o ganho da Acqua
+
+O ponto da fatia inteira. Compare uma execução dela antes e depois: os tokens de
+entrada devem cair pelo schema das 4 tools de venda (~356) **mais** as seções de
+venda que saíram do system prompt.
+
+Ela está sem tráfego desde 24/07 (`npm run teste:acqua-pronta`), então talvez só
+dê para medir quando voltar. Não é bloqueio para importar.
+
+---
+
+## Se der errado na fatia 3
+
+Reimporte o JSON do passo 3.0. Nada no banco muda com esta fatia — ela é só
+topologia de workflow, sem migração.
+
+---
+
+## Conferência da fatia 3, a qualquer momento
+
+```bash
+npm run n8n:sincronia                                    # 17 checagens
+node scripts/n8n-validar.mjs n8n/workflows/agente-principal.json
+npm run teste:trava-vendas                               # trava do sub-workflow
+npm run teste:acqua-pronta                               # a Acqua segue básica
+```
+
+O `n8n:sincronia` é a rede do gerador: ele falha se um agent for editado pela UI
+e o outro não, se uma tool de venda for ligada no agent básico, se o ramo de
+falha sumir, se alguém reintroduzir referência ao agent por nome, ou se
+`returnIntermediateSteps` for desligado.
