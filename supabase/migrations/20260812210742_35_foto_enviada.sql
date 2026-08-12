@@ -19,7 +19,7 @@
 -- cinco tentativas empurraria a janela para frente a cada tentativa e o
 -- follow-up legitimo do cliente ("sim, manda a outra") nunca passaria.
 --
--- Rollback: 20260812210000_35_foto_enviada_rollback.sql
+-- Rollback: 20260812210742_35_foto_enviada_rollback.sql
 
 begin;
 

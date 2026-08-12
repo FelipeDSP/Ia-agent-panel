@@ -123,8 +123,16 @@ const { count: nProdutos } = await admin.from('produtos')
   .select('id', { count: 'exact', head: true }).eq('tenant_id', t.id);
 const { count: nPedidos } = await admin.from('pedidos')
   .select('id', { count: 'exact', head: true }).eq('tenant_id', t.id);
-checar('nenhum produto no catálogo dela', (nProdutos ?? 0) === 0, `${nProdutos}`);
-checar('nenhum pedido', (nPedidos ?? 0) === 0, `${nPedidos}`);
+// A propriedade é "quem não contratou não tem venda gravada", não "a Acqua tem
+// zero produtos". Se ela contratar vendas um dia — evento comercial legítimo —,
+// a segunda vira falsa e o teste ficaria vermelho por um acerto.
+if (!vendas?.contratado) {
+  checar('a trava funcionou: nenhum pedido para quem não contratou', (nPedidos ?? 0) === 0, `${nPedidos}`);
+  checar('catálogo vazio (2ª barreira, defesa em profundidade)', (nProdutos ?? 0) === 0, `${nProdutos}`);
+} else {
+  avisar('vendas contratada para a Acqua',
+    `${nProdutos} produto(s) e ${nPedidos} pedido(s) — a checagem de trava não se aplica mais`);
+}
 
 // ---------------------------------------------------------------------------
 // 5. Base de conhecimento — é o que o agente dela usa
@@ -156,8 +164,18 @@ avisar('busca vetorial não testada aqui',
 console.log('\n  -- conversas --');
 const { data: pausadas } = await admin.from('conversas')
   .select('conversation_id, status').eq('tenant_id', t.id).eq('status', 'pausado');
-checar('nenhuma conversa presa em pausa', (pausadas ?? []).length === 0,
-  `${pausadas?.length} pausada(s) — o agente não responde nelas até despausar`);
+// AVISO, não falha. Pausar conversa é a feature funcionando: um humano assumiu.
+// Como FALHA, este teste ficaria vermelho toda vez que alguém estivesse
+// atendendo — vermelho por acerto, que é o jeito mais rápido de ensinar todo
+// mundo a ignorar a suíte. O que importa saber antes de religar é o número, não
+// um veredicto.
+if ((pausadas ?? []).length > 0) {
+  avisar('conversas pausadas',
+    `${pausadas.length} — o agente não responde nelas até um humano despausar. Normal se há atendimento em curso`);
+} else {
+  ok++;
+  console.log('  OK     nenhuma conversa pausada');
+}
 
 const { data: ultima } = await admin.from('conversas')
   .select('atualizado_em').eq('tenant_id', t.id)

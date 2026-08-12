@@ -33,8 +33,8 @@ carregarEnv();
 const lim = (f) =>
   fs.readFileSync(RAIZ + 'supabase/migrations/' + f, 'utf8').replace(/^\s*(begin|commit)\s*;\s*$/gim, '');
 
-const M35 = lim('20260812210000_35_foto_enviada.sql');
-const R35 = lim('20260812210000_35_foto_enviada_rollback.sql');
+const M35 = lim('20260812210742_35_foto_enviada.sql');
+const R35 = lim('20260812210742_35_foto_enviada_rollback.sql');
 
 const c = new pg.Client({ connectionString: process.env.SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } });
 

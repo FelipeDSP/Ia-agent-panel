@@ -498,6 +498,15 @@ export type ModuloAdmin = {
   temConfigCliente: boolean;
   contratado: boolean;
   ativo: boolean;
+  /**
+   * Aviso de dependência entre módulos, calculado no servidor.
+   *
+   * Não bloqueia a contratação — só diz que o combo não faz nada. `foto_produto`
+   * sem `vendas` é o caso: a tool recebe `produto_id`, e o único jeito de o
+   * agente ter um é o `consultar_catalogo`, que pertence a vendas. Sem o aviso,
+   * dá para vender um módulo que fica mudo, e descobrir depois.
+   */
+  aviso?: string | null;
 };
 
 export function GestaoModulos({
@@ -537,6 +546,11 @@ function ModuloRow({ tenantId, modulo }: { tenantId: string; modulo: ModuloAdmin
             </Badge>
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">{modulo.resumo}</p>
+          {modulo.aviso ? (
+            <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-500">
+              {modulo.aviso}
+            </p>
+          ) : null}
         </div>
         <SubmitButton
           size="sm"

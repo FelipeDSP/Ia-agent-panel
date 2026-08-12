@@ -122,7 +122,15 @@ for (const t of semVendas) {
   const { data } = await admin.rpc('api_n8n_buscar_produtos', { p_tenant_id: t.id, p_termo: '' });
   const n = (data ?? []).length;
   if (t.slug === 'acqua-lavanderia') {
-    checar('acqua-lavanderia: catálogo vazio (2ª barreira)', n === 0, `${n} produto(s)`);
+    // Defesa em profundidade, não invariante do produto: a Acqua PODE cadastrar
+    // catálogo um dia sem contratar vendas — a tela existe para todo tenant. Se
+    // isso acontecer, isto vira informação, não falha, porque a barreira que
+    // importa é a do sub-workflow e ela tem checagem própria acima.
+    if (n === 0) {
+      checar('acqua-lavanderia: catálogo vazio (2ª barreira)', true);
+    } else {
+      console.log(`  ----  acqua-lavanderia: ${n} produto(s) — a 2ª barreira deixou de valer, a 1ª segue`);
+    }
   } else {
     console.log(`  ----  ${t.slug}: ${n} produto(s) no catálogo (esperado — a trava é do sub-workflow)`);
   }

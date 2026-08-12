@@ -136,6 +136,23 @@ trocar o tamanho do chunk sem medir: quebra calado.
   escondem vazamento unidirecional.
 - Todo recurso novo precisa de um teste que confirme que o tenant B não acessa o
   dado do tenant A — inclusive por URL direta e por chamada de API.
+- **Afirme PROPRIEDADE, não estado do mundo.** `nenhum tenant tem áudio
+  contratado` era verdade no dia em que foi escrito e virou falsa quando alguém
+  contratou pelo painel — como deveria. Teste que fica vermelho porque o sistema
+  funcionou é a forma mais rápida de todo mundo parar de olhar a suíte.
+
+  O reescrito mede a propriedade: *aplicar a migração não contrata para
+  ninguém* (conta antes × depois). O mesmo vale para "zero pedidos", "zero
+  conversas pausadas", "catálogo vazio" — pausar conversa e cadastrar produto são
+  operações normais.
+
+  Quando o estado do mundo importa mesmo, há duas saídas: declará-lo explícito e
+  versionado (ver `PEDIDOS_HISTORICOS` em `tests/trava-vendas.mjs`), ou emitir
+  **aviso** em vez de falha. Aviso informa sem treinar ninguém a ignorar vermelho.
+- **Teste que não consegue falhar é pior que teste ausente**, porque compra
+  confiança. Se escrever uma asserção nova, sabote-a uma vez e confirme que ela
+  reprova — já houve `|| true` numa condição e um regex casando com o comentário
+  em vez do código.
 
 ## Convenções
 

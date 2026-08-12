@@ -91,9 +91,23 @@ export default async function PaginaDetalheTenant({
   const estadoPorTool = new Map(
     (toolsTenant ?? []).map((t) => [t.tool_nome, { contratado: Boolean(t.contratado), ativo: Boolean(t.ativo) }]),
   );
+  // Dependências entre módulos. Contratar o dependente sem o pré-requisito não
+  // quebra nada — só produz um módulo mudo, e isso é fácil de vender sem querer.
+  // O aviso é do ADMIN, não do cliente: quem contrata é a agência.
+  const DEPENDE_DE: Record<string, { de: string; texto: string }> = {
+    foto_produto: {
+      de: 'vendas',
+      texto:
+        'Precisa do módulo Vendas: a foto é identificada pelo produto, e o agente só ' +
+        'obtém essa identificação pelo catálogo. Contratado sozinho, não faz nada.',
+    },
+  };
+
   const modulos: ModuloAdmin[] = (catalogo ?? []).map((c) => {
     const def = definicaoTool(c.tool_nome);
     const estado = estadoPorTool.get(c.tool_nome);
+    const dep = DEPENDE_DE[c.tool_nome];
+    const aviso = dep && !estadoPorTool.get(dep.de)?.contratado ? dep.texto : null;
     return {
       tool_nome: c.tool_nome,
       rotulo: def?.rotulo ?? c.nome_exibicao,
@@ -101,6 +115,7 @@ export default async function PaginaDetalheTenant({
       temConfigCliente: def?.temConfigCliente ?? false,
       contratado: estado?.contratado ?? false,
       ativo: estado?.ativo ?? false,
+      aviso,
     };
   });
 

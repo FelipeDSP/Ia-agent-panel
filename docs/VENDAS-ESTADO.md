@@ -429,6 +429,38 @@ perfil de vendas, que é o comportamento desejável.
 Fica anotado porque é o tipo de coisa que, se aparecer como "o agente ignorou meu
 pedido uma vez", ninguém conectaria à posição de um nó.
 
+## Duas janelas que interagem: debounce e trava de foto
+
+Registrado em 12/08/2026, antes de existir o caso.
+
+São dois temporizadores no mesmo fluxo, configuráveis por tenant e independentes:
+
+| janela | onde | default | quem configura |
+|---|---|---|---|
+| `debounce_segundos` | `tenants` — o `Wait Debounce` | 8s (Acqua) | agência |
+| `janela_foto_segundos` | `tenant_tools.config` de `foto_produto` | 30s | agência |
+
+**Hoje não há conflito**, porque 30 > 8 com folga. A relação importa quando um
+tenant tiver **debounce longo**: com debounce de 40s, por exemplo, o cliente
+manda "manda a foto da picanha", espera, o agente responde; ele pede outra, e
+essa segunda pergunta chega numa execução que começa *depois* de a janela de 30s
+já ter expirado. A trava deixa passar — o que está certo — mas a distância entre
+as duas fotos vira o debounce, não a janela.
+
+O inverso é mais incômodo: **janela maior que o debounce mais o tempo de
+resposta** faz o follow-up legítimo ser recusado. Com debounce de 8s, resposta em
+~10s e o cliente digitando, o segundo pedido chega perto de 30s — na fronteira.
+
+**Não mexer agora.** A trava registra toda recusa em `fotos_enviadas` com
+`motivo = 'janela'`; se aparecerem recusas seguidas de um pedido explícito do
+cliente, o número está apertado e o dado diz em quanto. Calibrar antes de ter
+evidência seria trocar um chute por outro.
+
+O que **não** fazer: derivar `janela_foto_segundos` de `debounce_segundos`
+automaticamente. Elas medem coisas diferentes — uma agrupa mensagens que chegam
+juntas, a outra impede uma sequência de imagens — e acoplá-las faria mexer no
+debounce mudar o comportamento de foto sem ninguém pedir.
+
 ## Ideia futura: transformar a aba "Uso" em relatório para o cliente
 
 Registrado em 12/08/2026, a pedido do Felipe. **Não construir agora** — ele quer
