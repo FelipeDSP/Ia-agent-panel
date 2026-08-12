@@ -409,6 +409,44 @@ for (const n of w.nodes) {
 }
 
 // ---------------------------------------------------------------------------
+// 6b. Extrair e Filtrar: corpo do arquivo, com o filtro compartilhado
+// ---------------------------------------------------------------------------
+// Era o no de MAIOR exposicao do repo ainda como string dentro de JSON: primeiro
+// no depois do webhook, no caminho de todo cliente. Se ele quebra, nao ha
+// degradacao parcial — o fluxo para antes de resolver o tenant.
+//
+// O bloco de filtro entra por marcador, da MESMA fonte que a filtragem da
+// transcricao de audio vai usar. Blocklist copiada diverge, e o buraco fica no
+// caminho que ninguem olhou.
+
+const FILTRO_TEXTO = fs.readFileSync(path.join(RAIZ, 'n8n', 'filtro-texto.js'), 'utf8').trim();
+
+function injetarFiltro(corpoNo, nomeArquivo) {
+  if (!corpoNo.includes('// __FILTRO_TEXTO__')) {
+    throw new Error(`${nomeArquivo} sem o marcador // __FILTRO_TEXTO__`);
+  }
+  return corpoNo.replace('// __FILTRO_TEXTO__', FILTRO_TEXTO);
+}
+
+{
+  const ext = no('Extrair e Filtrar');
+  if (!ext) throw new Error('no "Extrair e Filtrar" nao existe — o workflow nao tem a forma esperada');
+  const corpoExt = injetarFiltro(
+    fs.readFileSync(path.join(RAIZ, 'n8n', 'extrair-e-filtrar.js'), 'utf8'),
+    'n8n/extrair-e-filtrar.js'
+  );
+  // Compila antes de gravar. O n8n-validar tambem checa, mas ele roda depois e
+  // por fora; falhar aqui impede o JSON quebrado de existir.
+  try {
+    // eslint-disable-next-line no-new-func
+    new Function('$json', corpoExt);
+  } catch (e) {
+    throw new Error('Extrair e Filtrar nao compila apos a injecao do filtro: ' + e.message);
+  }
+  ext.parameters.jsCode = corpoExt;
+}
+
+// ---------------------------------------------------------------------------
 // 7. Estima Tokens: corpo do arquivo, com os wrappers e os S por perfil
 // ---------------------------------------------------------------------------
 const est = no('Estima Tokens');

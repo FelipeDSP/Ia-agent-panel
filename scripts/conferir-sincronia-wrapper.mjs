@@ -268,6 +268,33 @@ console.log('\n  -- 8. proibicoes explicitas no wrapper --');
     caudas.map((c, i) => `${perfis[i]}:${c.length}ch`).join(' vs '));
 }
 
+console.log('\n  -- 9. filtro de texto identico em todo no que filtra --');
+// Hoje so o `Extrair e Filtrar` usa. A fatia de audio acrescenta o
+// `Filtra Transcricao`, e e AI que a checagem paga por si: transcricao e texto
+// do cliente entrando depois do filtro original. Duas copias da blocklist
+// divergem — uma ganha padrao novo, a outra nao, e o buraco fica no caminho que
+// ninguem olhou. A checagem entra ANTES do segundo consumidor existir, de
+// proposito: depois dele ja seria tarde para descobrir que divergiram.
+{
+  const fonte = fs.readFileSync(path.join(RAIZ, 'n8n', 'filtro-texto.js'), 'utf8').trim();
+  const usam = w.nodes.filter((n) => (n.parameters?.jsCode ?? '').includes('function contemInjection'));
+
+  checar('ao menos um no usa o filtro compartilhado', usam.length > 0, `${usam.length} no(s)`);
+  for (const n of usam) {
+    checar(`${n.name}: bloco de filtro identico a n8n/filtro-texto.js`,
+      n.parameters.jsCode.includes(fonte),
+      'divergiu da fonte — regenere com node scripts/gerar-principal.mjs');
+  }
+  // Nenhum no pode filtrar por conta propria: uma blocklist escrita a mao em
+  // outro no e exatamente a divergencia que isto existe para impedir.
+  const artesanais = w.nodes.filter(
+    (n) => /jailbreak|dan mode|ignore suas/i.test(n.parameters?.jsCode ?? '') &&
+           !(n.parameters?.jsCode ?? '').includes(fonte)
+  );
+  checar('nenhuma blocklist artesanal fora da fonte', artesanais.length === 0,
+    artesanais.map((n) => n.name).join(', '));
+}
+
 console.log('\n  -- extras --');
 checar('contextWindowLength = 20', no('Redis Chat Memory')?.parameters?.contextWindowLength === 20);
 for (const a of agents) {
