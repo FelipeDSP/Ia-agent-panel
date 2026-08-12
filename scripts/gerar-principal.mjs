@@ -38,6 +38,50 @@ const no = (nome) => w.nodes.find((n) => n.name === nome);
 const CRED_PG = { postgres: { id: 'MehTUROZlPmHG8kW', name: 'Agent ia Supabase' } };
 
 // ---------------------------------------------------------------------------
+// 0. Layout: o canvas e do Felipe, nao do gerador
+// ---------------------------------------------------------------------------
+// O gerador RECRIA cinco nos (os dois agents, Tools Ativas, Vende? e Perfil Nao
+// Resolvido) em vez de editar no lugar — e recriar significava reposicionar nas
+// coordenadas cravadas aqui embaixo.
+//
+// O efeito e que arrumar o canvas na UI e reexportar nao sobrevivia a
+// `node scripts/gerar-principal.mjs`: os cinco pulavam de volta e o resto ficava
+// onde estava, o que e pior que tudo errado — o desenho fica meio arrumado.
+// Aconteceu em 12/08/2026, depois de o canvas ja ter sido organizado.
+//
+// Agora posicao e id sao snapshot ANTES de mexer e reaplicados no fim. As
+// coordenadas em POSICAO_NOVA valem so para no que ainda nao existe, ou seja,
+// na primeira geracao. Depois disso o canvas manda.
+//
+// O `id` vai junto porque o n8n regenera os ids no import; preservar evita que
+// cada ciclo importar-exportar-gerar produza diff de ruido.
+
+const LAYOUT = Object.fromEntries(w.nodes.map((n) => [n.name, { position: n.position, id: n.id }]));
+
+const POSICAO_NOVA = {
+  'AI Agent Basico': [-64, -224],
+  'AI Agent Vendas': [-64, 96],
+  'Tools Ativas': [-544, -64],
+  'Vende?': [-304, -64],
+  'Perfil Nao Resolvido': [-64, 320],
+};
+
+function restaurarLayout() {
+  const novos = [];
+  for (const n of w.nodes) {
+    const antes = LAYOUT[n.name];
+    if (antes) {
+      n.position = antes.position;
+      if (antes.id) n.id = antes.id;
+    } else {
+      n.position = POSICAO_NOVA[n.name] ?? n.position;
+      novos.push(n.name);
+    }
+  }
+  return novos;
+}
+
+// ---------------------------------------------------------------------------
 // 1. Perfis
 // ---------------------------------------------------------------------------
 // `S` e o custo em token dos schemas daquele conjunto de tools, usado pelo
@@ -286,6 +330,8 @@ if (semComentarios.includes("$('AI Agent")) {
 // ---------------------------------------------------------------------------
 no('Redis Chat Memory').parameters.contextWindowLength = 20;
 
+const novosNoCanvas = restaurarLayout();
+
 fs.writeFileSync(ARQ, JSON.stringify(w, null, 2) + '\n');
 
 console.log('agente-principal.json gerado:');
@@ -296,3 +342,8 @@ for (const [k, p] of Object.entries(PERFIS)) {
 console.log('  + Tools Ativas -> Vende? -> [perfil] , com Perfil Nao Resolvido no fallback');
 console.log(`  = ${trocas} referencia(s) a $('AI Agent') redirecionadas para o Estima Tokens`);
 console.log(`  = ${w.nodes.length} nos no total`);
+console.log(
+  novosNoCanvas.length
+    ? `  = layout preservado; ${novosNoCanvas.length} no(s) novo(s) posicionado(s): ${novosNoCanvas.join(', ')}`
+    : '  = layout do canvas preservado, nenhum no reposicionado'
+);
