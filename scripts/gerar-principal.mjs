@@ -36,6 +36,12 @@ const w = JSON.parse(fs.readFileSync(ARQ, 'utf8'));
 
 const no = (nome) => w.nodes.find((n) => n.name === nome);
 const CRED_PG = { postgres: { id: 'MehTUROZlPmHG8kW', name: 'Agent ia Supabase' } };
+// Preenchido quando o sub-workflow de foto for importado no n8n. Ate la o
+// n8n-validar RECUSA o arquivo — de proposito: na fatia 2 um placeholder foi
+// parar no workflow ativo e so quebrou quando o modelo chamou a tool.
+const ID_TOOL_FOTO = 'SUBSTITUIR_ID_ENVIAR_FOTO';
+
+const idDe = (s) => s.padEnd(36, '0').slice(0, 36);
 
 // ---------------------------------------------------------------------------
 // 0. Layout: o canvas e do Felipe, nao do gerador
@@ -99,7 +105,7 @@ const TOOLS_BASICO = [
   'Transferir para Humano',
   "Call 'Tool - Resolver Conversa (Multi-Tenant)'",
 ];
-const TOOLS_VENDAS = ['Consultar Catalogo', 'Gerenciar Pedido', 'Fechar Pedido', 'Cancelar Pedido'];
+const TOOLS_VENDAS = ['Consultar Catalogo', 'Gerenciar Pedido', 'Fechar Pedido', 'Cancelar Pedido', 'Enviar Foto do Produto'];
 
 const PERFIS = {
   basico: { agente: 'AI Agent Basico', tools: TOOLS_BASICO, S: 266, medido: false, y: -224 },
@@ -154,6 +160,31 @@ if (WRAPPERS.basico.includes('consultar_catalogo')) throw new Error('wrapper bas
 // TEXTO CURTO DE PROPOSITO. Cada linha aqui e token em toda mensagem de todo
 // tenant, e o perfil basico existe justamente para ser enxuto. Tres bullets no
 // total, nao um paragrafo por proibicao.
+
+// ---------------------------------------------------------------------------
+// 2c. A tool de foto, so no perfil de vendas
+// ---------------------------------------------------------------------------
+// A secao entra no wrapper de VENDAS porque a tool recebe `produto_id`, e o
+// unico jeito de o agente ter um e o `consultar_catalogo`. O perfil basico nao
+// tem nem a tool nem a secao.
+//
+// AS TRES REGRAS SAO DE CONVERSA, nao de capacidade. O teto real e a trava no
+// banco (migracao 35), que recusa a segunda foto na janela e registra a
+// tentativa. Aqui e so reduzir a frequencia com que ela precisa agir — e a
+// segunda regra e a que evita o padrao que ja aconteceu com pedido: OFERECER
+// puxa o cliente para o caminho, e a promessa vem depois da oferta.
+
+const SECAO_FOTO = [
+  '',
+  '## Ferramenta: enviar_foto_produto',
+  'Envia a foto de UM item ao cliente, com legenda, numa mensagem so. Use SOMENTE quando',
+  'o cliente pedir para ver o produto. Informe o produto_id vindo de consultar_catalogo.',
+  '- UMA foto por vez. Se ele pedir de varios itens, mande a do primeiro e pergunte se',
+  '  quer as outras. Nunca duas na mesma resposta.',
+  '- NAO ofereca foto por conta propria. Se ele nao pediu imagem, nao mencione que existe.',
+  '- Item sem foto nao vira promessa: diga que nao ha imagem DESSE item e descreva por texto.',
+  '',
+].join(String.fromCharCode(10));
 
 const REGRAS_TODOS = [
   '- So afirme que registrou, enviou, transferiu, consultou ou encerrou algo DEPOIS',
@@ -215,6 +246,24 @@ function acrescentarRegras(wrapper, linhas) {
   return wrapper.slice(0, fim) + '\n' + linhas.join('\n') + wrapper.slice(fim);
 }
 
+// A secao de foto entra ANTES das regras gerais, junto das outras ferramentas.
+// Removida antes de reinserir, para a geracao seguir idempotente.
+const NL = String.fromCharCode(10);
+
+function comSecaoFoto(wrapper) {
+  // Remove a versao anterior antes de reinserir. O gerador deriva o wrapper do
+  // JSON ATUAL, que ja tem a secao da rodada passada — sem remover, cada rodada
+  // duplicaria o bloco, como aconteceu com as regras em 12/08.
+  const RE_SECAO = new RegExp(
+    NL + '*## Ferramenta: enviar_foto_produto[\\s\\S]*?(?=## Regras gerais)',
+  );
+  const sem = wrapper.replace(RE_SECAO, NL);
+  const i = sem.indexOf('## Regras gerais');
+  if (i < 0) throw new Error('secao "## Regras gerais" nao encontrada — nao sei onde por a secao de foto');
+  return sem.slice(0, i) + SECAO_FOTO.trimStart() + NL + sem.slice(i);
+}
+
+WRAPPERS.vendas = comSecaoFoto(WRAPPERS.vendas);
 WRAPPERS.vendas = acrescentarRegras(removerRegrasGeradas(WRAPPERS.vendas), REGRAS_TODOS);
 WRAPPERS.basico = acrescentarRegras(removerRegrasGeradas(WRAPPERS.basico), [...REGRAS_TODOS, ...REGRAS_BASICO]);
 
@@ -347,6 +396,57 @@ w.nodes.push({
   position: [-64, 320],
   name: 'Perfil Nao Resolvido',
   id: 'perfil-erro'.padEnd(36, '0').slice(0, 36),
+});
+
+// Idempotencia: remove a versao da rodada anterior antes de recriar.
+w.nodes = w.nodes.filter((n) => n.name !== 'Enviar Foto do Produto');
+delete w.connections['Enviar Foto do Produto'];
+
+// A tool de foto. `workflowId` fica com PLACEHOLDER de proposito: o ID so existe
+// depois de o sub-workflow ser importado, e o n8n-validar RECUSA o arquivo
+// enquanto ele estiver la. Na fatia 2 um placeholder foi parar no workflow ativo
+// e so quebrou quando o modelo chamou a tool, em runtime, no meio de um
+// atendimento.
+w.nodes.push({
+  parameters: {
+    description:
+      'Envia a foto de UM produto do catalogo ao cliente, com legenda. Use so quando o cliente '
+      + 'pedir para ver o item. Uma foto por vez.',
+    workflowId: {
+      __rl: true,
+      value: ID_TOOL_FOTO,
+      mode: 'list',
+      cachedResultName: 'Tool - Enviar Foto do Produto (Multi-Tenant)',
+    },
+    workflowInputs: {
+      mappingMode: 'defineBelow',
+      value: {
+        // tenant_id e conversation_id SEMPRE do fluxo, nunca do $fromAI — regra
+        // 1 do CLAUDE.md. So o produto_id vem do modelo, e a funcao do banco
+        // recusa id que nao seja do tenant.
+        tenant_id: "={{ $('Resolve Tenant').first().json.tenant_id }}",
+        conversation_id: "={{ $('Extrair e Filtrar').first().json.conversation_id }}",
+        account_id: "={{ $('Extrair e Filtrar').first().json.chatwoot_account_id }}",
+        produto_id:
+          "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('produto_id', "
+          + "`id do produto vindo de consultar_catalogo`, 'string') }}",
+      },
+      matchingColumns: [],
+      schema: [
+        { id: 'tenant_id', displayName: 'tenant_id', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string' },
+        { id: 'conversation_id', displayName: 'conversation_id', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'number' },
+        { id: 'account_id', displayName: 'account_id', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'number' },
+        { id: 'produto_id', displayName: 'produto_id', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string' },
+      ],
+      attemptToConvertTypes: false,
+      convertFieldsToString: false,
+    },
+  },
+  type: '@n8n/n8n-nodes-langchain.toolWorkflow',
+  typeVersion: 2.2,
+  position: [8576, 4768],
+  name: 'Enviar Foto do Produto',
+  id: idDe('tool-foto'),
 });
 
 // ---------------------------------------------------------------------------
@@ -533,7 +633,6 @@ for (const nome of [...AUDIO_NOS, 'Credencial (midia)']) {
 }
 
 const CRED_REDIS_HTTP = { httpHeaderAuth: undefined }; // os avisos usam token do proprio item
-const idDe = (s) => s.padEnd(36, '0').slice(0, 36);
 
 // Aviso ao cliente: mesmo formato dos que ja existem. O token e a url vem do
 // item que desceu do `Config Audio` pelos IFs.
@@ -756,6 +855,7 @@ w.nodes.push(avisoChatwoot(
   [-1168, 4480]
 ));
 
+
 w.nodes.push({
   parameters: { jsCode: '' }, // preenchido abaixo
   type: 'n8n-nodes-base.code',
@@ -813,6 +913,9 @@ w.connections['Roteia Transcricao'] = {
   main: [cx('Mensagem Pronta'), cx('Credencial (bloqueio)'), cx('Avisa Audio Falhou'), cx('Avisa Audio Falhou')],
 };
 w.connections['Mensagem Pronta'] = { main: [cx('Sync Conversa')] };
+w.connections['Enviar Foto do Produto'] = {
+  ai_tool: [[{ node: 'AI Agent Vendas', type: 'ai_tool', index: 0 }]],
+};
 
 // O `Acumula Mensagem` passa a ler do ponto de convergencia. E a UNICA leitura
 // de `mensagem` no workflow — verificado antes de mexer.

@@ -94,7 +94,7 @@ for (const p of perfis) {
 
 console.log('\n  -- 3. cada agent tem exatamente as tools do seu perfil --');
 const TOOLS_BASICO = ['Busca Conhecimento', 'Transferir para Humano', "Call 'Tool - Resolver Conversa (Multi-Tenant)'"];
-const TOOLS_VENDAS = ['Consultar Catalogo', 'Gerenciar Pedido', 'Fechar Pedido', 'Cancelar Pedido'];
+const TOOLS_VENDAS = ['Consultar Catalogo', 'Gerenciar Pedido', 'Fechar Pedido', 'Cancelar Pedido', 'Enviar Foto do Produto'];
 const ESPERADO = { basico: TOOLS_BASICO, vendas: [...TOOLS_BASICO, ...TOOLS_VENDAS] };
 
 for (const p of perfis) {
@@ -380,6 +380,41 @@ console.log('\n  -- 10. modulo de audio: convergencia e travas --');
   // Ramo falso vazio de PROPOSITO: humano esta atendendo, quem responde e ele.
   checar('conversa pausada nao transcreve e nao responde',
     (w.connections['Conversa Ativa?']?.main?.[1] ?? []).length === 0);
+}
+
+console.log('\n  -- 11. tool de foto --');
+{
+  const foto = no('Enviar Foto do Produto');
+  checar('a tool existe', Boolean(foto));
+
+  // Só no perfil de vendas: a tool recebe produto_id, e o único jeito de o
+  // agente ter um é o consultar_catalogo, que o básico não tem.
+  const ligadaEm = (w.connections['Enviar Foto do Produto']?.ai_tool ?? [])
+    .flat().filter(Boolean).map((d) => d.node);
+  checar('ligada SÓ no AI Agent Vendas',
+    ligadaEm.length === 1 && ligadaEm[0] === 'AI Agent Vendas', ligadaEm.join(', '));
+
+  // tenant_id e conversation_id do FLUXO, nunca do modelo — regra 1 do
+  // CLAUDE.md. Só o produto_id pode vir do $fromAI, e a função do banco recusa
+  // id que não seja do tenant.
+  const inputs = foto?.parameters?.workflowInputs?.value ?? {};
+  for (const campo of ['tenant_id', 'conversation_id', 'account_id']) {
+    checar(`${campo} vem do fluxo, não do $fromAI`,
+      !String(inputs[campo] ?? '').includes('$fromAI'), String(inputs[campo]));
+  }
+  checar('produto_id vem do modelo', String(inputs.produto_id ?? '').includes('$fromAI'));
+
+  checar('wrapper "vendas" descreve a tool de foto',
+    /## Ferramenta: enviar_foto_produto/.test(wrappers.vendas ?? ''));
+  checar('wrapper "basico" NÃO descreve a tool de foto',
+    !/enviar_foto_produto/.test(wrappers.basico ?? ''),
+    'o básico não tem a tool; descrevê-la faria o modelo prometer o que não pode');
+  checar('a regra de não OFERECER foto está no wrapper',
+    /NAO ofereca foto por conta propria/.test(wrappers.vendas ?? ''),
+    'oferecer puxa o cliente para o caminho — foi assim com o pedido');
+  checar('a seção aparece UMA vez',
+    (wrappers.vendas ?? '').split('## Ferramenta: enviar_foto_produto').length === 2,
+    'o gerador deriva do JSON atual; sem remover antes de inserir, duplica a cada rodada');
 }
 
 console.log('\n  -- extras --');

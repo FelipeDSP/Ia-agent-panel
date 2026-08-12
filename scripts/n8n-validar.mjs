@@ -205,6 +205,26 @@ for (const caminho of arquivos) {
       }
     }
 
+    // 4e. workflowId de sub-workflow nao pode ser placeholder
+    //
+    // Na fatia 2 os `SUBSTITUIR_ID_*` foram parar no workflow ATIVO em producao,
+    // e so apareceram porque o Felipe pediu para eu conferir a instancia. Um
+    // placeholder nao quebra o import: quebra a PRIMEIRA vez que o modelo chama
+    // a tool, em runtime, no meio de um atendimento.
+    //
+    // O ciclo e inevitavel — o ID so existe depois de importar o sub-workflow —,
+    // entao o que da para garantir e que o principal NAO SEJA IMPORTAVEL
+    // enquanto o placeholder estiver la.
+    {
+      const wid = p.workflowId;
+      const valor = typeof wid === 'string' ? wid : wid?.value;
+      if (typeof valor === 'string' && /SUBSTITUIR|PLACEHOLDER|^$/i.test(valor)) {
+        problemas.push(
+          `"${n.name}": workflowId ainda e placeholder (${valor || 'vazio'}) — importe o sub-workflow, pegue o ID real e regere`
+        );
+      }
+    }
+
     // 5. onError engolindo erro onde nao deve
     if (n.onError === 'continueRegularOutput' && /log|registra|billing|consumo/i.test(n.name)) {
       problemas.push(`"${n.name}": onError engolindo erro em no de log/billing`);

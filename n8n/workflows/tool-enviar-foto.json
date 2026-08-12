@@ -1,0 +1,331 @@
+{
+  "name": "Tool - Enviar Foto do Produto (Multi-Tenant)",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tenant_id"
+            },
+            {
+              "name": "conversation_id"
+            },
+            {
+              "name": "produto_id"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        384,
+        400
+      ],
+      "id": "trigger-foto000000000000000000000000",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT permitido, motivo, produto_nome, preco_centavos, foto_path,\n       chatwoot_url, chatwoot_token\n  FROM public.api_n8n_enviar_foto($1::uuid, $2::bigint, $3::uuid);",
+        "options": {
+          "queryReplacement": "={{ [ $json.tenant_id, $json.conversation_id, $json.produto_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        608,
+        400
+      ],
+      "id": "pode-enviar0000000000000000000000000",
+      "name": "Pode Enviar?",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "notes": "Decide E REGISTRA. Grava a tentativa em fotos_enviadas mesmo quando recusa — a recusa e o dado que diz se a trava esta trabalhando. Devolve credencial SO quando permite.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "permitido",
+              "leftValue": "={{ $json.permitido }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        400
+      ],
+      "id": "permitido000000000000000000000000000",
+      "name": "Permitido?",
+      "notes": "A trava vem ANTES de qualquer efeito: nenhum byte sai do Storage e nada vai ao Chatwoot sem o veredicto. Mesma ordem que o teste:trava-vendas exige das tools de venda.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/functions/v1/foto-produto",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-foto-secret",
+              "value": "={{ $env.FOTO_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ tenant_id: $('When Executed by Another Workflow').first().json.tenant_id, foto_path: $json.foto_path }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1056,
+        304
+      ],
+      "id": "assina-url00000000000000000000000000",
+      "name": "Assina URL",
+      "notes": "O n8n nao tem credencial de Storage, e pôr service_role aqui daria a ele o banco inteiro — o oposto da migracao 21. A Edge Function assina so dentro da pasta do tenant, e a URL vive 60s: o unico consumidor e o proximo no.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        304
+      ],
+      "id": "baixa-foto00000000000000000000000000",
+      "name": "Baixa Foto"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Pode Enviar?').first().json.chatwoot_url }}/api/v1/accounts/{{ $('When Executed by Another Workflow').first().json.account_id ?? $('Pode Enviar?').first().json.chatwoot_account_id }}/conversations/{{ $('When Executed by Another Workflow').first().json.conversation_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $('Pode Enviar?').first().json.chatwoot_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "attachments[]",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "content",
+              "value": "={{ $('Pode Enviar?').first().json.produto_nome }}"
+            },
+            {
+              "name": "message_type",
+              "value": "outgoing"
+            },
+            {
+              "name": "private",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1504,
+        304
+      ],
+      "id": "envia-chatwoot0000000000000000000000",
+      "name": "Envia ao Chatwoot",
+      "notes": "MULTIPART, nao URL no corpo: o Chatwoot devolve 422 para data_url e 200 para os bytes (teste de 11/08). Ele re-hospeda a imagem — e por isso o bucket segue privado.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok-1",
+              "name": "enviada",
+              "type": "boolean",
+              "value": "={{ true }}"
+            },
+            {
+              "id": "ok-2",
+              "name": "produto_nome",
+              "type": "string",
+              "value": "={{ $('Pode Enviar?').first().json.produto_nome }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1728,
+        304
+      ],
+      "id": "marca-enviada00000000000000000000000",
+      "name": "Marca Enviada"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// RESPOSTA AO AGENTE — corpo do no Code do \"Tool - Enviar Foto do Produto\"\n//\n// ESTE ARQUIVO E A FONTE. O JSON do sub-workflow recebe uma copia injetada por\n// scripts/gerar-tool-foto.mjs. Editar o no pela UI e perder a alteracao na\n// proxima geracao — edite aqui.\n//\n// O QUE ELE FAZ. Traduz o veredicto de `api_n8n_enviar_foto` numa frase que o\n// AGENTE le. Nao e mensagem para o cliente: e o retorno da ferramenta, e o\n// modelo decide o que dizer a partir dele.\n//\n// POR QUE CADA MOTIVO TEM TEXTO PROPRIO. \"Nao consegui\" para tudo faria o modelo\n// improvisar a explicacao — e improvisar explicacao e como ele acabou dizendo\n// que registrou um pedido que nao existia. Cada recusa diz o que houve E o que\n// fazer, para o modelo nao precisar inventar nenhum dos dois.\n// ============================================================================\n\nconst v = $input.first().json ?? {};\n\n// Caminho feliz: a foto ja foi entregue ao Chatwoot pelo no anterior.\nif (v.enviada === true) {\n  return [{\n    json: {\n      resultado:\n        `Foto de \"${v.produto_nome}\" enviada ao cliente na conversa. ` +\n        'Comente a foto em uma frase curta e siga o atendimento. ' +\n        'NAO envie outra foto na sequencia; se ele quiser mais alguma, espere ele pedir.'\n    }\n  }];\n}\n\n// As recusas. `motivo` vem fechado do CHECK da migracao 35, entao este mapa\n// cobre o dominio inteiro — e o fallback existe para o dia em que alguem\n// acrescentar um motivo e esquecer daqui.\nconst RECUSAS = {\n  nao_contratado:\n    'Envio de foto nao esta disponivel para este cliente. Diga que nao consegue mandar imagem '\n    + 'e siga descrevendo o item por texto.',\n\n  produto_invalido:\n    'Produto nao encontrado ou indisponivel. Confirme o item com o cliente e use consultar_catalogo '\n    + 'para pegar o id certo antes de tentar de novo.',\n\n  sem_foto:\n    'Este item nao tem foto cadastrada. Diga que nao ha imagem DESSE item — sem prometer enviar '\n    + 'depois — e descreva o produto por texto.',\n\n  // A trava. O texto e deliberadamente instrutivo: sem ele, o modelo tende a\n  // pedir desculpa e tentar de novo, que e exatamente o burst que a janela\n  // existe para conter.\n  janela:\n    'Voce acabou de enviar uma foto nesta conversa. NAO tente de novo agora e nao se desculpe: '\n    + 'termine de falar sobre a foto anterior e espere o cliente pedir a proxima.'\n};\n\nconst motivo = String(v.motivo ?? '');\nconst texto = RECUSAS[motivo];\n\nif (texto) {\n  return [{ json: { resultado: texto } }];\n}\n\n// Fallback. Nunca deveria acontecer — mas dizer \"nao consegui\" e melhor do que\n// devolver vazio, que faria o modelo preencher o silencio.\nreturn [{\n  json: {\n    resultado:\n      'Nao foi possivel enviar a foto agora. Siga o atendimento por texto e nao afirme que enviou.'\n      + (motivo ? ` (motivo nao mapeado: ${motivo})` : '')\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1952,
+        400
+      ],
+      "id": "resposta-agente000000000000000000000",
+      "name": "Resposta ao Agente",
+      "notes": "Traduz o veredicto numa frase que o AGENTE le — nao e mensagem para o cliente. Cada recusa diz o que houve E o que fazer, para o modelo nao improvisar a explicacao.",
+      "notesInFlow": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Pode Enviar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pode Enviar?": {
+      "main": [
+        [
+          {
+            "node": "Permitido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Permitido?": {
+      "main": [
+        [
+          {
+            "node": "Assina URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta ao Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assina URL": {
+      "main": [
+        [
+          {
+            "node": "Baixa Foto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Baixa Foto": {
+      "main": [
+        [
+          {
+            "node": "Envia ao Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envia ao Chatwoot": {
+      "main": [
+        [
+          {
+            "node": "Marca Enviada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marca Enviada": {
+      "main": [
+        [
+          {
+            "node": "Resposta ao Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

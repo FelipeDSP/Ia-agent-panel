@@ -73,6 +73,23 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
       'O áudio é enviado para a OpenAI — confira as implicações antes de contratar.',
     temConfigCliente: false,
   },
+  /**
+   * Módulo separado de `vendas`, mas INÚTIL sem ele: a tool recebe `produto_id`,
+   * e o único jeito de o agente ter um é o `consultar_catalogo`. Separado assim
+   * o cliente que vende pode desligar foto sem perder venda — e o admin mostra
+   * um aviso quando a dependência não está contratada.
+   *
+   * Fora de TOOLS_BASELINE: manda imagem para o cliente final e consome banda.
+   */
+  foto_produto: {
+    nome: 'foto_produto',
+    tipo: 'tool_modelo',
+    rotulo: 'Enviar foto do produto',
+    resumo:
+      'O agente manda a foto de um item do catálogo quando o cliente pede. ' +
+      'Uma foto por vez — há trava para não virar sequência de imagens no WhatsApp.',
+    temConfigCliente: false,
+  },
 };
 
 /** Definição de UI de uma tool, ou null se não estiver registrada. */
