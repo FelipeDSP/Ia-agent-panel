@@ -146,23 +146,59 @@ if (WRAPPERS.basico.includes('consultar_catalogo')) throw new Error('wrapper bas
 // instrucao nao cria proibicao, e modelo preenche vazio. Daqui em diante as
 // proibicoes sao explicitas.
 
+// TEXTO CURTO DE PROPOSITO. Cada linha aqui e token em toda mensagem de todo
+// tenant, e o perfil basico existe justamente para ser enxuto. Tres bullets no
+// total, nao um paragrafo por proibicao.
+
 const REGRAS_TODOS = [
-  '- NUNCA afirme que executou uma acao — registrar, adicionar, remover, transferir,',
-  '  encerrar, consultar — sem ter recebido o retorno da ferramenta correspondente',
-  '  nesta mesma conversa. Sem a ferramenta, diga que nao consegue fazer isso.',
-  '- Nunca escreva no texto da resposta blocos que imitem chamada de ferramenta',
-  '  (por exemplo "[Used tools: ...]"), nem invente identificadores, codigos de item,',
-  '  precos ou resultados de ferramenta.',
+  '- So afirme que registrou, transferiu, consultou ou encerrou algo DEPOIS de receber',
+  '  o retorno da ferramenta. Sem retorno, diga que nao consegue — nunca invente',
+  '  resultado, codigo de item, nem bloco no formato de chamada de ferramenta.',
 ];
 
+// DOIS MOMENTOS, nao um. Na conversa de 12/08 o agente basico primeiro OFERECEU
+// ("Quer fazer um pedido para entrega?") e so depois PROMETEU ("e so me informar
+// os itens que eu registro para voce"). Proibir so a promessa deixa a oferta de
+// pe, e a oferta e o que puxa o cliente para o passo em que o modelo fabrica a
+// chamada de tool. A base fala de delivery; o modelo le e conclui que vende.
 const REGRAS_BASICO = [
-  '- Voce NAO tem como registrar pedidos, reservar itens nem fechar compras. Se o',
-  '  cliente pedir isso, diga com clareza que por aqui nao e possivel e ofereca',
-  '  transferir para um atendente.',
-  '- A base de conhecimento pode conter cardapio, tabela de precos e codigos de item.',
-  '  Use isso para INFORMAR. Informar nao e vender: voce nao pode adicionar ao',
-  '  pedido, reservar nem garantir que o preco da base esta valendo.',
+  '- Voce nao registra pedidos. Nao ofereca fazer pedido, nao pergunte se o cliente',
+  '  quer pedir e nao prometa anotar itens: se ele pedir, diga que por aqui nao da e',
+  '  ofereca transferir para um atendente.',
+  '- Cardapio e precos da base servem para INFORMAR. Informar nao e vender.',
 ];
+
+// O gerador deriva o wrapper do JSON ATUAL, que ja contem as regras da geracao
+// anterior. Sem remover antes de acrescentar, cada rodada apenda de novo: a
+// primeira execucao depois de reescrever o texto deixou as regras v1 E as v2
+// juntas no mesmo prompt, cobrando token duplicado de todo tenant.
+//
+// Marcadores de TODA versao ja injetada ficam aqui para sempre. Tirar um so e
+// seguro depois que nenhum workflow em uso o contiver — e como o gerador roda
+// sobre o arquivo do repo, na pratica e depois de um ciclo de geracao.
+const MARCADORES_REGRAS = [
+  '- NUNCA afirme que executou uma acao',            // v1, 12/08/2026
+  '- Nunca escreva no texto da resposta blocos',     // v1
+  '- Voce NAO tem como registrar pedidos',           // v1
+  '- A base de conhecimento pode conter cardapio',   // v1
+  '- So afirme que registrou, transferiu',           // v2
+  '- Voce nao registra pedidos',                     // v2
+  '- Cardapio e precos da base servem para INFORMAR', // v2
+];
+
+function removerRegrasGeradas(wrapper) {
+  const linhas = wrapper.split('\n');
+  const saida = [];
+  let pulando = false;
+  for (const l of linhas) {
+    if (MARCADORES_REGRAS.some((m) => l.startsWith(m))) { pulando = true; continue; }
+    // continuacao do bullet: linha indentada logo abaixo
+    if (pulando && /^\s{2,}\S/.test(l)) continue;
+    pulando = false;
+    saida.push(l);
+  }
+  return saida.join('\n');
+}
 
 function acrescentarRegras(wrapper, linhas) {
   const ini = wrapper.indexOf('## Regras gerais');
@@ -173,8 +209,27 @@ function acrescentarRegras(wrapper, linhas) {
   return wrapper.slice(0, fim) + '\n' + linhas.join('\n') + wrapper.slice(fim);
 }
 
-WRAPPERS.vendas = acrescentarRegras(WRAPPERS.vendas, REGRAS_TODOS);
-WRAPPERS.basico = acrescentarRegras(WRAPPERS.basico, [...REGRAS_TODOS, ...REGRAS_BASICO]);
+WRAPPERS.vendas = acrescentarRegras(removerRegrasGeradas(WRAPPERS.vendas), REGRAS_TODOS);
+WRAPPERS.basico = acrescentarRegras(removerRegrasGeradas(WRAPPERS.basico), [...REGRAS_TODOS, ...REGRAS_BASICO]);
+
+// Idempotencia, verificada e nao presumida: rodar de novo tem que dar o mesmo
+// texto. Se a remocao nao casar com o que foi injetado, isto pega na hora em vez
+// de acumular silenciosamente prompt duplicado.
+for (const [chave, texto] of Object.entries(WRAPPERS)) {
+  const esperado = chave === 'basico' ? [...REGRAS_TODOS, ...REGRAS_BASICO] : REGRAS_TODOS;
+  const relido = acrescentarRegras(removerRegrasGeradas(texto), esperado);
+  if (relido !== texto) {
+    console.error(`ERRO: wrapper "${chave}" nao e idempotente — a remocao das regras nao casa com a injecao.`);
+    process.exit(1);
+  }
+  for (const m of MARCADORES_REGRAS) {
+    const n = texto.split(m).length - 1;
+    if (n > 1) {
+      console.error(`ERRO: regra duplicada no wrapper "${chave}": ${m} aparece ${n}x`);
+      process.exit(1);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 3. Os dois AI Agents

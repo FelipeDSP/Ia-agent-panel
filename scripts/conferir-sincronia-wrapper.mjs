@@ -230,19 +230,27 @@ console.log('\n  -- 8. proibicoes explicitas no wrapper --');
 // o agente basico afirmou ao cliente que tinha registrado um pedido, com um
 // bloco "[Used tools: ...]" escrito por ele. Nenhuma tool foi chamada.
 {
-  const temAntiFabricacao = (p) => /NUNCA afirme que executou uma acao/.test(wrappers[p] ?? '');
   for (const p of perfis) {
-    checar(`wrapper "${p}" proibe afirmar acao sem retorno de ferramenta`, temAntiFabricacao(p),
+    checar(`wrapper "${p}" proibe afirmar acao sem retorno de ferramenta`,
+      /So afirme que registrou, transferiu, consultou ou encerrou/.test(wrappers[p] ?? ''),
       'sem isso o modelo narra ferramenta que nao chamou');
   }
-  checar('wrapper "basico" diz que nao registra pedido',
-    /NAO tem como registrar pedidos/.test(wrappers.basico ?? ''),
+
+  // Os DOIS momentos. Na conversa de 12/08 o agente basico ofereceu antes de
+  // prometer: "Quer fazer um pedido para entrega?" veio primeiro, e so depois
+  // "e so me informar os itens que eu registro". Proibir so a promessa deixa a
+  // oferta de pe, e e a oferta que puxa o cliente para o passo seguinte.
+  checar('wrapper "basico" proibe PROMETER que registra',
+    /Voce nao registra pedidos/.test(wrappers.basico ?? ''),
     'remover a secao de venda nao cria proibicao — o modelo preenche o vazio');
+  checar('wrapper "basico" proibe OFERECER pedido',
+    /Nao ofereca fazer pedido/.test(wrappers.basico ?? ''),
+    'a promessa vem depois da oferta; barrar so a promessa chega tarde');
   checar('wrapper "basico" separa informar de vender',
     /Informar nao e vender/.test(wrappers.basico ?? ''),
-    'a base de conhecimento tem cardapio com preco; sem isso ele trata como catalogo');
+    'a base tem cardapio com preco; sem isso ele trata como catalogo');
   checar('wrapper "vendas" NAO recebe a proibicao de vender',
-    !/NAO tem como registrar pedidos/.test(wrappers.vendas ?? ''),
+    !/Voce nao registra pedidos/.test(wrappers.vendas ?? ''),
     'quem contratou tem que continuar vendendo');
 
   // A checagem 2 compara so o PREFIXO ate o `{{`, entao texto acrescentado
