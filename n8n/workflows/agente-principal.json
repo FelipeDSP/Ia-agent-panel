@@ -9,10 +9,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -4032,
-        4176
+        2000,
+        5136
       ],
-      "id": "232816ee-263c-47d4-b3b0-aee08c23a8fb",
+      "id": "c32221ea-4ae5-4b0c-b593-7a972e62c3e7",
       "name": "Webhook",
       "webhookId": "agente-lavanderia-chatwoot"
     },
@@ -124,10 +124,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        -3664,
-        4176
+        2368,
+        5136
       ],
-      "id": "b82969eb-4754-4596-856c-f4334abe821a",
+      "id": "8226f014-73a9-4aca-9035-c4040d5d7938",
       "name": "Roteia Evento"
     },
     {
@@ -137,10 +137,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -3440,
-        3536
+        2592,
+        4496
       ],
-      "id": "a3968a1d-ddbf-4362-be7c-eacd32dbd440",
+      "id": "35405fab-7d3d-454e-9033-c5eee869dd73",
       "name": "Extrair e Filtrar"
     },
     {
@@ -154,10 +154,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -3216,
-        3536
+        2816,
+        4496
       ],
-      "id": "b45dc38d-5403-42e2-9e73-c94cdbb9a6a9",
+      "id": "882ebaf1-8f73-4175-b953-74d19578f56b",
       "name": "Resolve Tenant",
       "alwaysOutputData": true,
       "credentials": {
@@ -206,10 +206,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -2992,
-        3536
+        3040,
+        4496
       ],
-      "id": "f2945e27-5082-48d7-8022-9409eb8f63ae",
+      "id": "5f91cd51-fa7b-4a58-a632-5e3f2d8eb8a8",
       "name": "Tenant Valido?"
     },
     {
@@ -297,10 +297,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        -2784,
-        3536
+        3248,
+        4496
       ],
-      "id": "850c9599-8d6b-4620-9982-7fb2a6ab4f8b",
+      "id": "0381afb6-5ec2-43f1-8063-cee5e8fbad77",
       "name": "Roteia Acao"
     },
     {
@@ -332,7 +332,7 @@
         -2064,
         3744
       ],
-      "id": "d9529c6d-59d4-4930-835d-b4c4c749349f",
+      "id": "563ab9d2-b57a-465b-9b56-e89224555861",
       "name": "Avisa Midia Nao Suportada"
     },
     {
@@ -346,10 +346,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -2496,
-        4016
+        3744,
+        5376
       ],
-      "id": "9c8aae5a-0261-4d08-99d4-87cdce015364",
+      "id": "b5427c26-1511-49b9-ae7b-a2f310b4d69e",
       "name": "Credencial (bloqueio)",
       "credentials": {
         "postgres": {
@@ -384,10 +384,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -2272,
-        4016
+        3968,
+        5376
       ],
-      "id": "2baeea11-6392-4a9f-a862-bdd3749a252b",
+      "id": "eff41f14-a7f8-400b-8531-e8a89e3df111",
       "name": "Envia Resposta Bloqueada"
     },
     {
@@ -401,10 +401,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -2480,
-        3344
+        4000,
+        4208
       ],
-      "id": "d505c10d-1146-4ecc-9b5d-268cb66afbdf",
+      "id": "6eb0f71c-62d9-4bd0-946d-b820f152e253",
       "name": "Sync Conversa",
       "alwaysOutputData": true,
       "credentials": {
@@ -442,10 +442,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -2256,
-        3344
+        4224,
+        4208
       ],
-      "id": "6c5d6ecc-1de3-4c37-b8d0-e871370fc8cf",
+      "id": "813a107e-999c-48da-af2f-c449636bd3a2",
       "name": "Nao Pausado?"
     },
     {
@@ -458,10 +458,10 @@
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
-        -1776,
-        3728
+        4496,
+        4208
       ],
-      "id": "4fef7322-8ac7-40bd-8314-92a11f6626bf",
+      "id": "08d1a581-3af1-471b-b09f-62ee68c23754",
       "name": "Acumula Mensagem",
       "credentials": {
         "redis": {
@@ -480,10 +480,10 @@
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
-        -1568,
-        3728
+        4704,
+        4208
       ],
-      "id": "d0918b8a-d5e0-4f16-b9d2-458c7743f28e",
+      "id": "8ab0cd2f-93ca-47ba-b6d1-cb2cd085d82f",
       "name": "Lista Antes",
       "credentials": {
         "redis": {
@@ -499,10 +499,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        -1344,
-        3728
+        4928,
+        4208
       ],
-      "id": "be0fc47f-a2b9-4070-a255-08c346072fb8",
+      "id": "9214e0d4-0147-468b-bfb1-ae83abb76728",
       "name": "Wait Debounce",
       "webhookId": "debounce-multitenant"
     },
@@ -516,10 +516,10 @@
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
-        -1120,
-        3728
+        5152,
+        4208
       ],
-      "id": "df28dbae-aa2a-4902-960c-415e77e54748",
+      "id": "d938d19d-8450-447c-925a-a5319423de48",
       "name": "Lista Depois",
       "credentials": {
         "redis": {
@@ -564,10 +564,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -896,
-        3728
+        5376,
+        4208
       ],
-      "id": "0bbe9c1b-9e01-42b9-abc6-a19fa10bd4a2",
+      "id": "fda73735-be9d-4418-880f-3464603bb35c",
       "name": "Ultima Mensagem?",
       "notes": "A condicao d1 (antes == depois) sozinha deixa passar o caso 0 == 0: quando outra execucao da MESMA conversa ja rodou o Limpa Acumulo, as duas leituras vem vazias e o IF aprova. O agent era chamado sem prompt e estourava \"No prompt specified\" (execucao 3951004). Pior: o Limpa Acumulo rodava nesse caminho e apagava mensagem que tivesse chegado no meio. A d2 exige lista nao vazia.",
       "notesInFlow": true
@@ -587,10 +587,10 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
       "position": [
-        784,
-        4464
+        7024,
+        4784
       ],
-      "id": "a34fae44-9252-4acd-8309-45ba314df104",
+      "id": "c7e79157-fca8-4a0e-a6b4-7ef492836b16",
       "name": "OpenAI Chat Model",
       "credentials": {
         "openAiApi": {
@@ -608,10 +608,10 @@
       "type": "@n8n/n8n-nodes-langchain.memoryRedisChat",
       "typeVersion": 1.5,
       "position": [
-        944,
-        4464
+        7184,
+        4784
       ],
-      "id": "3c86654f-1014-4e6b-a2ef-73790520fe63",
+      "id": "9a0e483f-d72c-45dd-a9dc-9b189b9a8e6b",
       "name": "Redis Chat Memory",
       "credentials": {
         "redis": {
@@ -664,10 +664,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1376,
-        4448
+        7616,
+        4768
       ],
-      "id": "8b4a88f7-1ba2-4a20-9631-cbb3d95bb3b5",
+      "id": "0e22ef8b-a24e-4515-b227-022ae5ffcd33",
       "name": "Busca Conhecimento"
     },
     {
@@ -734,10 +734,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1536,
-        4448
+        7776,
+        4768
       ],
-      "id": "aaf59f62-7091-4d5b-9c77-640f135ea2d3",
+      "id": "b9afb14e-64c9-447a-af2a-d49745c50255",
       "name": "Transferir para Humano"
     },
     {
@@ -751,10 +751,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1024,
-        3456
+        7296,
+        3936
       ],
-      "id": "2f4558bd-bf0d-42f1-b757-fbebde0ea7ae",
+      "id": "8c135da2-31f1-4429-b9a8-21c9f965826c",
       "name": "Credencial (resposta)",
       "credentials": {
         "postgres": {
@@ -789,10 +789,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1248,
-        3456
+        7520,
+        3936
       ],
-      "id": "00695837-e320-49bd-b2f0-61eed2298de4",
+      "id": "b3009786-3a6d-4180-a045-7ba4480d4b57",
       "name": "Envia Mensagem Chatwoot"
     },
     {
@@ -806,10 +806,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1456,
-        3456
+        7728,
+        3936
       ],
-      "id": "baf02de3-dcfc-4363-b2be-fdf836ea760c",
+      "id": "b2826bb5-9ac8-4c96-b343-85f3fbd397ac",
       "name": "Registra Mensagem",
       "credentials": {
         "postgres": {
@@ -854,10 +854,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -3392,
-        4864
+        2640,
+        5984
       ],
-      "id": "0967335e-a5a4-485d-82c3-4605755a4b17",
+      "id": "e7281755-3b1b-4946-9d1f-a806b585fc48",
       "name": "E Humano ou Dispositivo?"
     },
     {
@@ -871,10 +871,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -3168,
-        4864
+        2864,
+        5840
       ],
-      "id": "d1c6b8b5-35f8-46a0-9cc6-b4e18c4634f3",
+      "id": "48490342-36db-49bf-96a0-f6f8faa63809",
       "name": "Resolve Tenant (pausa)",
       "alwaysOutputData": true,
       "credentials": {
@@ -913,10 +913,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -2992,
-        4864
+        3040,
+        5840
       ],
-      "id": "b57a6b16-8b59-41fb-9912-928511bc0e36",
+      "id": "a9545ae1-cfc9-4875-93d8-bd17fcecc681",
       "name": "Tenant Valido? (pausa)"
     },
     {
@@ -930,10 +930,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -2784,
-        4864
+        3248,
+        5696
       ],
-      "id": "b17cddc5-fb68-4953-9d6a-20346825f0dc",
+      "id": "6c1dc941-77ab-408f-89c7-226d1a4b4f76",
       "name": "Pausa Conversa",
       "credentials": {
         "postgres": {
@@ -950,10 +950,10 @@
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
-        -2576,
-        4864
+        3456,
+        5696
       ],
-      "id": "f16e03f8-142f-43fb-9023-473eaa188d43",
+      "id": "120d826f-2890-4713-aab0-53ed556d3281",
       "name": "Limpa Redis Debounce",
       "credentials": {
         "redis": {
@@ -969,10 +969,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        560,
-        3440
+        6832,
+        3920
       ],
-      "id": "0bad0897-53c9-43d4-9038-db2170bd1662",
+      "id": "b1f1873c-93c6-4c9a-931a-51baf50c0c9d",
       "name": "Estima Tokens"
     },
     {
@@ -1032,10 +1032,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1216,
-        4448
+        7456,
+        4768
       ],
-      "id": "7c2a3119-20de-4c2e-984a-d8f7ede8247d",
+      "id": "d5f9095f-01aa-4cf0-8ac4-0a447a92e983",
       "name": "Call 'Tool - Resolver Conversa (Multi-Tenant)'"
     },
     {
@@ -1082,10 +1082,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1696,
-        4448
+        7936,
+        4768
       ],
-      "id": "f4f63438-062d-4a13-b55b-9a7f325893e2",
+      "id": "c88eab14-05e5-4db3-8bf7-c706151046ba",
       "name": "Consultar Catalogo"
     },
     {
@@ -1172,10 +1172,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        1856,
-        4448
+        8096,
+        4768
       ],
-      "id": "f8ec51b8-d842-4847-ae5f-554bc5cae0e9",
+      "id": "fcef2fc1-a7b8-4b8b-9961-0417c6a8b5b8",
       "name": "Gerenciar Pedido"
     },
     {
@@ -1232,10 +1232,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        2016,
-        4448
+        8256,
+        4768
       ],
-      "id": "8b3ce4e7-e7da-4386-8b05-0215fcb0cf3b",
+      "id": "728620fb-236f-4aef-a449-2e43eeb53421",
       "name": "Fechar Pedido"
     },
     {
@@ -1282,10 +1282,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        2176,
-        4448
+        8416,
+        4768
       ],
-      "id": "4be75b95-0aea-4150-9478-b7fa75258ccb",
+      "id": "15228326-a603-4b6d-89e4-74f50d0dfdee",
       "name": "Cancelar Pedido"
     },
     {
@@ -1315,11 +1315,11 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -896,
-        4000
+        5440,
+        4464
       ],
       "name": "Acumulo Sumiu?",
-      "id": "debounce-sumiu0000000000000000000000",
+      "id": "ec57f5b2-9019-4c97-95aa-c0e0f5489cfc",
       "notes": "Separa \"outra execucao responde\" (normal, silencioso) de \"a chave foi apagada\" (corrida, mensagem perdida).",
       "notesInFlow": true
     },
@@ -1330,11 +1330,11 @@
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
-        -672,
-        4000
+        5664,
+        4464
       ],
       "name": "Acumulo Sumiu (corrida)",
-      "id": "debounce-sumiu-erro00000000000000000"
+      "id": "118d0cb4-c272-4b8a-8323-d27526b1311f"
     },
     {
       "parameters": {
@@ -1344,11 +1344,11 @@
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
-        -720,
-        3712
+        5552,
+        4192
       ],
       "name": "Separa Lidos",
-      "id": "debounce-split0000000000000000000000",
+      "id": "a8ea3e17-926d-4e5a-a4f8-276f27fde969",
       "notes": "Um item por mensagem lida pelo Lista Depois. Serve para o LPOP seguinte rodar exatamente N vezes.",
       "notesInFlow": true
     },
@@ -1363,11 +1363,11 @@
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
-        -544,
-        3712
+        5728,
+        4192
       ],
       "name": "Remove Lidos do Acumulo",
-      "id": "debounce-lpop00000000000000000000000",
+      "id": "5a605f07-b187-4dcd-99a3-d38f40a977ed",
       "credentials": {
         "redis": {
           "id": "LB1ZVse5Xu9EM4pY",
@@ -1385,11 +1385,11 @@
       "type": "n8n-nodes-base.limit",
       "typeVersion": 1,
       "position": [
-        -368,
-        3712
+        5904,
+        4192
       ],
       "name": "Volta a Um Item",
-      "id": "debounce-limit0000000000000000000000",
+      "id": "90de39a1-37f6-425c-8d8a-175e5f8c85ef",
       "notes": "O Split Out multiplicou os itens. Sem voltar a um, o agent roda uma vez por mensagem e o cliente recebe N respostas.",
       "notesInFlow": true
     },
@@ -1405,10 +1405,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        224,
-        3392
+        6496,
+        3872
       ],
-      "id": "agente-basico00000000000000000000000",
+      "id": "8cfda470-beeb-4f8f-8b1d-4d7f4b2bbb7d",
       "name": "AI Agent Basico",
       "notesInFlow": true,
       "notes": "GERADO por scripts/gerar-principal.mjs (perfil \"basico\"). Editar aqui pela UI se perde na proxima geracao — a fonte e o repo. Os dois agents precisam continuar identicos no que nao e tool: modelo, memoria e regras gerais."
@@ -1425,10 +1425,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3,
       "position": [
-        224,
-        3488
+        6496,
+        3968
       ],
-      "id": "agente-vendas00000000000000000000000",
+      "id": "762bffc2-a668-4908-a023-40d80345a1d5",
       "name": "AI Agent Vendas",
       "notesInFlow": true,
       "notes": "GERADO por scripts/gerar-principal.mjs (perfil \"vendas\"). Editar aqui pela UI se perde na proxima geracao — a fonte e o repo. Os dois agents precisam continuar identicos no que nao e tool: modelo, memoria e regras gerais."
@@ -1444,11 +1444,11 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -144,
-        3712
+        6128,
+        4192
       ],
       "name": "Tools Ativas",
-      "id": "perfil-tools-ativas00000000000000000",
+      "id": "b4a49b50-cb97-414f-8da4-cd2afb21968a",
       "credentials": {
         "postgres": {
           "id": "MehTUROZlPmHG8kW",
@@ -1514,11 +1514,11 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        32,
-        3696
+        6304,
+        4176
       ],
       "name": "Vende?",
-      "id": "perfil-switch00000000000000000000000"
+      "id": "d7871023-c2e5-45e2-abe0-96ff2474ba1a"
     },
     {
       "parameters": {
@@ -1527,11 +1527,11 @@
       "type": "n8n-nodes-base.stopAndError",
       "typeVersion": 1,
       "position": [
-        224,
-        4000
+        6496,
+        4480
       ],
       "name": "Perfil Nao Resolvido",
-      "id": "perfil-erro0000000000000000000000000"
+      "id": "5c276bc4-51a3-4414-bfb9-a125f161234d"
     },
     {
       "parameters": {
@@ -1544,11 +1544,11 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -2496,
-        3744
+        3744,
+        5104
       ],
       "name": "Config Audio",
-      "id": "audio-config000000000000000000000000",
+      "id": "e3f53df4-3159-4a0f-b164-d7b917729ab9",
       "credentials": {
         "postgres": {
           "id": "MehTUROZlPmHG8kW",
@@ -1595,11 +1595,11 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -2288,
-        3744
+        3952,
+        5104
       ],
       "name": "Audio Contratado?",
-      "id": "audio-contratado-0000000000000000000",
+      "id": "36f12814-21f1-4d92-a432-f5ddb56fb3db",
       "notes": "Imagem, documento e video seguem para o aviso de sempre — o escopo do modulo e SO audio. file_type \"audio\" confirmado em webhook real de nota de voz (12/08/2026).",
       "notesInFlow": true
     },
@@ -1631,11 +1631,11 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -2288,
-        4288
+        4176,
+        5088
       ],
       "name": "Conversa Ativa?",
-      "id": "conversa-ativa-000000000000000000000",
+      "id": "6b01ea60-c730-465f-bf21-f810d12d6e80",
       "notes": "Humano assumiu: nao transcreve. E o UNICO desperdicio real do desenho — sem isto, cada audio que o cliente mandasse durante o atendimento humano seria baixado e transcrito para ser descartado no \"Nao Pausado?\". Sem saida no ramo falso: quem responde e a pessoa.",
       "notesInFlow": true
     },
@@ -1666,11 +1666,11 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        -2064,
-        4288
+        4496,
+        5072
       ],
       "name": "Audio Curto?",
-      "id": "audio-curto-000000000000000000000000",
+      "id": "8a2b9591-d271-4bcf-852a-1dec480764b8",
       "notes": "Corte por BYTES, que e proxy de duracao — o webhook nao traz duracao. ~270 KB ~= 3 min de nota de voz. A duracao exata so existe depois de transcrever, e vai para mensagens_log justamente para calibrar este corte com dado real.",
       "notesInFlow": true
     },
@@ -1698,11 +1698,11 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -1840,
-        4288
+        4864,
+        4848
       ],
       "name": "Baixa Anexo",
-      "id": "audio-baixa0000000000000000000000000",
+      "id": "036a4e81-a0ad-4dd4-bff0-f8668711ff22",
       "notes": "O data_url e do PROPRIO Chatwoot, que re-hospeda o arquivo (active_storage) — nao e URL do WhatsApp. Por isso precisa do token do tenant para baixar.",
       "notesInFlow": true
     },
@@ -1740,11 +1740,11 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -1616,
-        4288
+        5088,
+        4848
       ],
       "name": "Transcreve",
-      "id": "audio-transcreve00000000000000000000",
+      "id": "ce4deb4b-c9c3-49c3-a0c2-dae423e39efc",
       "credentials": {
         "openAiApi": {
           "id": "B4TZHIczm0tpk2wS",
@@ -1761,11 +1761,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1392,
-        4288
+        5312,
+        4848
       ],
       "name": "Filtra Transcricao",
-      "id": "audio-filtra000000000000000000000000"
+      "id": "d6e37de5-fc43-44d5-9e82-05b3d72c6e67"
     },
     {
       "parameters": {
@@ -1847,11 +1847,11 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        -1168,
-        4288
+        5536,
+        4848
       ],
       "name": "Roteia Transcricao",
-      "id": "audio-roteia000000000000000000000000",
+      "id": "53511b66-a469-497c-acc0-7e69617092f2",
       "notes": "bloqueado reusa o caminho que o texto ja tem (Credencial (bloqueio) -> Envia Resposta Bloqueada): injection falada e injection. O fallback existe para status inesperado nao virar silencio.",
       "notesInFlow": true
     },
@@ -1881,11 +1881,11 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -2064,
-        4480
+        4864,
+        5296
       ],
       "name": "Avisa Audio Longo",
-      "id": "avisa-audio-longo0000000000000000000"
+      "id": "1a47f8f5-f872-4453-9aa5-a984d6fbaea9"
     },
     {
       "parameters": {
@@ -1913,11 +1913,11 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -1168,
-        4480
+        5856,
+        5104
       ],
       "name": "Avisa Audio Falhou",
-      "id": "avisa-audio-falhou000000000000000000"
+      "id": "d6659cf2-603f-43f8-a660-50254d1cf561"
     },
     {
       "parameters": {
@@ -1926,11 +1926,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -2640,
-        3440
+        3744,
+        4208
       ],
       "name": "Mensagem Pronta",
-      "id": "mensagem-pronta000000000000000000000",
+      "id": "49800f94-1a05-4d31-9bd5-0bb25f79bc8a",
       "notes": "Ponto de convergencia: o Acumula Mensagem le daqui, venha o texto do teclado ou da transcricao. FALHA ALTO se nao houver mensagem — emitir vazio gravaria acumulo vazio e chamaria o agente sem prompt.",
       "notesInFlow": true
     }

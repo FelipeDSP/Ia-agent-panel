@@ -58,6 +58,11 @@ const CRED_PG = { postgres: { id: 'MehTUROZlPmHG8kW', name: 'Agent ia Supabase' 
 
 const LAYOUT = Object.fromEntries(w.nodes.map((n) => [n.name, { position: n.position, id: n.id }]));
 
+// Coordenadas de PRIMEIRA geracao, para no que ainda nao existe. Ficaram em
+// escala antiga de proposito: o canvas real do Felipe vive na faixa de x~2000 a
+// x~8400, e essas so entram se alguem gerar sobre um workflow que nao tem o no —
+// caso em que ele vai ser arrastado na UI mesmo. Depois da primeira vez o canvas
+// manda, e o gerador anuncia quando reposicionou algo.
 const POSICAO_NOVA = {
   'AI Agent Basico': [-64, -224],
   'AI Agent Vendas': [-64, 96],
