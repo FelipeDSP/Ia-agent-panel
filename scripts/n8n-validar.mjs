@@ -130,6 +130,45 @@ for (const caminho of arquivos) {
       });
     }
 
+    // 4c. o corpo de todo no Code precisa ao menos COMPILAR
+    //
+    // POR QUE ISTO EXISTE. Em 12/08/2026 o `Consolida Resultado` foi para o JSON
+    // com escapamento perdido — os `\n` viraram quebra de linha real dentro de
+    // uma string. O no morreu com "Unterminated string constant" e derrubou o
+    // `busca_conhecimento`, que e tool BASELINE: a busca na base parou para
+    // TODOS os tenants ao mesmo tempo.
+    //
+    // Nada pegou antes do import. O validador conferia estrutura, o
+    // n8n:sincronia conferia coerencia entre agents — nenhum dos dois olhava se
+    // o codigo dentro do no era JavaScript valido. Compilar e barato e pega a
+    // classe inteira, em qualquer no Code de qualquer workflow.
+    //
+    // `new Function` COMPILA, nao executa: nenhum efeito colateral. Os
+    // identificadores do n8n entram como parametros so para o parse nao
+    // reclamar de nome desconhecido.
+    if (typeof p.jsCode === 'string') {
+      try {
+        // eslint-disable-next-line no-new-func
+        new Function('$input', '$json', '$node', '$workflow', '$execution', p.jsCode);
+      } catch (e) {
+        problemas.push(`"${n.name}": o codigo do no nao compila — ${e.message}`);
+      }
+
+      // Node Code sem `return` entrega vazio, e vazio nao levanta erro: o fluxo
+      // segue com nada e o sintoma aparece muito depois.
+      //
+      // Os COMENTARIOS saem antes da busca. A primeira versao procurava a
+      // palavra no codigo cru e uma sabotagem passou por baixo: comentar o
+      // `return` deixa a palavra la, dentro do `//`, e a checagem se dava por
+      // satisfeita enquanto o no passava a entregar vazio.
+      const semComentarios = p.jsCode
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+      if (!/\breturn\b/.test(semComentarios)) {
+        problemas.push(`"${n.name}": o codigo do no nao tem return fora de comentario — entregaria vazio`);
+      }
+    }
+
     // 5. onError engolindo erro onde nao deve
     if (n.onError === 'continueRegularOutput' && /log|registra|billing|consumo/i.test(n.name)) {
       problemas.push(`"${n.name}": onError engolindo erro em no de log/billing`);

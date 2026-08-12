@@ -21,7 +21,8 @@
     "teste:trava-vendas": "node tests/trava-vendas.mjs",
     "n8n:sincronia": "node scripts/conferir-sincronia-wrapper.mjs",
     "teste:acqua-pronta": "node tests/acqua-pronta.mjs",
-    "n8n:tool-kb": "node scripts/gerar-tool-kb.mjs"
+    "n8n:tool-kb": "node scripts/gerar-tool-kb.mjs",
+    "teste:sabotagem-code": "node tests/sabotagem-code-n8n.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
