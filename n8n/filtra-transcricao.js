@@ -20,11 +20,26 @@
 
 const resposta = $input.first().json ?? {};
 
-// `verbose_json` devolve { text, duration, language, segments }. O `duration` e
-// a duracao EXATA em segundos, e e o que vai para mensagens_log.audio_segundos —
-// o file_size do webhook e so o proxy que decidiu se valia a pena transcrever.
+// `verbose_json` devolve { text, duration, language, segments, usage }.
+//
+// DOIS NUMEROS DE DURACAO, e eles NAO sao iguais. Do retorno real de 12/08:
+//
+//   duration        1.7799999713897705   <- duracao real do arquivo
+//   usage.seconds   2                    <- o que a OpenAI COBRA (arredondado)
+//
+// O que vai para `audio_segundos` e o COBRADO, nao o real: a coluna existe para
+// ratear custo, e ratear pelo real subestimaria sistematicamente — todo audio e
+// arredondado para cima, e nota de voz curta e o caso comum. Com audios de ~2s,
+// a diferenca chega perto de 10%.
+//
+// `duration` fica no diagnostico, para calibrar o proxy de bytes; a diferenca de
+// arredondamento e irrelevante contra um corte de 3 minutos.
 const bruto = String(resposta.text ?? '').trim();
-const duracao = Number(resposta.duration);
+const cobrado = Number(resposta.usage?.seconds);
+const real = Number(resposta.duration);
+// Fallback para o real se `usage` nao vier: melhor medir com o numero errado do
+// que nao medir. Se isso acontecer, `_duracao_fonte` denuncia.
+const duracao = Number.isFinite(cobrado) ? cobrado : real;
 
 // __FILTRO_TEXTO__
 
@@ -59,6 +74,10 @@ return [{
     status: 'ok',
     mensagem,
     audio_segundos: Number.isFinite(duracao) ? duracao : null,
+    // Diagnostico. `_duracao_fonte` denuncia se a OpenAI parar de mandar `usage`
+    // e o rateio tiver caido no numero real — que subestima.
+    _duracao_fonte: Number.isFinite(cobrado) ? 'usage.seconds' : 'duration',
+    _duracao_real: Number.isFinite(real) ? real : null,
     // Guardado para calibrar o proxy: o corte por bytes so vale enquanto a
     // relacao bytes/segundo se mantiver. Com o par medido em execucao real, o
     // limite deixa de ser aritmetica de bitrate.
