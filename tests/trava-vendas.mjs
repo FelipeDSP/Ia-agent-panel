@@ -77,14 +77,33 @@ for (const t of semVendas) {
 // 3. A INVARIANTE: nenhum pedido para quem não contratou
 // ---------------------------------------------------------------------------
 // É isto que uma checagem posicionada DEPOIS de um efeito colateral quebraria.
+// Um tenant pode ter contratado vendas, vendido de verdade e DEPOIS descontratado.
+// Esses pedidos são legítimos e não podem reprovar o teste — mas afrouxar a regra
+// para "ignore o histórico" cegaria o teste. O meio-termo é declarar o histórico
+// aqui, explícito e versionado: qualquer pedido ALÉM destes é gravação nova para
+// quem não contratou, que é exatamente o que este teste existe para impedir.
+//
+// Aumentar um número aqui é um ato deliberado e deve vir com justificativa no
+// commit. Se você está prestes a aumentar para fazer o teste passar, pare: o
+// teste provavelmente está certo.
+const PEDIDOS_HISTORICOS = {
+  // Venda real de 11/08/2026 (conv=1864, R$ 331,80), feita com vendas contratada.
+  // A descontratação veio depois, em 12/08, ao testar o roteamento por perfil.
+  'restaurante-teste': { pedidos: 1, itens: 2 },
+};
+
 console.log();
 for (const t of semVendas) {
   const { count: nPedidos } = await admin
     .from('pedidos').select('id', { count: 'exact', head: true }).eq('tenant_id', t.id);
   const { count: nItens } = await admin
     .from('pedido_itens').select('id', { count: 'exact', head: true }).eq('tenant_id', t.id);
-  checar(`${t.slug}: nenhum pedido gravado`, (nPedidos ?? 0) === 0, `${nPedidos} pedido(s)`);
-  checar(`${t.slug}: nenhum item gravado`, (nItens ?? 0) === 0, `${nItens} item(ns)`);
+  const h = PEDIDOS_HISTORICOS[t.slug] ?? { pedidos: 0, itens: 0 };
+  const rotulo = h.pedidos ? ` (histórico declarado: ${h.pedidos})` : '';
+  checar(`${t.slug}: nenhum pedido novo${rotulo}`, (nPedidos ?? 0) <= h.pedidos,
+    `${nPedidos} pedido(s), esperado no máximo ${h.pedidos}`);
+  checar(`${t.slug}: nenhum item novo`, (nItens ?? 0) <= h.itens,
+    `${nItens} item(ns), esperado no máximo ${h.itens}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +129,77 @@ for (const t of semVendas) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Dados para a execução manual na UI do n8n
+// 5. As duas camadas têm que dizer a MESMA coisa
+// ---------------------------------------------------------------------------
+// POR QUE ESTE BLOCO EXISTE. Em 12/08/2026 o restaurante-teste estava com
+// `contratado = false, ativo = true`, e as duas funções que respondem "esta tool
+// vale para este tenant?" discordavam:
+//
+//   api_n8n_tools_ativas  -> false   (roteia o agente: 1ª camada)
+//   api_n8n_config_tool   -> true    (trava do sub-workflow: 2ª camada)
+//
+// A defesa em duas camadas era uma camada com uma cópia decorativa, e estava
+// assim desde a fatia 2.
+//
+// O resto deste teste NÃO pegou, e vale entender por quê: ele verifica ausência
+// de pedido, e não havia pedido — o modelo, sem a tool anexada, INVENTOU a
+// chamada em vez de fazê-la. Um teste de efeito colateral não vê um furo que
+// ninguém explorou ainda. Este bloco compara as duas fontes diretamente, então
+// pega a divergência mesmo sem ninguém exercitá-la.
+console.log('\n  -- coerência entre as duas camadas --');
+{
+  const { data: tenantsVivos } = await admin
+    .from('tenants').select('id, slug').eq('ativo', true).is('deletado_em', null);
+  const { data: linhas } = await admin
+    .from('tenant_tools').select('tenant_id, tool_nome, contratado, ativo');
+
+  const porTenant = new Map((tenantsVivos ?? []).map((t) => [t.id, t.slug]));
+  let pares = 0;
+  const divergentes = [];
+
+  for (const t of tenantsVivos ?? []) {
+    const { data: ativas } = await admin.rpc('api_n8n_tools_ativas', { p_tenant_id: t.id });
+    const ligadas = new Set((ativas ?? []).map((x) => x.tool_nome));
+
+    for (const l of (linhas ?? []).filter((x) => x.tenant_id === t.id)) {
+      const { data: cfg } = await admin.rpc('api_n8n_config_tool', {
+        p_tenant_id: t.id, p_tool_nome: l.tool_nome,
+      });
+      const camada2 = (Array.isArray(cfg) ? cfg[0] : cfg)?.tool_ativa === true;
+      const camada1 = ligadas.has(l.tool_nome);
+      pares++;
+      if (camada1 !== camada2) {
+        divergentes.push(
+          `${porTenant.get(t.id)}/${l.tool_nome}: tools_ativas=${camada1} config_tool=${camada2} ` +
+          `(contratado=${l.contratado} ativo=${l.ativo})`
+        );
+      }
+    }
+  }
+
+  checar(`as 2 camadas concordam em todos os ${pares} pares tenant×tool`,
+    divergentes.length === 0, divergentes.join(' | '));
+
+  // A regra por trás: uma tool só vale com contratado E ativo. Escrita
+  // explicitamente para o teste falhar mesmo que AS DUAS funções errem juntas —
+  // concordar não basta, elas têm que concordar no valor certo.
+  const erradas = [];
+  for (const l of linhas ?? []) {
+    if (!porTenant.has(l.tenant_id)) continue;
+    const { data: cfg } = await admin.rpc('api_n8n_config_tool', {
+      p_tenant_id: l.tenant_id, p_tool_nome: l.tool_nome,
+    });
+    const obtido = (Array.isArray(cfg) ? cfg[0] : cfg)?.tool_ativa === true;
+    const esperado = l.contratado === true && l.ativo === true;
+    if (obtido !== esperado) {
+      erradas.push(`${porTenant.get(l.tenant_id)}/${l.tool_nome}: esperado ${esperado}, veio ${obtido}`);
+    }
+  }
+  checar('config_tool = (contratado AND ativo) em toda linha', erradas.length === 0, erradas.join(' | '));
+}
+
+// ---------------------------------------------------------------------------
+// 6. Dados para a execução manual na UI do n8n
 // ---------------------------------------------------------------------------
 const acqua = semVendas.find((t) => t.slug === 'acqua-lavanderia');
 if (acqua) {

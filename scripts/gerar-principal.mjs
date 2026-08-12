@@ -131,6 +131,52 @@ if (WRAPPERS.basico === WRAPPERS.vendas) throw new Error('os dois wrappers saira
 if (WRAPPERS.basico.includes('consultar_catalogo')) throw new Error('wrapper basico ainda menciona tool de venda');
 
 // ---------------------------------------------------------------------------
+// 2b. Regras que remover secao nao cria
+// ---------------------------------------------------------------------------
+// Em 12/08/2026, com vendas descontratada, o agente basico recebeu "quero uma
+// porcao de arroz" e RESPONDEU ao cliente que tinha adicionado o item, com
+// preco e total — incluindo um bloco "[Used tools: Tool: Gerenciar_Pedido ...]"
+// que ele mesmo escreveu. Nenhuma tool foi chamada e nenhum pedido existe.
+//
+// O `ACO-01` que ele citou nao veio do nada: esta na BASE DE CONHECIMENTO do
+// tenant, um PDF com cardapio codificado e 34 chunks com preco. Com o cardapio
+// em maos e sem ferramenta de pedido, o modelo imitou o formato.
+//
+// A causa e o vacuo: o wrapper basico e o de vendas MENOS as secoes. Remover
+// instrucao nao cria proibicao, e modelo preenche vazio. Daqui em diante as
+// proibicoes sao explicitas.
+
+const REGRAS_TODOS = [
+  '- NUNCA afirme que executou uma acao — registrar, adicionar, remover, transferir,',
+  '  encerrar, consultar — sem ter recebido o retorno da ferramenta correspondente',
+  '  nesta mesma conversa. Sem a ferramenta, diga que nao consegue fazer isso.',
+  '- Nunca escreva no texto da resposta blocos que imitem chamada de ferramenta',
+  '  (por exemplo "[Used tools: ...]"), nem invente identificadores, codigos de item,',
+  '  precos ou resultados de ferramenta.',
+];
+
+const REGRAS_BASICO = [
+  '- Voce NAO tem como registrar pedidos, reservar itens nem fechar compras. Se o',
+  '  cliente pedir isso, diga com clareza que por aqui nao e possivel e ofereca',
+  '  transferir para um atendente.',
+  '- A base de conhecimento pode conter cardapio, tabela de precos e codigos de item.',
+  '  Use isso para INFORMAR. Informar nao e vender: voce nao pode adicionar ao',
+  '  pedido, reservar nem garantir que o preco da base esta valendo.',
+];
+
+function acrescentarRegras(wrapper, linhas) {
+  const ini = wrapper.indexOf('## Regras gerais');
+  if (ini < 0) throw new Error('secao "## Regras gerais" nao encontrada — nao sei onde por as regras novas');
+  const resto = wrapper.slice(ini);
+  const m = resto.match(/\n\s*(---|# )/);
+  const fim = m ? ini + m.index : wrapper.length;
+  return wrapper.slice(0, fim) + '\n' + linhas.join('\n') + wrapper.slice(fim);
+}
+
+WRAPPERS.vendas = acrescentarRegras(WRAPPERS.vendas, REGRAS_TODOS);
+WRAPPERS.basico = acrescentarRegras(WRAPPERS.basico, [...REGRAS_TODOS, ...REGRAS_BASICO]);
+
+// ---------------------------------------------------------------------------
 // 3. Os dois AI Agents
 // ---------------------------------------------------------------------------
 // Renomear o no antigo em vez de criar do zero preserva credenciais e opcoes.

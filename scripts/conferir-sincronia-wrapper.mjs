@@ -225,6 +225,41 @@ console.log('\n  -- 7. nenhuma leitura por item linking (.item) --');
     `${usos.length} uso(s): ${[...new Set(usos)].join(', ')} — troque por .first()`);
 }
 
+console.log('\n  -- 8. proibicoes explicitas no wrapper --');
+// Remover as secoes de venda do wrapper basico NAO proibe vender: em 12/08/2026
+// o agente basico afirmou ao cliente que tinha registrado um pedido, com um
+// bloco "[Used tools: ...]" escrito por ele. Nenhuma tool foi chamada.
+{
+  const temAntiFabricacao = (p) => /NUNCA afirme que executou uma acao/.test(wrappers[p] ?? '');
+  for (const p of perfis) {
+    checar(`wrapper "${p}" proibe afirmar acao sem retorno de ferramenta`, temAntiFabricacao(p),
+      'sem isso o modelo narra ferramenta que nao chamou');
+  }
+  checar('wrapper "basico" diz que nao registra pedido',
+    /NAO tem como registrar pedidos/.test(wrappers.basico ?? ''),
+    'remover a secao de venda nao cria proibicao — o modelo preenche o vazio');
+  checar('wrapper "basico" separa informar de vender',
+    /Informar nao e vender/.test(wrappers.basico ?? ''),
+    'a base de conhecimento tem cardapio com preco; sem isso ele trata como catalogo');
+  checar('wrapper "vendas" NAO recebe a proibicao de vender',
+    !/NAO tem como registrar pedidos/.test(wrappers.vendas ?? ''),
+    'quem contratou tem que continuar vendendo');
+
+  // A checagem 2 compara so o PREFIXO ate o `{{`, entao texto acrescentado
+  // DEPOIS da expressao do prompt do tenant passava batido — foi o que uma
+  // sabotagem mostrou. A cauda (`{{ ... system_prompt }}` e o que vier junto) e
+  // a mesma para os dois agents por construcao; se divergir, alguem editou um
+  // deles pela UI.
+  const caudas = perfis.map((p) => {
+    const ag = no(`AI Agent ${p.charAt(0).toUpperCase()}${p.slice(1)}`);
+    const sm = ag?.parameters?.options?.systemMessage ?? '';
+    return sm.slice(1 + (wrappers[p] ?? '').length);
+  });
+  checar('a cauda do systemMessage e identica nos dois agents',
+    new Set(caudas).size === 1,
+    caudas.map((c, i) => `${perfis[i]}:${c.length}ch`).join(' vs '));
+}
+
 console.log('\n  -- extras --');
 checar('contextWindowLength = 20', no('Redis Chat Memory')?.parameters?.contextWindowLength === 20);
 for (const a of agents) {
