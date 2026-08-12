@@ -91,6 +91,15 @@ Guia prático para provisionar uma capacidade nova do agente (ex.: `agendar_hora
 - **Chatwoot:** finalizar = `POST .../conversations/{id}/toggle_status` com
   `{status:"resolved"}`. Mensagem *outgoing* não reabre conversa resolvida; só
   *incoming* do cliente reabre.
+- **Nó novo: algum parâmetro dele importa por SEGURANÇA ou por CUSTO?** Se sim,
+  acrescente à lista `SEM_DEFAULT` do `scripts/n8n-validar.mjs`. O n8n **omite no
+  export** todo parâmetro cujo valor bate com o default do node — então um limite,
+  um teto ou uma escolha que hoje valem por default vão sumir do JSON no primeiro
+  ciclo de import/export, e continuar funcionando até alguém mudar o default.
+  Aconteceu com o `maxItems` do `Volta a Um Item`, que é o teto de **uma resposta
+  por mensagem**. Ver `n8n/README.md`, seção "O export do n8n OMITE parâmetro em
+  default". A lista só protege o que alguém lembrou de listar; este é o momento
+  de lembrar.
 
 ## Editar workflow do n8n por automação (nota de manutenção)
 

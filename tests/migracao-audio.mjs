@@ -61,6 +61,11 @@ await c.query('begin');
 try {
   console.log('\n== Migrações 31 e 32 ==\n');
   console.log('  -- 31: tipo em catalogo_tools --');
+
+  // Fotografado ANTES de aplicar: e contra este numero que a migracao e medida.
+  const contratadosAntes = (await c.query(
+    "select count(*)::int n from public.tenant_tools where tool_nome='transcricao_audio'")).rows[0].n;
+
   await c.query(M31);
 
   const tipos = (await c.query('select tool_nome, tipo from public.catalogo_tools order by tool_nome')).rows;
@@ -77,11 +82,20 @@ try {
   await c.query(M31);
   chk('31 é reaplicável (idempotente)', true);
 
-  // A capacidade nova NÃO pode entrar em TOOLS_BASELINE por acidente: novo tenant
-  // não deve nascer com áudio contratado.
-  const contratados = (await c.query(
-    "select count(*)::int n from public.tenant_tools where tool_nome='transcricao_audio' and contratado")).rows[0].n;
-  chk('nenhum tenant já nasce com áudio contratado', contratados === 0, `${contratados}`);
+  // A capacidade nova nao pode entrar em TOOLS_BASELINE por acidente: aplicar a
+  // migracao nao pode contratar o modulo para ninguem.
+  //
+  // A primeira versao disto afirmava "0 tenants com audio contratado", o que era
+  // verdade no dia em que escrevi e deixou de ser assim que o Felipe contratou
+  // para o restaurante-teste — pelo painel, como deveria. O teste ficou vermelho
+  // por um FATO CORRETO, que e a pior forma de teste ruim: ensina a ignorar.
+  //
+  // O que importa e a PROPRIEDADE: a migracao e aditiva ao catalogo e nao toca em
+  // `tenant_tools`. Contratacao e ato humano no painel, nao efeito de deploy.
+  const depoisDaMigracao = (await c.query(
+    "select count(*)::int n from public.tenant_tools where tool_nome='transcricao_audio'")).rows[0].n;
+  chk('a migracao nao contratou o modulo para ninguem', depoisDaMigracao === contratadosAntes,
+    `antes ${contratadosAntes}, depois ${depoisDaMigracao}`);
 
   console.log('\n  -- 32: audio_segundos em mensagens_log --');
   await c.query(M32);
@@ -123,7 +137,11 @@ try {
   const erroR32 = await esperaErro(R32);
   chk('rollback 32 RECUSA com áudio já registrado', erroR32 === '55000', String(erroR32));
 
-  await c.query('delete from public.mensagens_log where id in ($1,$2)', [id7, id8]);
+  // Limpa TODAS as linhas com duracao, nao so as do teste. Existe audio real em
+  // producao desde 12/08 — o rollback recusa por causa dele, e recusar esta
+  // CERTO. Para exercitar o caminho limpo e preciso um mundo sem audio, e a
+  // transacao abortada e o unico lugar onde da para ter isso sem perder nada.
+  await c.query('delete from public.mensagens_log where audio_segundos is not null');
   await c.query(R32);
   const colsDepois = (await c.query(
     "select column_name from information_schema.columns where table_schema='public' and table_name='mensagens_log'")
@@ -136,6 +154,13 @@ try {
   chk('rollback 32 devolve UMA assinatura de 7 argumentos', assinDepois.length === 1,
     JSON.stringify(assinDepois.map((x) => x.a)));
 
+  // Mesma razao do R32: o rollback 31 RECUSA enquanto houver capacidade de fluxo
+  // contratada, e recusar esta certo — e a trava que impede o painel de voltar a
+  // listar transcricao como ferramenta do agente. Para exercitar o caminho limpo,
+  // descontrata dentro da transacao.
+  await c.query(`delete from public.tenant_tools tt
+                  using public.catalogo_tools c
+                  where c.tool_nome = tt.tool_nome and c.tipo = 'capacidade_fluxo'`);
   await c.query(R31);
   const colsCat = (await c.query(
     "select column_name from information_schema.columns where table_schema='public' and table_name='catalogo_tools'")

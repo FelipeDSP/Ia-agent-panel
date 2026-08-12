@@ -25,7 +25,8 @@
     "teste:sabotagem-code": "node tests/sabotagem-code-n8n.mjs",
     "teste:extrair": "node tests/extrair-e-filtrar.mjs",
     "teste:migracao-audio": "node tests/migracao-audio.mjs",
-    "teste:fotos": "node tests/isolamento-fotos.mjs"
+    "teste:fotos": "node tests/isolamento-fotos.mjs",
+    "teste:migracao-foto": "node tests/migracao-foto-agente.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
