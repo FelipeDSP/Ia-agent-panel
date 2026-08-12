@@ -311,6 +311,38 @@ console.log('\n  -- 10. modulo de audio: convergencia e travas --');
     /throw new Error/.test(mp?.parameters?.jsCode ?? ''),
     'sem o throw ele emitiria vazio e o acumulo gravaria vazio — em silencio');
 
+  // O caminho de TEXTO passa por `Resolve Tenant`, que e Postgres e SUBSTITUI o
+  // item pela linha do tenant. Ler `$input` ali entrega tenant_id e modelo, nao
+  // a mensagem — foi o que derrubou o texto de todos os tenants na execucao
+  // 3955143, no primeiro uso depois do import.
+  //
+  // A regra que sobra: qualquer campo produzido ANTES de um no que substitui o
+  // item tem de ser lido por NOME. Esta checagem prende isso para o caso que ja
+  // quebrou.
+  // Olha o CODIGO, nao os comentarios: o cabecalho do arquivo cita
+  // `$('Extrair e Filtrar')` de proposito, explicando por que a leitura e por
+  // nome — e uma primeira versao desta checagem passou numa sabotagem por casar
+  // com o comentario em vez do codigo.
+  const mpCodigo = (mp?.parameters?.jsCode ?? '')
+    .split('\n')
+    .filter((l) => !l.trim().startsWith('//'))
+    .join('\n');
+  checar('Mensagem Pronta le o texto por NOME, nao do $input',
+    /\$\('Extrair e Filtrar'\)/.test(mpCodigo),
+    'o Resolve Tenant substitui o item; $input no caminho de texto traz a linha do tenant');
+
+  // Confirma a premissa da checagem acima em vez de assumi-la: se um dia o
+  // `Resolve Tenant` sair do caminho, a regra muda e isto avisa.
+  const paisDoRoteia = Object.entries(w.connections)
+    .filter(([, v]) => (v.main ?? []).some((s) => (s ?? []).some((d) => d.node === 'Roteia Acao')))
+    .map(([k]) => k);
+  const substituiItem = paisDoRoteia.some((p) => {
+    const n = no(p);
+    return (n?.type ?? '').includes('postgres') || (n?.type ?? '').includes('httpRequest');
+  }) || paisDoRoteia.includes('Tenant Valido?');
+  checar('o caminho de texto ainda passa por no que substitui o item', substituiItem,
+    `pais do Roteia Acao: ${paisDoRoteia.join(', ')} — se nenhum substitui, a regra acima virou desnecessaria`);
+
   // Os dois caminhos precisam chegar la; se um deles perder a ligacao, aquele
   // tipo de mensagem some do fluxo sem erro.
   const chegam = Object.entries(w.connections)
