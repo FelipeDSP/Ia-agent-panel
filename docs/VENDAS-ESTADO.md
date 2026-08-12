@@ -429,6 +429,64 @@ perfil de vendas, que é o comportamento desejável.
 Fica anotado porque é o tipo de coisa que, se aparecer como "o agente ignorou meu
 pedido uma vez", ninguém conectaria à posição de um nó.
 
+## Ideia futura: transformar a aba "Uso" em relatório para o cliente
+
+Registrado em 12/08/2026, a pedido do Felipe. **Não construir agora** — ele quer
+focar em outra coisa. O que segue é o que já se sabe, para a fatia não começar
+do zero.
+
+### O que a aba é hoje
+
+`/painel/consumo`, rotulada **"Uso"** na barra lateral. Ela existe e funciona,
+mas mostra **volume, não dinheiro**:
+
+```
+billing_volume_mensal()  ->  mes | mensagens | conversas_ativas
+```
+
+O custo em dólar vive em outra função, `billing_consumo_mensal()`, que é
+**super_admin only** e alimenta `/admin/consumo`. Ela soma tokens de conversa e
+de ingestão, multiplicados por `precos_modelo`.
+
+Ou seja: a separação entre "quanto você usou" e "quanto isso custa" já está
+feita, e não por acaso.
+
+### A decisão que a fatia precisa tomar antes de escrever código
+
+**O cliente vê custo?** Não é pergunta de UI. Mostrar dólar para ele é revelar a
+base de custo da agência — o que ele paga menos o que a agência paga é a margem.
+Três desenhos possíveis, em ordem de exposição:
+
+1. **volume melhorado** — mensagens, conversas, minutos de áudio, documentos
+   indexados. Nenhum valor monetário. É o que a aba já faz, com mais dimensões;
+2. **consumo em unidade neutra** — "créditos", desacoplado do preço da OpenAI.
+   Permite cobrar sem expor a base;
+3. **custo real** — só faz sentido se o modelo comercial for repasse
+   transparente (custo + taxa), e aí a margem é acordada, não escondida.
+
+Enquanto isso não estiver decidido, qualquer tela construída vai ter de ser
+refeita.
+
+### O que já está pronto para alimentar o relatório
+
+- `mensagens_log`: `tokens_entrada`, `tokens_saida`, `modelo`, `criado_em` e —
+  desde a migração 32 — `audio_segundos`, **por tenant e por conversa**;
+- `uso_ingestao`: tokens de embedding por documento;
+- `precos_modelo`: preço por 1M tokens, com vigência por data.
+
+### O que falta, e é pré-requisito de qualquer versão com dinheiro
+
+**Áudio não tem preço.** `precos_modelo` só tem colunas por 1M tokens; Whisper
+cobra por minuto. Sem isso, o áudio do cliente aparece registrado e custando
+zero — o `billing_consumo_mensal` nem o enxerga.
+
+O encaixe natural é uma coluna `usd_por_minuto` nullable mais uma linha
+`whisper-1`, seguindo a forma que a tabela já tem (`usd_embedding_por_1m` já é
+null para modelo de chat), e um terceiro braço na `billing_consumo_mensal`.
+
+**Isso é independente da decisão acima** e vale fazer antes: sem preço, o custo
+de áudio não existe em lugar nenhum, nem para a agência.
+
 ## Ideia futura: memória de longo prazo por cliente
 
 **Sem código.** Registrada em 11/08/2026 para não se perder.
