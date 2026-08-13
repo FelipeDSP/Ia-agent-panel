@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/card';
 import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
-import { definicaoTool } from '@/lib/tools/registro';
+import { definicaoTool, grupoTool } from '@/lib/tools/registro';
 import {
   HORARIO_PADRAO,
   TOOL_TRANSFERIR,
@@ -46,10 +46,18 @@ export default async function PaginaConfiguracoes() {
   const configTransferir = (toolTransferir?.config ?? {}) as Partial<ConfigTransferir>;
   const horarioTransferir = configTransferir.horario ?? HORARIO_PADRAO;
 
-  // Meus módulos: só os contratados aparecem (módulo não contratado nem existe
-  // para o cliente — §5.2). Rótulo/resumo do registry no código.
+  // Meus módulos: só o que o cliente PODE AGIR.
+  //
+  // Duas exclusões, uma regra. Não contratado some (nem existe para ele — §5.2).
+  // Padrão some também: `busca_conhecimento` e `resolver_conversa` ele não
+  // desliga nem configura, então o switch só oferecia uma decisão que não é
+  // dele. Configurável (transferir_humano) não entra nesta lista porque tem card
+  // próprio, com formulário e sem switch.
+  //
+  // Sobra a lista de contratáveis contratados — a única onde o switch representa
+  // uma escolha real.
   const modulos = (tools ?? [])
-    .filter((t) => t.contratado)
+    .filter((t) => t.contratado && grupoTool(t.tool_nome) === 'contratavel')
     .map((t) => {
       const def = definicaoTool(t.tool_nome);
       return {
@@ -88,27 +96,35 @@ export default async function PaginaConfiguracoes() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Meus módulos</CardTitle>
-          <CardDescription>
-            O que está incluído no seu plano. Para contratar um módulo novo, fale com a agência.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ListaModulos modulos={modulos} />
-        </CardContent>
-      </Card>
+      {/* O card inteiro some quando não há módulo opcional. Lista vazia com
+          "nenhum módulo contratado ainda" é ruído: não há nada a fazer ali, e
+          hoje é o caso de 3 dos 4 clientes, que só têm o padrão do produto. */}
+      {modulos.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Meus módulos</CardTitle>
+            <CardDescription>
+              O que está incluído no seu plano. Para contratar um módulo novo, fale com a agência.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ListaModulos modulos={modulos} />
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Transferência para atendimento humano</CardTitle>
-          <CardDescription>
-            Defina quando o agente pode passar a conversa para uma pessoa e como você é avisado.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {transferirContratado ? (
+      {/* Não contratado = o card não existe. O texto "fale com a agência para
+          ativar" que ficava aqui mostrava ao cliente uma configuração que ele
+          não tem — a confusão que a regra elimina. */}
+      {transferirContratado ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Transferência para atendimento humano</CardTitle>
+            <CardDescription>
+              Defina quando o agente pode passar a conversa para uma pessoa e como você é avisado.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
             <FormularioTransferir
               ativo={Boolean(toolTransferir?.ativo)}
               horario={horarioTransferir}
@@ -116,14 +132,9 @@ export default async function PaginaConfiguracoes() {
               destinoNumero={numeroParaExibir(configTransferir.notificacao?.destino)}
               temSessao={Boolean(configTransferir.notificacao?.sessao)}
             />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              A transferência para atendimento humano ainda não foi habilitada pela agência para
-              este cliente. Fale com a agência para ativar.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

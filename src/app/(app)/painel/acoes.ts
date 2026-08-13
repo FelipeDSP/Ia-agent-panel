@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarEdicaoTenantAdmin } from '@/lib/tenants/schema';
-import { definicaoTool } from '@/lib/tools/registro';
+import { clientePodeDesligar } from '@/lib/tools/registro';
 import {
   TOOL_TRANSFERIR,
   validarTransferirCliente,
@@ -23,9 +23,12 @@ export type ResultadoModulo = { ok: true } | { ok: false; erro: string };
 /**
  * Cliente liga/desliga um módulo contratado ("Meus módulos").
  *
- * Antes disto o card só exibia o estado: quem gravava `ativo` era o formulário
- * da transferência, então módulo sem config de cliente (busca_conhecimento,
- * resolver_conversa) ficava preso em desligado, sem caminho de UI.
+ * SÓ CONTRATÁVEL. Padrão e configurável não têm switch na tela, e a checagem
+ * está aqui porque esconder o botão não é o mesmo que não poder: sem este guard
+ * uma chamada direta ainda desligaria `busca_conhecimento`, e o cliente ficaria
+ * com o agente respondendo sem base de conhecimento e sem caminho de volta —
+ * a tela dele não mostra mais o módulo. É a mesma classe do `tool_ativa` que
+ * ninguém checava e do `config_tool` que ignorava `contratado`.
  *
  * Toca SOMENTE `ativo`. `contratado` é decisão comercial da agência e o trigger
  * tenant_tools_guard_colunas barra quem não é super_admin — mandar as duas
@@ -44,10 +47,22 @@ export async function alternarModulo(
 ): Promise<ResultadoModulo> {
   const usuario = await exigirTenantAdmin();
 
-  // Só módulos que o painel conhece. Barra string arbitrária vinda do cliente
-  // antes de ela virar filtro de query.
-  if (!definicaoTool(toolNome)) {
+  // Forma do identificador. Barra string arbitrária vinda do cliente antes de
+  // ela virar filtro de query. NÃO exige estar no registry: tool criada no
+  // catálogo e vendida antes de alguém escrever o rótulo cai em `contratavel`,
+  // e recusar aqui deixaria um switch na tela do cliente que sempre falha —
+  // que era o comportamento anterior.
+  if (!/^[a-z][a-z0-9_]{1,60}$/.test(toolNome)) {
     return { ok: false, erro: 'Módulo desconhecido.' };
+  }
+
+  // O guard de capacidade. Vem ANTES de qualquer ida ao banco: negar é mais
+  // barato que consultar para depois negar.
+  if (!clientePodeDesligar(toolNome)) {
+    return {
+      ok: false,
+      erro: 'Este módulo é padrão do produto e não pode ser desligado.',
+    };
   }
 
   const supabase = await criarClienteServidor();

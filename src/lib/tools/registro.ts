@@ -8,7 +8,7 @@
  * Puro: sem 'use server'/'use client'.
  */
 
-import type { DefinicaoTool } from './tipos';
+import type { DefinicaoTool, GrupoTool } from './tipos';
 import { TOOL_TRANSFERIR } from './transferir-humano';
 
 export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
@@ -46,6 +46,7 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
    */
   vendas: {
     nome: 'vendas',
+    contratavel: true,
     rotulo: 'Vendas pelo agente',
     resumo:
       'O agente consulta seu catálogo, monta o pedido junto com o cliente na conversa e fecha. ' +
@@ -66,6 +67,7 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
    */
   transcricao_audio: {
     nome: 'transcricao_audio',
+    contratavel: true,
     tipo: 'capacidade_fluxo',
     rotulo: 'Transcrever áudio',
     resumo:
@@ -83,6 +85,7 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
    */
   foto_produto: {
     nome: 'foto_produto',
+    contratavel: true,
     tipo: 'tool_modelo',
     rotulo: 'Enviar foto do produto',
     resumo:
@@ -100,13 +103,17 @@ export function definicaoTool(nome: string): DefinicaoTool | null {
 /**
  * Tools de baseline do produto: todo cliente tem, desde o primeiro dia.
  *
- * São provisionadas automaticamente na criação do tenant (contratado + ativo) e,
- * quando contratadas à mão, entram já ligadas. O switch de "Meus módulos" existe
- * como OPT-OUT — o cliente desliga o que não quiser — e não como opt-in.
+ * São provisionadas automaticamente na criação do tenant (contratado + ativo).
  *
- * A razão de não ser opt-in: `busca_conhecimento` desligada é agente sem base de
- * conhecimento, respondendo do nada. Um esquecimento no provisionamento não pode
- * ter esse custo.
+ * NÃO CONFUNDIR COM `GrupoTool`. Baseline é sobre PROVISIONAMENTO: o que entra
+ * ao criar o cliente. Grupo é sobre EXIBIÇÃO E CAPACIDADE: o que ele vê e no que
+ * pode mexer. Hoje as três baseline caem em padrão/configurável, mas os eixos
+ * são independentes — provisionar vendas automaticamente num plano faria a lista
+ * abaixo crescer sem que vendas deixasse de ser contratável.
+ *
+ * A razão de o baseline entrar ligado: `busca_conhecimento` desligada é agente
+ * sem base de conhecimento, respondendo do nada. Um esquecimento no
+ * provisionamento não pode ter esse custo.
  *
  * Precisam existir em `catalogo_tools` (FK de tenant_tools.tool_nome). As três
  * estão lá desde a migração 20.
@@ -116,3 +123,65 @@ export const TOOLS_BASELINE = [
   TOOL_TRANSFERIR,
   'resolver_conversa',
 ] as const;
+
+// ---------------------------------------------------------------------------
+// Grupo: o que o cliente vê e no que ele pode mexer
+// ---------------------------------------------------------------------------
+//
+// A REGRA, uma frase: o painel do cliente só mostra o que ele pode agir. Não
+// pode desligar nem configurar -> some. Não tem contratado -> some. Pode
+// configurar ou ligar/desligar -> fica.
+//
+// Tudo aqui é função pura sobre a definição, sem tocar em banco: é o que
+// permite o teste afirmar a propriedade em vez do estado do mundo.
+
+/**
+ * Em que grupo a tool cai. DERIVADO — não há campo `grupo` para contradizer
+ * `contratavel` e `temConfigCliente`.
+ *
+ * Tool fora do registry cai em `contratavel`: a agência criou a linha no
+ * catálogo e vendeu antes de alguém escrever o rótulo, então ela precisa
+ * aparecer e ser desligável. O admin avisa quando isto acontece — descobrir
+ * pela ausência não funciona, porque ausência não avisa.
+ */
+export function grupoTool(nome: string): GrupoTool {
+  const def = REGISTRO_TOOLS[nome];
+  if (!def) return 'contratavel';
+  if (def.contratavel) return 'contratavel';
+  if (def.temConfigCliente) return 'configuravel';
+  return 'padrao';
+}
+
+/**
+ * Se o CLIENTE pode ligar/desligar o módulo.
+ *
+ * Isto é capacidade, não exibição — e por isso o servidor também consulta esta
+ * função, não só a tela. Esconder o botão não é o mesmo que não poder: é a
+ * mesma lição do `tool_ativa` que ninguém checava e do `config_tool` que
+ * ignorava `contratado`.
+ */
+export function clientePodeDesligar(nome: string): boolean {
+  return grupoTool(nome) === 'contratavel';
+}
+
+/** Se o módulo aparece no painel do cliente. Padrão nunca aparece. */
+export function clienteVeModulo(nome: string, contratado: boolean): boolean {
+  return contratado && grupoTool(nome) !== 'padrao';
+}
+
+/**
+ * Se a seção recolhida do admin (padrão + configurável) precisa abrir sozinha.
+ *
+ * Módulo padrão desligado é invisível para o cliente E irrecuperável por ele —
+ * ele não tem mais o switch. Só a agência conserta, e só conserta o que vê.
+ * Seção recolhida que esconde problema é a forma mais rápida de um diagnóstico
+ * não acontecer.
+ *
+ * Recebe o estado, não consulta nada: a propriedade é "se existe desligado, a
+ * seção abre", e ela vale para qualquer lista — inclusive a vazia.
+ */
+export function secaoPadraoTemAnomalia(
+  modulos: readonly { contratado: boolean; ativo: boolean }[],
+): boolean {
+  return modulos.some((m) => m.contratado && !m.ativo);
+}

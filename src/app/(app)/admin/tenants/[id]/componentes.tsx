@@ -24,6 +24,8 @@ import { Select } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
 import { MODELOS_PERMITIDOS } from '@/lib/tenants/schema';
+import { secaoPadraoTemAnomalia } from '@/lib/tools/registro';
+import type { GrupoTool } from '@/lib/tools/tipos';
 
 function ErroCampo({ msg }: { msg?: string }) {
   if (!msg) return null;
@@ -496,6 +498,17 @@ export type ModuloAdmin = {
   rotulo: string;
   resumo: string;
   temConfigCliente: boolean;
+  /** Grupo derivado (registro.ts). Decide se entra na lista ou na seção recolhida. */
+  grupo: GrupoTool;
+  /**
+   * Existe em `catalogo_tools` mas não no registry do código.
+   *
+   * Cai em `contratavel` de propósito — módulo recém-vendido precisa aparecer e
+   * ser desligável antes de alguém escrever o rótulo. Mas rótulo e resumo vêm do
+   * catálogo, não do código, e ninguém repassou o texto que o cliente lê. O
+   * aviso existe porque isto se descobre pela AUSÊNCIA, e ausência não avisa.
+   */
+  semRegistry?: boolean;
   contratado: boolean;
   ativo: boolean;
   /**
@@ -509,21 +522,80 @@ export type ModuloAdmin = {
   aviso?: string | null;
 };
 
+/**
+ * Módulos do cliente, vistos pela agência.
+ *
+ * O admin mostra o ESTADO COMPLETO — é onde se diagnostica, e diagnóstico com
+ * informação escondida não é diagnóstico. O que muda é a hierarquia: em cima só
+ * o que a agência vende; padrão e configurável descem para uma seção recolhida,
+ * porque nenhum dos dois é decisão comercial e os dois competiam por atenção
+ * com as que são.
+ */
 export function GestaoModulos({
   tenantId,
   modulos,
+  padrao = [],
 }: {
   tenantId: string;
   modulos: ModuloAdmin[];
+  padrao?: ModuloAdmin[];
 }) {
-  if (modulos.length === 0) {
+  if (modulos.length === 0 && padrao.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhuma tool ativa no catálogo.</p>;
   }
+
+  // A seção recolhida ABRE SOZINHA quando há módulo padrão contratado e
+  // desligado. Esse estado é invisível para o cliente e irrecuperável por ele —
+  // ele não tem mais o switch —, então só a agência conserta, e só conserta o
+  // que vê. Seção recolhida que esconde problema é a forma mais rápida de um
+  // diagnóstico não acontecer.
+  const anomalia = secaoPadraoTemAnomalia(padrao);
+  const desligados = padrao.filter((m) => m.contratado && !m.ativo).length;
+
   return (
-    <div className="flex flex-col divide-y divide-border">
-      {modulos.map((m) => (
-        <ModuloRow key={m.tool_nome} tenantId={tenantId} modulo={m} />
-      ))}
+    <div className="flex flex-col gap-4">
+      {modulos.length > 0 ? (
+        <div className="flex flex-col divide-y divide-border">
+          {modulos.map((m) => (
+            <ModuloRow key={m.tool_nome} tenantId={tenantId} modulo={m} />
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Nenhum módulo vendável no catálogo além do padrão do produto.
+        </p>
+      )}
+
+      {padrao.length > 0 ? (
+        <details open={anomalia} className="rounded-md border border-border">
+          <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
+            Padrão do produto
+            <span className="ml-2 font-normal text-muted-foreground">
+              {padrao.length} {padrao.length === 1 ? 'módulo' : 'módulos'} — o cliente não
+              contrata nem desliga
+            </span>
+            {anomalia ? (
+              <span className="ml-2 font-medium text-amber-600 dark:text-amber-500">
+                · {desligados} desligado{desligados === 1 ? '' : 's'}
+              </span>
+            ) : null}
+          </summary>
+
+          <div className="border-t border-border px-3 py-2">
+            {anomalia ? (
+              <p className="mb-2 text-xs font-medium text-amber-600 dark:text-amber-500">
+                Módulo padrão desligado. O cliente não vê nem consegue religar pelo painel dele —
+                só a agência. Se não foi intencional, religue aqui.
+              </p>
+            ) : null}
+            <div className="flex flex-col divide-y divide-border">
+              {padrao.map((m) => (
+                <ModuloRow key={m.tool_nome} tenantId={tenantId} modulo={m} />
+              ))}
+            </div>
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -549,6 +621,13 @@ function ModuloRow({ tenantId, modulo }: { tenantId: string; modulo: ModuloAdmin
           {modulo.aviso ? (
             <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-500">
               {modulo.aviso}
+            </p>
+          ) : null}
+          {modulo.semRegistry ? (
+            <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-500">
+              Sem entrada no registry do código. O cliente vê o texto do catálogo, não um rótulo
+              escrito para ele, e a tool foi classificada como contratável por falta de
+              informação. Registre em <code>src/lib/tools/registro.ts</code>.
             </p>
           ) : null}
         </div>

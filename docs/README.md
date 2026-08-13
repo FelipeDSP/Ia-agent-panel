@@ -15,6 +15,10 @@ documentação e material de referência.
 ## Guias
 - [`ADICIONAR-TOOL.md`](ADICIONAR-TOOL.md) — **como adicionar uma tool nova** ao agente
   (lado n8n + lado painel), passo a passo.
+- [`VERIFICACAO-GRUPOS-MODULOS.md`](VERIFICACAO-GRUPOS-MODULOS.md) — os três grupos de
+  módulo (padrão / configurável / contratável), o que cada um mostra ao cliente, e o
+  **roteiro para exercitar o filtro de `contratado`**, que existia desde a §5.2 e nunca
+  tinha escondido nada.
 - [`API-PUBLICA.md`](API-PUBLICA.md) — levantamento das 131 funções/classes exportadas,
   com as **31 Server Actions** (endpoints RPC) e o gate de autorização de cada uma.
 - [`MAPA-COMPONENTES.md`](MAPA-COMPONENTES.md) — os 79 componentes React: árvore de

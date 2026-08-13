@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/card';
 import { exigirSuperAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
-import { definicaoTool } from '@/lib/tools/registro';
+import { definicaoTool, grupoTool } from '@/lib/tools/registro';
 import { TOOL_TRANSFERIR, type ConfigTransferir } from '@/lib/tools/transferir-humano';
 
 import {
@@ -103,7 +103,7 @@ export default async function PaginaDetalheTenant({
     },
   };
 
-  const modulos: ModuloAdmin[] = (catalogo ?? []).map((c) => {
+  const todosModulos: ModuloAdmin[] = (catalogo ?? []).map((c) => {
     const def = definicaoTool(c.tool_nome);
     const estado = estadoPorTool.get(c.tool_nome);
     const dep = DEPENDE_DE[c.tool_nome];
@@ -113,11 +113,22 @@ export default async function PaginaDetalheTenant({
       rotulo: def?.rotulo ?? c.nome_exibicao,
       resumo: def?.resumo ?? (c.descricao_padrao ?? ''),
       temConfigCliente: def?.temConfigCliente ?? false,
+      grupo: grupoTool(c.tool_nome),
+      // Sem entrada no registry: cai em `contratavel` (aparece e é desligável),
+      // mas com rótulo e resumo vindos do catálogo em vez do código. O aviso é
+      // porque isso se descobre pela AUSÊNCIA — e ausência não avisa.
+      semRegistry: !def,
       contratado: estado?.contratado ?? false,
       ativo: estado?.ativo ?? false,
       aviso,
     };
   });
+
+  // A decisão comercial fica em cima, sozinha. Padrão e configurável descem para
+  // a seção recolhida: nenhum dos dois é coisa que a agência vende, e ambos
+  // competiam por atenção com o que é.
+  const modulos = todosModulos.filter((m) => m.grupo === 'contratavel');
+  const modulosPadrao = todosModulos.filter((m) => m.grupo !== 'contratavel');
 
   // Resolve nome do autor de cada versão (poucas linhas; map simples).
   const autores = new Map((admins ?? []).map((a) => [a.email, a.nome]));
@@ -240,7 +251,7 @@ export default async function PaginaDetalheTenant({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <GestaoModulos tenantId={tenant.id} modulos={modulos} />
+            <GestaoModulos tenantId={tenant.id} modulos={modulos} padrao={modulosPadrao} />
           </CardContent>
         </Card>
 
