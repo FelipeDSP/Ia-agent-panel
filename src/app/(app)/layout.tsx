@@ -1,6 +1,8 @@
 import { Sidebar } from '@/components/sidebar';
 import { exigirUsuario } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
+import { toolsContratadas } from '@/lib/tools/contratacao';
+import { menuDoPainel, type ItemMenuPainel } from '@/lib/tools/registro';
 
 export default async function LayoutAplicacao({
   children,
@@ -16,6 +18,10 @@ export default async function LayoutAplicacao({
   // Nome do tenant so para exibir na sidebar. A query passa por RLS: o
   // tenant_admin so consegue ler o proprio tenant de qualquer forma.
   let nomeTenant: string | null = null;
+  // Menu do painel montado AQUI, no servidor, a partir do registry e do que o
+  // tenant contratou. Ver `menuDoPainel`: se a resolucao falhar, `contratadas`
+  // vem vazio e sobram so as rotas sempre-visiveis — as condicionais somem.
+  let itensPainel: ItemMenuPainel[] = [];
 
   if (usuario.tenantId) {
     const supabase = await criarClienteServidor();
@@ -26,6 +32,7 @@ export default async function LayoutAplicacao({
       .maybeSingle();
 
     nomeTenant = data?.nome ?? null;
+    itensPainel = menuDoPainel(await toolsContratadas(usuario.tenantId));
   }
 
   return (
@@ -35,6 +42,7 @@ export default async function LayoutAplicacao({
         nome={usuario.nome}
         email={usuario.email}
         nomeTenant={nomeTenant}
+        itensPainel={itensPainel}
       />
       {/*
         max-w limita a largura da leitura. Sem isso, em tela larga as tabelas e

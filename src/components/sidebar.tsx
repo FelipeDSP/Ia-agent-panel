@@ -32,36 +32,68 @@ type ItemMenu = {
   futuro?: boolean;
 };
 
-const MENU: Record<Papel, ItemMenu[]> = {
-  super_admin: [
-    { href: '/admin/tenants', rotulo: 'Clientes', Icone: Building2 },
-    { href: '/admin/catalogo', rotulo: 'Catálogo', Icone: Boxes },
-    { href: '/admin/consumo', rotulo: 'Consumo', Icone: BarChart3 },
-  ],
-  tenant_admin: [
-    { href: '/painel', rotulo: 'Visão geral', Icone: LayoutDashboard },
-    { href: '/painel/conhecimento', rotulo: 'Base de conhecimento', Icone: BookOpen },
-    { href: '/painel/catalogo', rotulo: 'Catálogo', Icone: Package },
-    { href: '/painel/pedidos', rotulo: 'Pedidos', Icone: Receipt },
-    { href: '/painel/conversas', rotulo: 'Conversas', Icone: MessagesSquare },
-    { href: '/painel/consumo', rotulo: 'Uso', Icone: BarChart3 },
-    { href: '/painel/configuracoes', rotulo: 'Configurações', Icone: Settings },
-  ],
+/**
+ * Nome do ícone -> componente. O registry declara o ícone por NOME porque é
+ * módulo puro, importável pelo servidor e pelos testes; importar `lucide-react`
+ * lá dentro arrastaria a árvore de ícones para todo consumidor.
+ */
+const ICONES: Record<string, typeof Building2> = {
+  LayoutDashboard,
+  BookOpen,
+  Package,
+  Receipt,
+  MessagesSquare,
+  BarChart3,
+  Settings,
 };
+
+/**
+ * Menu do super admin: lista fixa mesmo.
+ *
+ * A regra de superfície é sobre o painel do CLIENTE — quem vê o que contratou.
+ * A agência precisa do estado completo para diagnosticar, e é a mesma razão de
+ * o admin continuar listando todos os módulos, com padrão em seção recolhida.
+ */
+const MENU_ADMIN: ItemMenu[] = [
+  { href: '/admin/tenants', rotulo: 'Clientes', Icone: Building2 },
+  { href: '/admin/catalogo', rotulo: 'Catálogo', Icone: Boxes },
+  { href: '/admin/consumo', rotulo: 'Consumo', Icone: BarChart3 },
+];
 
 export function Sidebar({
   papel,
   nome,
   email,
   nomeTenant,
+  itensPainel = [],
 }: {
   papel: Papel;
   nome: string;
   email: string;
   nomeTenant: string | null;
+  /**
+   * Itens do painel do cliente, montados no SERVIDOR a partir do registry e das
+   * tools contratadas (`menuDoPainel`).
+   *
+   * Vem por prop e não é buscado aqui porque este componente é `'use client'`:
+   * buscar a contratação no browser faria o menu renderizar primeiro com tudo e
+   * depois tirar os itens — o cliente veria piscar uma tela que não tem.
+   *
+   * Esquecer de declarar `rotasPainel` no registry significa o item NÃO APARECER
+   * PARA NINGUÉM. É de propósito: o esquecimento vira ausência, que alguém nota,
+   * em vez de vazamento silencioso, que ninguém nota.
+   */
+  itensPainel?: { href: string; rotulo: string; icone: string }[];
 }) {
   const caminho = usePathname();
-  const itens = MENU[papel];
+  const itens: ItemMenu[] =
+    papel === 'super_admin'
+      ? MENU_ADMIN
+      : itensPainel.map((i) => ({
+          href: i.href,
+          rotulo: i.rotulo,
+          Icone: ICONES[i.icone] ?? LayoutDashboard,
+        }));
   // Item ativo = o de href MAIS específico que casa com a rota. Sem isso, o
   // índice da seção ('/painel') acenderia junto de toda sub-rota, porque
   // '/painel/conversas' etc. começam com '/painel/'. Pegar o href mais longo

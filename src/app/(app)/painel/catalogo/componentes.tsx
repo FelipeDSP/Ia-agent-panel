@@ -247,7 +247,22 @@ function FormularioProduto({
   );
 }
 
-export function GestaoCatalogo({ produtosIniciais }: { produtosIniciais: Produto[] }) {
+export function GestaoCatalogo({
+  produtosIniciais,
+  podeFoto,
+}: {
+  produtosIniciais: Produto[];
+  /**
+   * Se o tenant contratou `foto_produto`. Resolvido no servidor (a página).
+   *
+   * A miniatura e o controle de upload são superfície daquela tool, e a regra é
+   * a mesma das rotas: só existe para quem contratou. Sem isto, um cliente com
+   * Vendas e sem Foto via o controle e conseguia subir imagem — a Server Action
+   * agora também recusa, mas mostrar um botão que o servidor nega é pior que
+   * não mostrar.
+   */
+  podeFoto: boolean;
+}) {
   const [editando, setEditando] = useState<Produto | null>(null);
   // Última unidade escolhida NESTA sessão de tela. Não vai ao banco de
   // propósito: é conveniência de digitação, não preferência do cliente —
@@ -344,7 +359,9 @@ export function GestaoCatalogo({ produtosIniciais }: { produtosIniciais: Produto
                   key={p.id}
                   className="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
                 >
-                  <FotoProduto produtoId={p.id} nome={p.nome} fotoUrl={p.fotoUrl} />
+                  {podeFoto ? (
+                    <FotoProduto produtoId={p.id} nome={p.nome} fotoUrl={p.fotoUrl} />
+                  ) : null}
 
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">

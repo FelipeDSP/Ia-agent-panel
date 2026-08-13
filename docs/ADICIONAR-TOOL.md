@@ -72,6 +72,46 @@ Guia prático para provisionar uma capacidade nova do agente (ex.: `agendar_hora
    ajusta, cadastre em `src/lib/tools/registro.ts` (o registry é a fonte de UI; o
    cliente não lê o catálogo). Aí ela aparece em *Meus módulos*.
 
+7. **Declarar a superfície — OBRIGATÓRIO.** Sem este passo o item fica incompleto,
+   e a tool vaza tela para quem não contratou.
+
+   A propriedade: **toda superfície que a tool traz — item de menu, rota, seção de
+   tela, indicador, Server Action — só existe para quem contratou a tool.**
+
+   Superfície **não** é sinônimo de rota: `foto_produto` não tem nenhuma, é uma
+   seção dentro do catálogo, e obedece à mesma regra.
+
+   O que fazer, conforme o que a tool traz:
+
+   | a tool traz | o que declarar |
+   |---|---|
+   | tela nova sob `/painel/` | `rotasPainel` no registry **e** um `layout.tsx` na pasta chamando `exigirToolDaRota` |
+   | seção dentro de tela existente | a página resolve `temToolContratada` e passa por prop; o componente renderiza condicional |
+   | Server Action que escreve | `temToolContratada` no início de **cada** action exportada, devolvendo `ERRO_NAO_CONTRATADA` |
+   | tabela própria | acrescente em `SUPERFICIE_DE_DADO` (`tests/descontratar-preserva-dado.mjs`) |
+   | ícone novo no menu | acrescente ao mapa `ICONES` em `src/components/sidebar.tsx` |
+
+   Nada disso é convenção que dá para esquecer — três checagens reprovam:
+
+   ```bash
+   npm run teste:superficie     # rota sem dono, action sem guard, ícone ausente
+   npm run teste:grupos         # grupo, exibição e capacidade
+   npm run teste:descontratar   # descontratar não apaga dado
+   ```
+
+   E o menu é montado a partir do registry: **não declarar significa o item não
+   aparecer para ninguém.** O esquecimento vira ausência, que alguém nota, em vez
+   de vazamento silencioso, que ninguém nota.
+
+   Duas coisas já decididas, para não redecidir a cada tool:
+
+   - **Falha de resolução fecha.** Se a consulta de contratação errar, sobram só
+     as rotas sempre-visíveis; as condicionais somem. Vale igual no menu e no
+     guard de rota — divergir produziria menu que mostra o que a rota nega.
+   - **Descontratar esconde, nunca apaga.** O dado fica e recontratar devolve
+     tudo. Se a tool guardar dado do cliente, é trabalho de cadastro que ninguém
+     consegue devolver depois.
+
 ---
 
 ## Regras que não podem ser violadas

@@ -47,6 +47,13 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
   vendas: {
     nome: 'vendas',
     contratavel: true,
+    // Catálogo e Pedidos só existem por causa de vendas. Antes de serem
+    // declaradas aqui, as duas ficavam no menu de todo cliente e as rotas
+    // abriam com os dados para quem não tinha contratado.
+    rotasPainel: [
+      { href: '/painel/catalogo', rotulo: 'Catálogo', icone: 'Package' },
+      { href: '/painel/pedidos', rotulo: 'Pedidos', icone: 'Receipt' },
+    ],
     rotulo: 'Vendas pelo agente',
     resumo:
       'O agente consulta seu catálogo, monta o pedido junto com o cliente na conversa e fecha. ' +
@@ -184,4 +191,102 @@ export function secaoPadraoTemAnomalia(
   modulos: readonly { contratado: boolean; ativo: boolean }[],
 ): boolean {
   return modulos.some((m) => m.contratado && !m.ativo);
+}
+
+// ---------------------------------------------------------------------------
+// Superfície: tudo que uma tool traz para a tela
+// ---------------------------------------------------------------------------
+//
+// A PROPRIEDADE, e ela é permanente: toda superfície que uma tool traz — item de
+// menu, rota, seção de tela, indicador, Server Action — só existe para quem
+// contratou aquela tool.
+//
+// É propriedade e não lista de propósito. Uma lista das tools de hoje envelhece
+// no dia em que entrar a próxima; a propriedade vale para ela também, sem
+// ninguém precisar lembrar.
+//
+// NÃO É SOBRE ROTA. `foto_produto` não tem rota nenhuma — é uma seção dentro do
+// catálogo, e obedece à mesma regra. Rota é o caso mais comum, não o conceito.
+
+/**
+ * Rotas do painel que existem independentemente de qualquer tool.
+ *
+ * Toda rota sob `/painel/` tem de estar aqui OU ser declarada por uma tool em
+ * `rotasPainel` — `npm run teste:superficie` reprova se aparecer uma terceira
+ * categoria. É a rede para o caso que o menu-a-partir-do-registry não pega
+ * sozinho: alguém cria `/painel/agenda/page.tsx` e não encosta no menu, e o
+ * mecanismo fica quieto porque não há item para faltar.
+ */
+export const ROTAS_SEMPRE_VISIVEIS = [
+  { href: '/painel', rotulo: 'Visão geral', icone: 'LayoutDashboard' },
+  { href: '/painel/conhecimento', rotulo: 'Base de conhecimento', icone: 'BookOpen' },
+  { href: '/painel/conversas', rotulo: 'Conversas', icone: 'MessagesSquare' },
+  { href: '/painel/consumo', rotulo: 'Uso', icone: 'BarChart3' },
+  { href: '/painel/configuracoes', rotulo: 'Configurações', icone: 'Settings' },
+] as const;
+
+/**
+ * Qual tool é dona de uma rota do painel, ou null se ela é sempre visível.
+ *
+ * Casa por PREFIXO e devolve o mais longo: `/painel/pedidos/abc` pertence a
+ * quem declarou `/painel/pedidos`. O mais longo importa para o dia em que uma
+ * tool declarar uma sub-rota de outra.
+ */
+export function toolDaRota(caminho: string): string | null {
+  let dona: string | null = null;
+  let maior = -1;
+  for (const [nome, def] of Object.entries(REGISTRO_TOOLS)) {
+    for (const r of def.rotasPainel ?? []) {
+      const casa = caminho === r.href || caminho.startsWith(`${r.href}/`);
+      if (casa && r.href.length > maior) {
+        dona = nome;
+        maior = r.href.length;
+      }
+    }
+  }
+  return dona;
+}
+
+/** Todas as rotas declaradas por tools, com a tool dona de cada uma. */
+export function rotasDeTools(): { href: string; tool: string }[] {
+  return Object.entries(REGISTRO_TOOLS).flatMap(([nome, def]) =>
+    (def.rotasPainel ?? []).map((r) => ({ href: r.href, tool: nome })),
+  );
+}
+
+export type ItemMenuPainel = { href: string; rotulo: string; icone: string };
+
+/**
+ * Monta o menu do painel do cliente a partir do registry.
+ *
+ * `contratadas` é o conjunto de tool_nome com `contratado = true`. Vem resolvido
+ * do servidor e desce por prop — o cliente buscando isso faria o menu piscar
+ * itens que ele não tem.
+ *
+ * O QUE ACONTECE SE A RESOLUÇÃO FALHAR NO SERVIDOR. Decidido, não descoberto na
+ * primeira falha: `contratadas` chega vazio e o menu fica só com as
+ * sempre-visíveis. As condicionais somem.
+ *
+ * O raciocínio: mostrar demais vaza uma tela que o cliente não pode usar — e a
+ * rota recusaria com 404 de qualquer jeito, então ele clica e bate na parede,
+ * sem entender. Mostrar de menos degrada a navegação de um jeito recuperável:
+ * "sumiu o Catálogo" é sintoma que ele relata na hora. E é o que a regra manda:
+ * o painel só mostra o que ele pode agir — se não sabemos o que ele pode, não
+ * dá para afirmar que pode.
+ *
+ * A mesma escolha vale no guard de rota (`exigirToolDaRota`): falha fecha.
+ * Divergir aqui produziria menu que mostra o que a rota recusa.
+ */
+export function menuDoPainel(contratadas: ReadonlySet<string>): ItemMenuPainel[] {
+  const condicionais = Object.entries(REGISTRO_TOOLS).flatMap(([nome, def]) =>
+    contratadas.has(nome) ? [...(def.rotasPainel ?? [])] : [],
+  );
+
+  // Ordem: a das sempre-visíveis é curada (Visão geral primeiro, Configurações
+  // por último). As condicionais entram antes de Conversas, onde Catálogo e
+  // Pedidos estavam na lista fixa.
+  const fixas = [...ROTAS_SEMPRE_VISIVEIS];
+  const corte = fixas.findIndex((i) => i.href === '/painel/conversas');
+  const pos = corte === -1 ? fixas.length : corte;
+  return [...fixas.slice(0, pos), ...condicionais, ...fixas.slice(pos)];
 }

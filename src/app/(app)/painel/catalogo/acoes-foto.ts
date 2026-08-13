@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { exigirTenantAdmin } from '@/lib/auth';
+import { ERRO_NAO_CONTRATADA, temToolContratada } from '@/lib/tools/contratacao';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { LIMITE_BYTES, MIMES_ACEITOS } from '@/lib/vendas/foto';
 
@@ -49,6 +50,11 @@ export async function salvarFotoProduto(
   fd: FormData,
 ): Promise<EstadoFoto> {
   const usuario = await exigirTenantAdmin();
+  // Superficie de tool: a action e entrada propria. Esconder o menu e
+  // recusar a rota nao cobre uma chamada RPC direta.
+  if (!(await temToolContratada(usuario.tenantId, 'foto_produto'))) {
+    return { erro: ERRO_NAO_CONTRATADA };
+  }
 
   const produtoId = String(fd.get('produto_id') ?? '');
   if (!UUID.test(produtoId)) return { erro: 'Produto inválido.' };
@@ -113,6 +119,11 @@ export async function removerFotoProduto(
   fd: FormData,
 ): Promise<EstadoFoto> {
   const usuario = await exigirTenantAdmin();
+  // Superficie de tool: a action e entrada propria. Esconder o menu e
+  // recusar a rota nao cobre uma chamada RPC direta.
+  if (!(await temToolContratada(usuario.tenantId, 'foto_produto'))) {
+    return { erro: ERRO_NAO_CONTRATADA };
+  }
 
   const produtoId = String(fd.get('produto_id') ?? '');
   if (!UUID.test(produtoId)) return { erro: 'Produto inválido.' };

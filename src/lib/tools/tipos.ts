@@ -83,6 +83,22 @@ export type DefinicaoTool = {
    * "o cliente desliga sem querer algo que não deveria poder desligar".
    */
   contratavel?: boolean;
+  /**
+   * Rotas do painel do cliente que só existem por causa desta tool.
+   *
+   * Prefixos: `/painel/pedidos` cobre `/painel/pedidos/[id]` também.
+   *
+   * DECLARAR AQUI NÃO É DOCUMENTAÇÃO — é o que faz a regra funcionar. O item de
+   * menu é montado a partir desta lista, e o `layout.tsx` da rota consulta a
+   * mesma coisa para recusar acesso direto. Rota que não aparece aqui não ganha
+   * item de menu para ninguém: o esquecimento vira ausência visível em vez de
+   * vazamento silencioso.
+   *
+   * Nem toda superfície é rota. `foto_produto` não tem nenhuma — ela é uma seção
+   * dentro do catálogo. O campo é opcional por isso, e a regra é sobre
+   * superfície, não sobre rota.
+   */
+  rotasPainel?: readonly { href: string; rotulo: string; icone: string }[];
   /** Corte agência/cliente do config, quando houver. */
   corte?: CorteConfig;
 };

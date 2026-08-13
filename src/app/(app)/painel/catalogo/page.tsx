@@ -1,12 +1,18 @@
 import { Alert } from '@/components/ui/alert';
 import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
+import { temToolContratada } from '@/lib/tools/contratacao';
 
 import { GestaoCatalogo, type Produto } from './componentes';
 
 export default async function PaginaCatalogo() {
   const usuario = await exigirTenantAdmin();
   const supabase = await criarClienteServidor();
+
+  // A foto é SUPERFÍCIE de outra tool. `foto_produto` não tem rota própria — é
+  // uma seção dentro desta tela — e obedece à mesma regra: só existe para quem
+  // contratou. É o caso que prova que superfície não é sinônimo de rota.
+  const podeFoto = await temToolContratada(usuario.tenantId, 'foto_produto');
 
   // Filtro explícito por tenant além da RLS: as duas camadas, como manda a
   // regra 6 do CLAUDE.md. `deletado_em is null` porque a exclusão é soft.
@@ -25,7 +31,9 @@ export default async function PaginaCatalogo() {
   // Vida curta de propósito — a miniatura é reaberta a cada carregamento, e uma
   // assinatura longa vazando daria acesso à foto por horas. O bucket é privado
   // (migração 34), então esta é a única forma de a tela enxergar o arquivo.
-  const comFoto = (data ?? []).filter((p) => p.foto_path);
+  // Sem o modulo contratado nem assinamos URL: o arquivo continua no Storage,
+  // mas a tela nao o busca. Descontratar esconde, nao apaga.
+  const comFoto = podeFoto ? (data ?? []).filter((p) => p.foto_path) : [];
   const urlPorPath = new Map<string, string>();
   if (comFoto.length > 0) {
     const { data: assinadas } = await supabase.storage
@@ -47,7 +55,7 @@ export default async function PaginaCatalogo() {
     sku: (p.sku as string | null) ?? null,
     estoque: (p.estoque as number | null) ?? null,
     disponivel: p.disponivel as boolean,
-    fotoUrl: p.foto_path ? (urlPorPath.get(p.foto_path as string) ?? null) : null,
+    fotoUrl: podeFoto && p.foto_path ? (urlPorPath.get(p.foto_path as string) ?? null) : null,
   }));
 
   return (
@@ -60,7 +68,7 @@ export default async function PaginaCatalogo() {
         </p>
       </header>
 
-      <GestaoCatalogo produtosIniciais={produtos} />
+      <GestaoCatalogo produtosIniciais={produtos} podeFoto={podeFoto} />
     </div>
   );
 }

@@ -53,6 +53,49 @@ entre clientes.
 6. **Query SQL crua sempre com filtro explícito de tenant.** RLS é a rede de segurança,
    não a primeira linha de defesa. Rode as duas camadas.
 
+## Superfície de tool
+
+**Toda superfície que uma tool traz — item de menu, rota, seção de tela,
+indicador, Server Action — só existe para quem contratou aquela tool.**
+
+É propriedade, não lista. Uma lista das tools de hoje envelhece na próxima; a
+propriedade vale para ela também, sem ninguém precisar lembrar. Vale para toda
+tool futura.
+
+**Superfície não é sinônimo de rota.** `foto_produto` não tem rota nenhuma — é
+uma seção dentro do catálogo, e obedece à mesma regra. Rota é o caso mais comum,
+não o conceito.
+
+**Esconder não é o mesmo que não poder.** Um item de menu escondido não impede
+digitar a URL, e uma rota recusada não impede chamar a Server Action, que é
+entrada própria e não passa por página nenhuma. As três precisam da mesma
+checagem — `src/lib/tools/contratacao.ts`, uma verdade e três consumidores.
+
+**Onde a declaração mora:** `rotasPainel` no registry (`src/lib/tools/registro.ts`).
+Não em `catalogo_tools` — o painel do cliente não lê aquela tabela (super-only por
+RLS), e pôr regra de exibição dele ali exigiria afrouxar policy para ganhar nada.
+
+**Como é verificado** (regra escrita em doc não sobrevive a seis meses):
+
+- o menu do painel é montado a partir do registry, então esquecer de declarar faz
+  o item **não aparecer para ninguém** — o esquecimento vira ausência, que alguém
+  nota, em vez de vazamento, que ninguém nota;
+- `npm run teste:superficie` reprova rota sob `/painel/` que não seja declarada
+  por uma tool nem esteja em `ROTAS_SEMPRE_VISIVEIS`, e reprova Server Action de
+  superfície de tool sem checagem de contratação;
+- `npm run teste:descontratar` prova que descontratar não apaga dado.
+
+**Se a resolução de contratação falhar no servidor, falha FECHA:** sobram as
+rotas sempre-visíveis e as condicionais somem. Mostrar demais leva o cliente a
+clicar num item que a rota recusa; mostrar de menos é sintoma que ele relata na
+hora. A mesma escolha vale no guard de rota — divergir produziria menu que mostra
+o que a rota nega.
+
+**Descontratar esconde superfície, nunca apaga dado.** Produtos, pedidos e fotos
+ficam onde estão e recontratar devolve tudo; `definirContratacao` só vira o
+booleano. Se alguém descontratar por engano e o catálogo evaporar, o cliente
+perde trabalho de cadastro que ninguém consegue devolver.
+
 ## Padrões Supabase + Next.js
 
 - Use `@supabase/ssr`, não o cliente antigo

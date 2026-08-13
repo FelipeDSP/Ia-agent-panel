@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { exigirTenantAdmin } from '@/lib/auth';
+import { ERRO_NAO_CONTRATADA, temToolContratada } from '@/lib/tools/contratacao';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarProduto } from '@/lib/vendas/schema';
 
@@ -58,6 +59,11 @@ export async function salvarProduto(
   fd: FormData,
 ): Promise<EstadoProduto> {
   const usuario = await exigirTenantAdmin();
+  // Superficie de tool: a action e entrada propria. Esconder o menu e
+  // recusar a rota nao cobre uma chamada RPC direta.
+  if (!(await temToolContratada(usuario.tenantId, 'vendas'))) {
+    return { erro: ERRO_NAO_CONTRATADA };
+  }
 
   // Toda saída de erro devolve o que foi digitado — ver `enviado` em EstadoProduto.
   const proximaTentativa = (estadoAnterior.tentativa ?? 0) + 1;
@@ -115,6 +121,11 @@ export async function salvarProduto(
  */
 export async function excluirProduto(id: string): Promise<EstadoProduto> {
   const usuario = await exigirTenantAdmin();
+  // Superficie de tool: a action e entrada propria. Esconder o menu e
+  // recusar a rota nao cobre uma chamada RPC direta.
+  if (!(await temToolContratada(usuario.tenantId, 'vendas'))) {
+    return { erro: ERRO_NAO_CONTRATADA };
+  }
 
   if (!UUID.test(String(id ?? ''))) return { erro: 'Produto inválido.' };
 
