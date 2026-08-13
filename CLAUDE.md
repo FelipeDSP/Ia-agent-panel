@@ -71,6 +71,12 @@ digitar a URL, e uma rota recusada não impede chamar a Server Action, que é
 entrada própria e não passa por página nenhuma. As três precisam da mesma
 checagem — `src/lib/tools/contratacao.ts`, uma verdade e três consumidores.
 
+**"Pode desligar" não é derivado de "é vendida."** `busca_conhecimento` não
+desliga por limitação técnica; `transferir_humano` desliga por escolha de
+negócio, sem ser módulo vendido. São campos separados no registry (`contratavel`,
+`desligavel`), e quem pode desligar tem de aparecer em algum lugar da tela —
+senão é decisão do cliente sem onde ser tomada.
+
 **Onde a declaração mora:** `rotasPainel` no registry (`src/lib/tools/registro.ts`).
 Não em `catalogo_tools` — o painel do cliente não lê aquela tabela (super-only por
 RLS), e pôr regra de exibição dele ali exigiria afrouxar policy para ganhar nada.

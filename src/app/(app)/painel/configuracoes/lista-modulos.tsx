@@ -26,6 +26,65 @@ export type ModuloItem = {
  * revalidate. Se a ação falhar, voltamos ao valor anterior e mostramos o erro —
  * switch que fica ligado sobre um update que não gravou é pior que erro visível.
  */
+/**
+ * Switch de UM módulo, isolado para ter UM ÚNICO escritor de `tenant_tools.ativo`
+ * no lado do cliente.
+ *
+ * Existe separado porque a transferência para humano tem card próprio e o switch
+ * dela mora lá, não na lista. Duplicar a lógica criaria dois escritores — o
+ * problema que já aconteceu quando o formulário da transferência também gravava
+ * `ativo`: salvar o horário revertia o switch em silêncio.
+ *
+ * `aviso` aparece só quando o módulo está LIGADO, porque é o texto que explica o
+ * que se perde ao desligar.
+ */
+export function SwitchModulo({
+  toolNome,
+  rotulo,
+  ativo,
+  aviso,
+}: {
+  toolNome: string;
+  rotulo: string;
+  ativo: boolean;
+  aviso?: string;
+}) {
+  const [pendente, startTransition] = useTransition();
+  const [ligado, setLigado] = useState(ativo);
+  const [erro, setErro] = useState<string | null>(null);
+
+  function alternar(proximo: boolean) {
+    setErro(null);
+    setLigado(proximo);
+    startTransition(async () => {
+      const r = await alternarModulo(toolNome, proximo);
+      if (!r.ok) {
+        setLigado(!proximo);
+        setErro(r.erro);
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {erro ? <Alert variant="destructive">{erro}</Alert> : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label htmlFor={`switch-${toolNome}`} className="cursor-pointer text-sm font-medium">
+          {ligado ? 'Módulo ligado' : 'Módulo desligado'}
+        </label>
+        <Switch
+          id={`switch-${toolNome}`}
+          checked={ligado}
+          onCheckedChange={alternar}
+          disabled={pendente}
+          aria-label={`${ligado ? 'Desligar' : 'Ligar'} ${rotulo}`}
+        />
+      </div>
+      {ligado && aviso ? <p className="text-xs text-muted-foreground">{aviso}</p> : null}
+    </div>
+  );
+}
+
 export function ListaModulos({ modulos }: { modulos: ModuloItem[] }) {
   const [pendente, startTransition] = useTransition();
   const [estado, setEstado] = useState<Record<string, boolean>>(() =>

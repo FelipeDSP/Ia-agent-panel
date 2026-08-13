@@ -90,6 +90,15 @@ Guia prático para provisionar uma capacidade nova do agente (ex.: `agendar_hora
    | Server Action que escreve | `temToolContratada` no início de **cada** action exportada, devolvendo `ERRO_NAO_CONTRATADA` |
    | tabela própria | acrescente em `SUPERFICIE_DE_DADO` (`tests/descontratar-preserva-dado.mjs`) |
    | ícone novo no menu | acrescente ao mapa `ICONES` em `src/components/sidebar.tsx` |
+   | o cliente pode desligar, mas a tool não é vendida | `desligavel: true` no registry |
+
+   Sobre a última linha: **"pode desligar" não sai de "é vendida".** São
+   perguntas diferentes. `busca_conhecimento` não desliga por limitação técnica —
+   agente sem base responde do nada. `transferir_humano` desliga por escolha de
+   negócio — há cliente que não quer receber atendimento transferido em momento
+   nenhum. Ao registrar uma tool, responda as duas separadamente, e lembre que
+   **quem pode desligar tem de aparecer em algum lugar da tela**, senão é decisão
+   sem onde ser tomada.
 
    Nada disso é convenção que dá para esquecer — três checagens reprovam:
 

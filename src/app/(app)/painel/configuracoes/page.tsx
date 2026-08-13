@@ -18,7 +18,7 @@ import {
 
 import { FormularioConfig } from './formulario';
 import { FormularioTransferir } from './formulario-transferir';
-import { ListaModulos } from './lista-modulos';
+import { ListaModulos, SwitchModulo } from './lista-modulos';
 
 export default async function PaginaConfiguracoes() {
   const usuario = await exigirTenantAdmin();
@@ -51,11 +51,11 @@ export default async function PaginaConfiguracoes() {
   // Duas exclusões, uma regra. Não contratado some (nem existe para ele — §5.2).
   // Padrão some também: `busca_conhecimento` e `resolver_conversa` ele não
   // desliga nem configura, então o switch só oferecia uma decisão que não é
-  // dele. Configurável (transferir_humano) não entra nesta lista porque tem card
-  // próprio, com formulário e sem switch.
+  // dele.
   //
-  // Sobra a lista de contratáveis contratados — a única onde o switch representa
-  // uma escolha real.
+  // `transferir_humano` é desligável mas não entra nesta lista: tem card
+  // próprio, e o switch dele mora lá. Item genérico na lista mais card de config
+  // embaixo seria a mesma coisa dita duas vezes.
   const modulos = (tools ?? [])
     .filter((t) => t.contratado && grupoTool(t.tool_nome) === 'contratavel')
     .map((t) => {
@@ -124,7 +124,23 @@ export default async function PaginaConfiguracoes() {
               Defina quando o agente pode passar a conversa para uma pessoa e como você é avisado.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-5">
+            {/* O switch vive AQUI, e não na lista de "Meus módulos": este card já
+                é o lugar do módulo, com nome e explicação. Um item genérico na
+                lista mais um card de config embaixo seria a mesma coisa dita
+                duas vezes. O escritor de `ativo` continua sendo um só
+                (`alternarModulo`, via SwitchModulo). */}
+            <SwitchModulo
+              toolNome={TOOL_TRANSFERIR}
+              rotulo="Transferir para humano"
+              ativo={Boolean(toolTransferir?.ativo)}
+              aviso={
+                'Desligar tira a saída de escape da conversa: quem pedir para falar com uma ' +
+                'pessoa continua conversando com o agente, e a conversa deixa de ser pausada ' +
+                'sozinha — você pausa manualmente em Conversas ou no Chatwoot.'
+              }
+            />
+
             <FormularioTransferir
               ativo={Boolean(toolTransferir?.ativo)}
               horario={horarioTransferir}

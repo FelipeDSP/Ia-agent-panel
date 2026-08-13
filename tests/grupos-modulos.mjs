@@ -45,16 +45,25 @@ function eq(recebido, esperado, descricao) {
 
 console.log('\n=== 1. Classificação das tools registradas ===\n');
 
+// GRUPO e PODE-DESLIGAR são declarados SEPARADOS de propósito.
+//
+// A primeira versão derivava "pode desligar" de "é contratável", e isso estava
+// errado: `transferir_humano` não é vendida e ainda assim é decisão do cliente —
+// há quem não queira receber atendimento transferido em momento nenhum. Ser
+// vendida não responde se pode desligar.
+//
+// Com as duas colunas explícitas, a tabela abaixo é a intenção escrita à mão, e
+// não um eco da implementação.
 const ESPERADO = {
-  busca_conhecimento: 'padrao',
-  resolver_conversa: 'padrao',
-  transferir_humano: 'configuravel',
-  vendas: 'contratavel',
-  transcricao_audio: 'contratavel',
-  foto_produto: 'contratavel',
+  busca_conhecimento: { grupo: 'padrao', podeDesligar: false },
+  resolver_conversa: { grupo: 'padrao', podeDesligar: false },
+  transferir_humano: { grupo: 'configuravel', podeDesligar: true },
+  vendas: { grupo: 'contratavel', podeDesligar: true },
+  transcricao_audio: { grupo: 'contratavel', podeDesligar: true },
+  foto_produto: { grupo: 'contratavel', podeDesligar: true },
 };
 
-for (const [nome, grupo] of Object.entries(ESPERADO)) {
+for (const [nome, { grupo }] of Object.entries(ESPERADO)) {
   eq(grupoTool(nome), grupo, `${nome}`);
 }
 
@@ -90,7 +99,7 @@ ok(clientePodeDesligar('modulo_que_nao_existe'), 'e o cliente pode desligá-la')
 
 console.log('\n=== 3. Exibição: só aparece o que dá para agir ===\n');
 
-for (const [nome, grupo] of Object.entries(ESPERADO)) {
+for (const [nome, { grupo }] of Object.entries(ESPERADO)) {
   ok(
     clienteVeModulo(nome, false) === false,
     `${nome}: não contratado nunca aparece para o cliente`,
@@ -102,24 +111,26 @@ for (const [nome, grupo] of Object.entries(ESPERADO)) {
   );
 }
 
-console.log('\n=== 4. Capacidade: desligar é só de contratável ===\n');
+console.log('\n=== 4. Capacidade: quem o cliente pode desligar ===\n');
 
-for (const [nome, grupo] of Object.entries(ESPERADO)) {
-  eq(
-    clientePodeDesligar(nome),
-    grupo === 'contratavel',
-    `${nome}: pode desligar? (declarado ${grupo})`,
-  );
+for (const [nome, { podeDesligar }] of Object.entries(ESPERADO)) {
+  eq(clientePodeDesligar(nome), podeDesligar, `${nome}: pode desligar?`);
 }
 
-// TELA e SERVIDOR contra a mesma intenção. O filtro do painel monta a lista com
-// `contratado && grupoTool(...) === 'contratavel'`; o guard do alternarModulo
-// chama `clientePodeDesligar`. Se um dia os dois divergirem, aparece switch para
-// algo que o servidor recusa — ou o servidor aceita algo que sumiu da tela.
-for (const [nome, grupo] of Object.entries(ESPERADO)) {
-  const listadoEmMeusModulos = clienteVeModulo(nome, true) && grupoTool(nome) === 'contratavel';
-  eq(listadoEmMeusModulos, grupo === 'contratavel', `${nome}: switch na tela`);
-  eq(clientePodeDesligar(nome), grupo === 'contratavel', `${nome}: servidor aceita desligar`);
+// A PROPRIEDADE QUE LIGA AS DUAS COLUNAS: quem pode desligar tem de aparecer.
+// Um módulo desligável e invisível seria decisão do cliente sem lugar para ele
+// tomar — foi exatamente o buraco que `transferir_humano` caiu quando "pode
+// desligar" saía do grupo: o switch sumiu da tela e ninguém tinha como religar.
+for (const [nome, { podeDesligar }] of Object.entries(ESPERADO)) {
+  if (!podeDesligar) continue;
+  ok(clienteVeModulo(nome, true), `${nome}: é desligável, então aparece quando contratado`);
+}
+
+// TELA e SERVIDOR contra a mesma intenção. O servidor (`alternarModulo`) chama
+// `clientePodeDesligar`; a tela decide onde o switch aparece. Se divergirem,
+// aparece switch que o servidor recusa — ou o servidor aceita o que sumiu.
+for (const [nome, { podeDesligar }] of Object.entries(ESPERADO)) {
+  eq(clientePodeDesligar(nome), podeDesligar, `${nome}: servidor aceita desligar`);
 }
 
 console.log('\n=== 5. Seção do admin abre sozinha quando há anomalia ===\n');

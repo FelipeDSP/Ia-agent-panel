@@ -10,8 +10,22 @@ Três grupos, derivados de `contratavel` + `temConfigCliente` no registry
 | grupo | tools hoje | cliente vê | cliente pode |
 |---|---|---|---|
 | `padrao` | `busca_conhecimento`, `resolver_conversa` | nada | nada |
-| `configuravel` | `transferir_humano` | card de config | horário, canal, destino |
+| `configuravel` | `transferir_humano` | card próprio | configurar **e** desligar |
 | `contratavel` | `vendas`, `transcricao_audio`, `foto_produto` | só se contratado | ligar/desligar |
+
+**"Pode desligar" NÃO é derivado de "é vendida."** São perguntas diferentes, e
+confundi-las foi o defeito da primeira versão: `busca_conhecimento` não desliga
+por limitação técnica (agente sem base responde do nada), `transferir_humano`
+desliga por escolha de negócio (há cliente que não quer receber atendimento
+transferido em momento nenhum). Ser vendida não responde nenhuma das duas.
+
+Por isso `desligavel` é campo próprio no registry, e o teste declara grupo e
+poder-desligar em **colunas separadas** — se saíssem um do outro, a asserção
+seria eco da implementação.
+
+Uma propriedade liga as duas: **quem pode desligar tem de aparecer.** Módulo
+desligável e invisível é decisão do cliente sem lugar para ele tomar — foi
+exatamente onde `transferir_humano` caiu quando o switch sumiu da tela.
 
 ---
 

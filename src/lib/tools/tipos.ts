@@ -84,6 +84,21 @@ export type DefinicaoTool = {
    */
   contratavel?: boolean;
   /**
+   * O cliente pode desligar, mesmo não sendo módulo vendido.
+   *
+   * POR QUE ESTE CAMPO EXISTE SEPARADO. A primeira versão derivava "pode
+   * desligar" de "é vendida", e isso estava errado: são perguntas diferentes.
+   * `busca_conhecimento` não desliga porque o agente sem base responde do nada —
+   * é limitação técnica. `transferir_humano` desliga porque receber conversa é
+   * escolha do negócio: há cliente que não quer que o bot passe atendimento para
+   * ele em momento nenhum. Nenhuma das duas tem a ver com o módulo ser vendido.
+   *
+   * Módulo `contratavel` já é desligável por definição — contratado entra ligado
+   * e o switch é o opt-out. Este campo é para o que NÃO é vendido e ainda assim
+   * é decisão do cliente.
+   */
+  desligavel?: boolean;
+  /**
    * Rotas do painel do cliente que só existem por causa desta tool.
    *
    * Prefixos: `/painel/pedidos` cobre `/painel/pedidos/[id]` também.

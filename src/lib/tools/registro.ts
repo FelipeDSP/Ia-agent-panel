@@ -20,6 +20,10 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
   },
   [TOOL_TRANSFERIR]: {
     nome: TOOL_TRANSFERIR,
+    // Desligável sem ser vendida: há cliente que não quer receber atendimento
+    // transferido em momento nenhum. Ver o efeito no agente no comentário de
+    // `clientePodeDesligar` — desligar isto tira a saída de escape da conversa.
+    desligavel: true,
     rotulo: 'Transferir para humano',
     resumo: 'Encaminha o atendimento a um humano, com horário e aviso configuráveis.',
     temConfigCliente: true,
@@ -162,16 +166,38 @@ export function grupoTool(nome: string): GrupoTool {
 /**
  * Se o CLIENTE pode ligar/desligar o módulo.
  *
+ * DUAS FONTES, e não o grupo. A primeira versão devolvia
+ * `grupo === 'contratavel'`, derivando "pode desligar" de "é vendida" — e as
+ * duas perguntas são diferentes. `busca_conhecimento` não desliga por limitação
+ * técnica (agente sem base responde do nada); `transferir_humano` desliga por
+ * escolha de negócio (há cliente que não quer receber atendimento em momento
+ * nenhum). Ser vendida não decide nenhuma das duas.
+ *
+ * O EFEITO DE DESLIGAR A TRANSFERÊNCIA, para quem for mexer nisto: o agente
+ * perde a saída de escape. Cliente final que insistir em falar com uma pessoa
+ * continua conversando com o bot, e não há mais o caminho que pausava a conversa
+ * automaticamente — pausar passa a ser manual, no painel ou no Chatwoot. É
+ * decisão legítima, e é por isso que a tela avisa antes.
+ *
  * Isto é capacidade, não exibição — e por isso o servidor também consulta esta
  * função, não só a tela. Esconder o botão não é o mesmo que não poder: é a
  * mesma lição do `tool_ativa` que ninguém checava e do `config_tool` que
  * ignorava `contratado`.
  */
 export function clientePodeDesligar(nome: string): boolean {
-  return grupoTool(nome) === 'contratavel';
+  const def = REGISTRO_TOOLS[nome];
+  // Fora do registry cai em contratável (ver `grupoTool`), e contratável é
+  // desligável por definição: contratado entra ligado, o switch é o opt-out.
+  if (!def) return true;
+  return Boolean(def.contratavel) || Boolean(def.desligavel);
 }
 
-/** Se o módulo aparece no painel do cliente. Padrão nunca aparece. */
+/**
+ * Se o módulo aparece no painel do cliente.
+ *
+ * A regra: só aparece o que ele pode agir — configurar OU ligar/desligar. Padrão
+ * não é nenhum dos dois, então nunca aparece.
+ */
 export function clienteVeModulo(nome: string, contratado: boolean): boolean {
   return contratado && grupoTool(nome) !== 'padrao';
 }
