@@ -1538,7 +1538,7 @@
         "description": "Envia a foto de UM produto do catalogo ao cliente, com legenda. Use so quando o cliente pedir para ver o item. Uma foto por vez.",
         "workflowId": {
           "__rl": true,
-          "value": "SUBSTITUIR_ID_ENVIAR_FOTO",
+          "value": "xRGPiuoKtxrrMA6q",
           "mode": "list",
           "cachedResultName": "Tool - Enviar Foto do Produto (Multi-Tenant)"
         },

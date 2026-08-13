@@ -239,6 +239,41 @@ for (const caminho of arquivos) {
     }
   }
 
+  // 7. campo lido do trigger que o trigger nao declara
+  //
+  // POR QUE ISTO EXISTE. O `Envia ao Chatwoot` da tool de foto lia
+  // `account_id` do trigger, e o trigger declarava so tenant_id,
+  // conversation_id e produto_id. O executeWorkflowTrigger com campos definidos
+  // FILTRA a entrada: o que nao esta declarado nao chega do outro lado. A URL
+  // sairia `/api/v1/accounts/undefined/conversations/...` — 404 do Chatwoot na
+  // primeira chamada real da ferramenta, em atendimento.
+  //
+  // Nada pegava: o campo existe no no CHAMADOR (o principal mandava account_id),
+  // a expressao e sintaticamente valida, e o `$('...')` aponta para um no que
+  // existe. So a comparacao entre o que se le e o que se declara acha.
+  //
+  // Vale so quando ha campos declarados. Em modo passthrough nao ha filtro, e
+  // entao nao ha o que conferir.
+  for (const t of nodes.filter((n) => n.type === 'n8n-nodes-base.executeWorkflowTrigger')) {
+    const valores = t.parameters?.workflowInputs?.values;
+    if (!Array.isArray(valores) || valores.length === 0) continue;
+    const declarados = new Set(valores.map((v) => v.name));
+
+    const esc = t.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(
+      `\\$\\('${esc}'\\)(?:\\.(?:item|first\\(\\)|last\\(\\)|all\\(\\)\\[\\d+\\]))?\\.json\\.(\\w+)`,
+      'g'
+    );
+    for (const m of new Set([...bruto.matchAll(re)].map((x) => x[1]))) {
+      if (!declarados.has(m)) {
+        problemas.push(
+          `campo "${m}" lido de $('${t.name}') mas nao declarado no trigger — `
+          + `o trigger filtra a entrada, chegaria undefined (declarados: ${[...declarados].join(', ')})`
+        );
+      }
+    }
+  }
+
   if (problemas.length === 0) {
     console.log(`  OK — ${nodes.length} nos, nenhum problema conhecido`);
   } else {

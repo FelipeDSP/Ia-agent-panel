@@ -36,10 +36,11 @@ const w = JSON.parse(fs.readFileSync(ARQ, 'utf8'));
 
 const no = (nome) => w.nodes.find((n) => n.name === nome);
 const CRED_PG = { postgres: { id: 'MehTUROZlPmHG8kW', name: 'Agent ia Supabase' } };
-// Preenchido quando o sub-workflow de foto for importado no n8n. Ate la o
-// n8n-validar RECUSA o arquivo — de proposito: na fatia 2 um placeholder foi
-// parar no workflow ativo e so quebrou quando o modelo chamou a tool.
-const ID_TOOL_FOTO = 'SUBSTITUIR_ID_ENVIAR_FOTO';
+// ID do sub-workflow "Tool - Enviar Foto do Produto (Multi-Tenant)", importado
+// na instancia em 13/08/2026. Enquanto foi placeholder o n8n-validar recusava o
+// arquivo de proposito — na fatia 2 um `SUBSTITUIR_ID_*` foi parar no workflow
+// ativo e so quebrou quando o modelo chamou a tool, em runtime.
+const ID_TOOL_FOTO = 'xRGPiuoKtxrrMA6q';
 
 const idDe = (s) => s.padEnd(36, '0').slice(0, 36);
 

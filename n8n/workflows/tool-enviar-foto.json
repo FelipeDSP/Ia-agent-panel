@@ -9,7 +9,12 @@
               "name": "tenant_id"
             },
             {
-              "name": "conversation_id"
+              "name": "conversation_id",
+              "type": "number"
+            },
+            {
+              "name": "account_id",
+              "type": "number"
             },
             {
               "name": "produto_id"
@@ -145,7 +150,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Pode Enviar?').first().json.chatwoot_url }}/api/v1/accounts/{{ $('When Executed by Another Workflow').first().json.account_id ?? $('Pode Enviar?').first().json.chatwoot_account_id }}/conversations/{{ $('When Executed by Another Workflow').first().json.conversation_id }}/messages",
+        "url": "={{ $('Pode Enviar?').first().json.chatwoot_url }}/api/v1/accounts/{{ $('When Executed by Another Workflow').first().json.account_id }}/conversations/{{ $('When Executed by Another Workflow').first().json.conversation_id }}/messages",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

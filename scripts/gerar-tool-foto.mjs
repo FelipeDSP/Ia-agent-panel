@@ -63,8 +63,22 @@ const idDe = (s) => s.toLowerCase().replace(/[^a-z]+/g, '-').padEnd(36, '0').sli
 const nodes = [
   {
     parameters: {
+      // `account_id` DECLARADO, e nao herdado. O trigger com campos definidos
+      // FILTRA o que chega: campo nao declarado nao aparece do outro lado. Sem
+      // esta linha a URL do Chatwoot sairia `/accounts/undefined/` na primeira
+      // chamada real — e o fallback que eu tinha escrito apontava para
+      // `chatwoot_account_id` vindo do `Pode Enviar?`, coluna que a
+      // `api_n8n_enviar_foto` nao devolve. Falso conforto: nao salvaria nada.
+      //
+      // Vem do fluxo (webhook do Chatwoot), como nas outras duas tools que
+      // chamam a API — nunca do modelo.
       workflowInputs: {
-        values: [{ name: 'tenant_id' }, { name: 'conversation_id' }, { name: 'produto_id' }],
+        values: [
+          { name: 'tenant_id' },
+          { name: 'conversation_id', type: 'number' },
+          { name: 'account_id', type: 'number' },
+          { name: 'produto_id' },
+        ],
       },
     },
     type: 'n8n-nodes-base.executeWorkflowTrigger',
@@ -165,8 +179,7 @@ const nodes = [
       method: 'POST',
       url:
         "={{ $('Pode Enviar?').first().json.chatwoot_url }}/api/v1/accounts/"
-        + "{{ $('When Executed by Another Workflow').first().json.account_id "
-        + "?? $('Pode Enviar?').first().json.chatwoot_account_id }}/conversations/"
+        + "{{ $('When Executed by Another Workflow').first().json.account_id }}/conversations/"
         + "{{ $('When Executed by Another Workflow').first().json.conversation_id }}/messages",
       sendHeaders: true,
       headerParameters: {

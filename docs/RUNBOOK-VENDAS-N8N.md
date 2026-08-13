@@ -426,3 +426,234 @@ npm run teste:migracao-audio   # 31/32/33 aplicam e revertem
 node scripts/n8n-validar.mjs n8n/workflows/*.json
 ```
 
+---
+---
+
+# Foto do produto — importar e testar
+
+56 nós no principal, mais um sub-workflow de 8.
+
+**A Acqua roda neste workflow** e não contrata foto nem vendas. O nó novo está
+pendurado **só** no `AI Agent Vendas`; o caminho dela não passa por lá.
+
+## O que já está feito (não refazer)
+
+| item | estado |
+|---|---|
+| migração 34 — `produtos.foto_path` + bucket `produto-fotos` | aplicada, ledger `20260812192741` |
+| migração 35 — `fotos_enviadas` + `api_n8n_enviar_foto` + catálogo | aplicada, ledger `20260812210742` |
+| UI de upload no painel (cliente) | no repo |
+| sub-workflow importado | ID `xRGPiuoKtxrrMA6q` |
+
+Confira as duas migrações sem aplicar nada (rodam em transação abortada):
+
+```bash
+npm run teste:migracao-foto   # 23 checagens
+npm run teste:fotos           # 17 checagens de isolamento, incluindo URL direta
+```
+
+---
+
+## Passo F0 — publicar a Edge Function e o segredo
+
+**É pré-requisito do sub-workflow**: sem ela o `Assina URL` devolve erro e a foto
+nunca sai do Storage.
+
+```bash
+supabase functions deploy foto-produto --no-verify-jwt
+supabase secrets set FOTO_SECRET=<32+ caracteres aleatórios>
+```
+
+O `--no-verify-jwt` é proposital: quem chama é o n8n, que não tem JWT de usuário.
+O portão é o header `x-foto-secret`, mesmo padrão do `processar-ingestao`, com
+segredo **próprio** — dar o `INGESTAO_SECRET` ao n8n permitiria a ele disparar
+ingestão, que não é da conta dele.
+
+A função é **fail-closed contra misconfig**: segredo ausente ou com menos de 24
+caracteres fecha o portão em vez de abrir. Se esquecer o `secrets set`, o sintoma
+é 401 em toda chamada — não é um buraco silencioso.
+
+## Passo F1 — as duas variáveis no n8n
+
+O sub-workflow lê `$env.SUPABASE_URL` e `$env.FOTO_SECRET`:
+
+```
+SUPABASE_URL = https://owxnjugkvnjbjkczzasm.supabase.co
+FOTO_SECRET  = <o mesmo valor do secrets set>
+```
+
+**Exige restart da instância** — variável de ambiente não entra a quente. E é o
+**primeiro uso de `$env` neste projeto**: se a instância tiver
+`N8N_BLOCK_ENV_ACCESS_IN_NODE=true`, as expressões voltam vazias e o `Assina URL`
+chama `undefined/functions/v1/foto-produto`. O default do n8n é `false` (acesso
+liberado), então só é problema se alguém tiver mudado.
+
+Sintoma de cada erro, para não confundir os dois:
+
+| o que aparece | causa |
+|---|---|
+| URL da requisição começa com `undefined` | `$env` bloqueado, ou variável não setada |
+| 401 no `Assina URL` | segredo diferente entre Supabase e n8n, ou menor que 24 chars |
+| 404 no `Assina URL` | `foto_path` aponta para arquivo que não existe mais no Storage |
+
+---
+
+## Passo F2 — reimportar o sub-workflow
+
+**Sim, de novo.** A versão importada em 13/08 tinha o trigger declarando só
+`tenant_id`, `conversation_id` e `produto_id`, e o `Envia ao Chatwoot` lia
+`account_id` dele. O trigger com campos definidos **filtra a entrada**: o que não
+está declarado não chega. A URL sairia
+`/api/v1/accounts/undefined/conversations/…` — 404 do Chatwoot na primeira
+chamada real da ferramenta, em atendimento.
+
+Reimporte `n8n/workflows/tool-enviar-foto.json` **por cima do mesmo workflow**
+(abrir `xRGPiuoKtxrrMA6q` → **⋯** → **Import from File**). Importar como novo
+geraria ID novo e o principal deixaria de apontar para o certo.
+
+Confira a credencial `Agent ia Supabase` no `Pode Enviar?`.
+
+A checagem que faltava agora está no validador (`n8n-validar`, item 7): campo
+lido do trigger que o trigger não declara.
+
+## Passo F3 — importar o principal
+
+1. **⋯** → **Download** do `Agente Multi-Tenant (Supabase)`, guardado fora do
+   repo. É o rollback.
+2. **⋯** → **Import from File** → `n8n/workflows/agente-principal.json`
+3. **Save** pelo botão (`Ctrl+S` não persiste)
+4. **Recarregue** e confirme **56 nós** e o `Enviar Foto do Produto` ligado
+   **só** ao `AI Agent Vendas`
+5. No nó, confirme que o campo **Workflow** mostra
+   `Tool - Enviar Foto do Produto (Multi-Tenant)` e não um ID solto
+
+---
+
+## Passo F4 — provar a trava ANTES de contratar para alguém
+
+A ordem do sub-workflow é `Pode Enviar?` → `Permitido?` **antes** de qualquer
+byte sair do Storage e antes de qualquer chamada ao Chatwoot. Mesma exigência que
+o `teste:trava-vendas` faz das tools de venda.
+
+No `xRGPiuoKtxrrMA6q` → **Execute Workflow**, com o `tenant_id` da **Acqua** e um
+`produto_id` qualquer:
+
+**Esperado:** `Permitido?` cai no ramo falso, `Resposta ao Agente` devolve o texto
+de `nao_contratado`, e **`Assina URL`, `Baixa Foto` e `Envia ao Chatwoot` ficam
+cinzentos**. Se algum deles executar, pare — é vazamento, não comportamento.
+
+Confirme pelo banco que a tentativa **foi registrada mesmo recusada**:
+
+```sql
+select tenant_id, conversation_id, permitido, motivo, criado_em
+  from public.fotos_enviadas
+ order by criado_em desc limit 5;
+```
+
+Recusa registrada é o único jeito de saber depois que a trava está trabalhando.
+Uma tabela que só guarda o que passou responde "quantas fotos foram enviadas" e
+não responde "quantas vezes o modelo tentou mandar cinco".
+
+## Passo F5 — contratar para o restaurante-teste
+
+**Nunca a Acqua.** Admin → cliente → Módulos → **Enviar foto do produto** para
+`restaurante-teste`.
+
+**Contrate Vendas junto, se não estiver.** A tool recebe `produto_id`, e o único
+jeito de o agente ter um `produto_id` é o `consultar_catalogo`, que pertence a
+Vendas. Foto sem Vendas não quebra nada — só não serve para nada. A tela de
+Módulos do admin avisa; não bloqueia.
+
+## Passo F6 — subir uma foto pelo painel
+
+Quem sobe é **o cliente**, na tela de Catálogo — mesmo lugar onde ele já edita
+nome, preço e disponibilidade.
+
+O navegador redimensiona antes de enviar (lado maior 1024px, qualidade 0.8) e o
+bucket recusa acima de 512 KB. Uma foto de celular de 4 MB passa; o que chega ao
+Storage tem uns 150 KB.
+
+Confira que o arquivo caiu na pasta certa:
+
+```sql
+select nome, foto_path from public.produtos
+ where tenant_id = '<restaurante-teste>' and foto_path is not null;
+```
+
+O `foto_path` **tem que começar com o `tenant_id` seguido de barra** — é o que a
+Edge Function exige e o que as policies de Storage impõem.
+
+---
+
+## Passo F7 — o teste de ponta a ponta
+
+Pelo WhatsApp de teste: *"me manda a foto do X"*.
+
+Percorra a execução do sub-workflow:
+
+1. `Pode Enviar?` devolve `permitido: true` **e** `chatwoot_url` / `chatwoot_token`
+   preenchidos — a função só entrega credencial quando autoriza
+2. `Assina URL` devolve uma URL com `token=` (validade 60s)
+3. `Baixa Foto` traz o binário em `data`
+4. `Envia ao Chatwoot` responde **200** (não 422 — 422 é o sintoma de mandar
+   `data_url` no corpo em vez dos bytes)
+5. A imagem chega **com a legenda na mesma mensagem**, não em duas
+
+### Os quatro ramos que precisam ser exercitados
+
+| caso | como provocar | esperado |
+|---|---|---|
+| foto normal | pedir um item que tem foto | imagem + legenda numa mensagem |
+| item sem foto | pedir um item sem foto cadastrada | diz que não há imagem **desse** item, sem prometer enviar depois |
+| segunda foto seguida | pedir duas fotos no mesmo turno | a segunda é recusada por `janela`; o agente **não** pede desculpa nem tenta de novo |
+| não contratado | descontratar e pedir foto | diz que não consegue mandar imagem e segue por texto |
+
+O terceiro é o que a migração 35 existe para provar. O texto da recusa é
+deliberadamente instrutivo: sem ele o modelo tende a se desculpar e tentar de
+novo, que é exatamente o burst que a janela existe para conter.
+
+## Passo F8 — calibrar a janela
+
+A janela é **30 segundos**, chute inicial, configurável por tenant em
+`tenant_tools.config -> janela_foto_segundos`. Depois de algumas conversas reais:
+
+```sql
+select motivo, count(*), min(criado_em), max(criado_em)
+  from public.fotos_enviadas
+ where tenant_id = '<tenant>' and not permitido
+ group by motivo;
+```
+
+- **Muito `janela`** → ou o modelo está insistindo (problema de prompt) ou o
+  cliente pede fotos em sequência legítima (problema de janela). Olhe a conversa
+  antes de mexer no número.
+- **Nenhum `janela`** → a regra de prompt está segurando sozinha. A trava
+  continua valendo como teto; não a remova por estar quieta.
+
+`fotos_enviadas` é por conversa, não por tenant: dois clientes pedindo foto ao
+mesmo tempo não interferem um no outro. E **só envio permitido conta** — se
+recusa contasse, um burst de cinco empurraria a janela a cada tentativa e o
+"sim, manda a outra" legítimo nunca passaria.
+
+---
+
+## Se der errado
+
+Reimporte o JSON baixado no passo F3, item 1. O nó de foto some do modelo; nada mais é
+afetado, porque as migrações 34 e 35 são aditivas e não tocam em nada que já
+existia.
+
+Para desligar sem reimportar: descontrate **Enviar foto do produto** na tela de
+Módulos. O `api_n8n_enviar_foto` passa a devolver `nao_contratado` e o efeito é
+imediato — a decisão é do banco, não do workflow.
+
+## Conferência rápida
+
+```bash
+npm run n8n:sincronia          # 59 checagens, 10 delas da fatia de foto
+npm run teste:fotos            # isolamento de Storage entre os 3 tenants
+npm run teste:migracao-foto    # 34 e 35 aplicam e revertem
+npm run teste:trava-vendas     # a dependência com vendas segue coerente
+node scripts/n8n-validar.mjs n8n/workflows/*.json
+```
+
