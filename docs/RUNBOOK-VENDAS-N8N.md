@@ -491,13 +491,25 @@ de todo cliente do painel usa) e o segredo é credencial do n8n:
 5. Depois do import, abra o `Assina URL` e confirme que a credencial está
    selecionada — **credencial não vai no export**, igual ao `Transcreve`
 
+**O campo `Name` é o que erra na prática.** Na primeira montagem ele ficou
+`X-api-key` — o valor do segredo estava certo, viajando no envelope errado. A
+função lê `req.headers.get('x-foto-secret')`, recebe `null` e recusa antes de
+comparar. Se reaproveitar uma credencial Header Auth existente, **crie uma nova
+em vez de editar**: trocar o `Name` de uma credencial compartilhada quebra o
+outro uso, calado.
+
 Sintoma de cada erro, para não confundir:
 
 | o que aparece | causa |
 |---|---|
-| 401 no `Assina URL` | credencial não selecionada, ou valor diferente do secret do Supabase, ou menor que 24 chars |
+| `401 - {"erro":"Nao autorizado."}` | é a **nossa** função respondendo: `Name` da credencial diferente de `x-foto-secret`, ou valor diferente do secret, ou valor com menos de 24 chars |
+| `401 - {"code":401,"message":"Missing authorization header"}` | é o **gateway** do Supabase: a função foi publicada sem `--no-verify-jwt` |
 | 404 no `Assina URL` | `foto_path` aponta para arquivo que não existe mais no Storage |
 | `Invalid URL` no `Assina URL` | alguém reintroduziu `$env` — o `n8n-validar` recusa isso hoje (item 8) |
+
+O corpo da resposta distingue os dois 401 sem precisar abrir log nenhum: se vier
+o texto em português, a requisição chegou na função e o problema é o segredo; se
+vier o JSON do Supabase, ela nem foi executada.
 
 ---
 
