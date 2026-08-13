@@ -473,28 +473,31 @@ A função é **fail-closed contra misconfig**: segredo ausente ou com menos de 
 caracteres fecha o portão em vez de abrir. Se esquecer o `secrets set`, o sintoma
 é 401 em toda chamada — não é um buraco silencioso.
 
-## Passo F1 — as duas variáveis no n8n
+## Passo F1 — a credencial do segredo no n8n
 
-O sub-workflow lê `$env.SUPABASE_URL` e `$env.FOTO_SECRET`:
+**Nenhuma variável de ambiente, nenhum restart.** A primeira versão lia
+`$env.SUPABASE_URL` e `$env.FOTO_SECRET` e morreu na primeira execução real
+(3959461): as duas voltaram vazias, a URL virou `/functions/v1/foto-produto` e o
+nó recusou. Variável ausente não dá erro de acesso — resolve para `undefined`,
+calada, e só aparece em runtime.
 
-```
-SUPABASE_URL = https://owxnjugkvnjbjkczzasm.supabase.co
-FOTO_SECRET  = <o mesmo valor do secrets set>
-```
+Hoje a URL do projeto está cravada no JSON (é pública — a mesma que o navegador
+de todo cliente do painel usa) e o segredo é credencial do n8n:
 
-**Exige restart da instância** — variável de ambiente não entra a quente. E é o
-**primeiro uso de `$env` neste projeto**: se a instância tiver
-`N8N_BLOCK_ENV_ACCESS_IN_NODE=true`, as expressões voltam vazias e o `Assina URL`
-chama `undefined/functions/v1/foto-produto`. O default do n8n é `false` (acesso
-liberado), então só é problema se alguém tiver mudado.
+1. **Credentials → Add credential → Header Auth**
+2. Nome da credencial: `Foto Produto - x-foto-secret`
+3. **Name:** `x-foto-secret`
+4. **Value:** o mesmo valor do `supabase secrets set FOTO_SECRET`
+5. Depois do import, abra o `Assina URL` e confirme que a credencial está
+   selecionada — **credencial não vai no export**, igual ao `Transcreve`
 
-Sintoma de cada erro, para não confundir os dois:
+Sintoma de cada erro, para não confundir:
 
 | o que aparece | causa |
 |---|---|
-| URL da requisição começa com `undefined` | `$env` bloqueado, ou variável não setada |
-| 401 no `Assina URL` | segredo diferente entre Supabase e n8n, ou menor que 24 chars |
+| 401 no `Assina URL` | credencial não selecionada, ou valor diferente do secret do Supabase, ou menor que 24 chars |
 | 404 no `Assina URL` | `foto_path` aponta para arquivo que não existe mais no Storage |
+| `Invalid URL` no `Assina URL` | alguém reintroduziu `$env` — o `n8n-validar` recusa isso hoje (item 8) |
 
 ---
 
@@ -511,7 +514,12 @@ Reimporte `n8n/workflows/tool-enviar-foto.json` **por cima do mesmo workflow**
 (abrir `xRGPiuoKtxrrMA6q` → **⋯** → **Import from File**). Importar como novo
 geraria ID novo e o principal deixaria de apontar para o certo.
 
-Confira a credencial `Agent ia Supabase` no `Pode Enviar?`.
+Confira **duas** credenciais depois do import:
+
+| nó | credencial |
+|---|---|
+| `Pode Enviar?` | `Agent ia Supabase` (Postgres) |
+| `Assina URL` | `Foto Produto - x-foto-secret` (Header Auth, passo F1) |
 
 A checagem que faltava agora está no validador (`n8n-validar`, item 7): campo
 lido do trigger que o trigger não declara.

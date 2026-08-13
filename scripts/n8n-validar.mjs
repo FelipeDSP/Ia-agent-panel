@@ -274,6 +274,34 @@ for (const caminho of arquivos) {
     }
   }
 
+  // 8. `$env` nao e usado neste projeto
+  //
+  // POR QUE ISTO EXISTE. O `Assina URL` da tool de foto nasceu lendo
+  // `$env.SUPABASE_URL` e `$env.FOTO_SECRET`. Na primeira execucao real
+  // (3959461) as duas voltaram vazias: a URL virou `/functions/v1/foto-produto`
+  // e o no recusou. As variaveis nunca tinham sido setadas no processo do n8n.
+  //
+  // O modo de falhar e o problema, nao o esquecimento. Variavel ausente NAO da
+  // erro de acesso — resolve para `undefined`, calada. O import passa, o
+  // validador passava, o canvas fica verde, e a quebra chega em runtime, na
+  // primeira vez que um cliente pede a foto. Um segredo vazio ainda e pior:
+  // vira 401 no meio de um atendimento em vez de erro na hora de configurar.
+  //
+  // A alternativa que este projeto usa: URL publica cravada no JSON (o arquivo
+  // ja e especifico da instancia — crava id de credencial e de sub-workflow), e
+  // segredo em credencial do n8n, que sobrevive a redeploy e nao exige restart
+  // da instancia compartilhada com a producao.
+  //
+  // Se um dia houver uso legitimo de `$env`, a regra certa nao e liberar geral:
+  // e exigir que a expressao tenha fallback visivel, para nao existir caminho em
+  // que `undefined` siga adiante fingindo ser valor.
+  for (const m of new Set([...bruto.matchAll(/\$env\.(\w+)/g)].map((x) => x[1]))) {
+    problemas.push(
+      `usa $env.${m} — variavel ausente resolve para undefined em silencio e so quebra em runtime; `
+      + 'crave o que e publico e ponha o que e segredo numa credencial do n8n'
+    );
+  }
+
   if (problemas.length === 0) {
     console.log(`  OK — ${nodes.length} nos, nenhum problema conhecido`);
   } else {

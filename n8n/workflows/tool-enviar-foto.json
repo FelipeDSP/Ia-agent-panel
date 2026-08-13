@@ -95,14 +95,12 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.SUPABASE_URL }}/functions/v1/foto-produto",
+        "url": "https://owxnjugkvnjbjkczzasm.supabase.co/functions/v1/foto-produto",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "x-foto-secret",
-              "value": "={{ $env.FOTO_SECRET }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
@@ -123,7 +121,13 @@
       ],
       "id": "assina-url00000000000000000000000000",
       "name": "Assina URL",
-      "notes": "O n8n nao tem credencial de Storage, e pôr service_role aqui daria a ele o banco inteiro — o oposto da migracao 21. A Edge Function assina so dentro da pasta do tenant, e a URL vive 60s: o unico consumidor e o proximo no.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "FOTO_SECRET_HEADER",
+          "name": "Foto Produto - x-foto-secret"
+        }
+      },
+      "notes": "O n8n nao tem credencial de Storage, e pôr service_role aqui daria a ele o banco inteiro — o oposto da migracao 21. A Edge Function assina so dentro da pasta do tenant, e a URL vive 60s: o unico consumidor e o proximo no. O segredo e credencial Header Auth, nao variavel de ambiente: variavel nao setada resolve para undefined em silencio (execucao 3959461).",
       "notesInFlow": true
     },
     {

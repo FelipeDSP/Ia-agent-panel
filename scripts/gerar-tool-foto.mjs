@@ -41,6 +41,25 @@ const FONTE = path.join(RAIZ, 'n8n', 'enviar-foto-resposta.js');
 
 const CRED_PG = { postgres: { id: 'MehTUROZlPmHG8kW', name: 'Agent ia Supabase' } };
 
+// ZERO `$env`. A primeira versao lia `$env.SUPABASE_URL` e `$env.FOTO_SECRET`, e
+// morreu na primeira execucao real (3959461): as duas voltaram vazias, a URL
+// virou `/functions/v1/foto-produto` e o no recusou. Nao houve erro de acesso
+// negado — variavel nao setada resolve para `undefined`, calada, e so aparece em
+// runtime. Nem o import nem o validador tinham como ver.
+//
+// A URL do projeto NAO e segredo: e a mesma que o navegador de todo cliente do
+// painel usa (NEXT_PUBLIC_SUPABASE_URL). Cravar aqui e coerente com o resto do
+// arquivo, que ja crava id de credencial e id de sub-workflow — este JSON e
+// especifico da instancia por natureza.
+//
+// O SEGREDO vira credencial Header Auth do proprio n8n. Ganha tres coisas que a
+// variavel de ambiente nao dava: nao exige restart da instancia (que e
+// compartilhada com a producao), sobrevive a redeploy do container, e nunca
+// aparece nos dados da execucao. Credencial nao vai no export — e por isso que o
+// runbook manda conferir depois do import, como ja manda para o `Transcreve`.
+const URL_SUPABASE = 'https://owxnjugkvnjbjkczzasm.supabase.co';
+const CRED_FOTO = { httpHeaderAuth: { id: 'FOTO_SECRET_HEADER', name: 'Foto Produto - x-foto-secret' } };
+
 // Layout preservado como no gerador do principal: se o arquivo ja existe, o
 // canvas manda. Coordenadas abaixo valem so na primeira geracao.
 const LAYOUT = fs.existsSync(ARQ)
@@ -136,13 +155,12 @@ const nodes = [
   {
     parameters: {
       method: 'POST',
-      url: '={{ $env.SUPABASE_URL }}/functions/v1/foto-produto',
+      url: `${URL_SUPABASE}/functions/v1/foto-produto`,
+      authentication: 'genericCredentialType',
+      genericAuthType: 'httpHeaderAuth',
       sendHeaders: true,
       headerParameters: {
-        parameters: [
-          { name: 'x-foto-secret', value: '={{ $env.FOTO_SECRET }}' },
-          { name: 'Content-Type', value: 'application/json' },
-        ],
+        parameters: [{ name: 'Content-Type', value: 'application/json' }],
       },
       sendBody: true,
       contentType: 'raw',
@@ -157,10 +175,12 @@ const nodes = [
     position: [1056, 304],
     id: idDe('assina-url'),
     name: 'Assina URL',
+    credentials: CRED_FOTO,
     notes:
       'O n8n nao tem credencial de Storage, e pôr service_role aqui daria a ele o banco inteiro — '
       + 'o oposto da migracao 21. A Edge Function assina so dentro da pasta do tenant, e a URL vive '
-      + '60s: o unico consumidor e o proximo no.',
+      + '60s: o unico consumidor e o proximo no. O segredo e credencial Header Auth, nao variavel '
+      + 'de ambiente: variavel nao setada resolve para undefined em silencio (execucao 3959461).',
     notesInFlow: true,
   },
   {
