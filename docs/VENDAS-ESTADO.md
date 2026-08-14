@@ -3,7 +3,38 @@
 Documento vivo. Registra o que já foi decidido sobre o agente vender, para não
 reabrir discussão a cada retomada.
 
-Última atualização: 11/08/2026 · Nada implementado ainda.
+Última atualização: 14/08/2026.
+
+## Onde isto está agora
+
+**O agente vende.** Catálogo, pedido, fechamento e as tools no workflow estão em
+produção, exercitados com cliente de teste. O que falta para virar receita é
+**pagamento**, e o gargalo dele é contratual, não técnico.
+
+Entregue e em produção:
+
+| fatia | o que faz |
+|---|---|
+| **Catálogo** | produtos por tenant, tela no painel, preço como fonte única |
+| **Pedido** | rascunho → aguardando_pagamento, itens com snapshot de preço, total no servidor |
+| **Tools por perfil** | dois AI Agents (básico / vendas); quem não contratou vendas não carrega o schema das 4 tools |
+| **Transcrição de áudio** | nota de voz vira texto antes do agente, com `audio_segundos` cobrado à parte |
+| **Foto de produto** | agente envia foto do item pelo Chatwoot, com trava de janela |
+
+Fechado nesta rodada, fora de vendas mas encostado nela: billing idempotente nos
+dois caminhos (mensagem e ingestão), expiração de pedido não pago e de job
+preso, e o ledger de migrações reconciliado.
+
+**O que falta exercitar:** três ramos da foto nunca rodaram — item sem foto,
+módulo não contratado, e **duas fotos no mesmo turno**. O terceiro é o único que
+testa código que existe só para ele (a recusa por `janela`). É conversa de dois
+minutos no WhatsApp de teste, não é código.
+
+**A decisão mais cara em aberto não é técnica.** O contrato BaaS do Asaas traz
+responsabilidade **solidária e irrevogável** pelos impactos financeiros dos
+clientes finais — chargeback, estorno, saldo negativo — e multas de R$ 20 mil a
+R$ 500 mil por infração. Isso precisa entrar no preço do módulo de vendas e nos
+critérios de quem pode contratá-lo, **antes de assinar**. Ver "Pagamento".
 
 ## Escopo do lançamento
 
@@ -30,9 +61,11 @@ no servidor. Se o LLM puder informar preço, um cliente insistente consegue
 desconto: o modelo cede para ser prestativo.
 
 **2. O pedido mora no banco, não na memória.**
-`memoryRedisChat` está com `contextWindowLength` no default (5). Quatro trocas e
-o carrinho evaporaria. Toda tool que mexe no pedido devolve **o carrinho inteiro
-em texto**, o que reinjeta o estado a cada turno.
+`memoryRedisChat` está em `contextWindowLength: 20` (subiu de 5 na fatia 2), mas
+a trava não depende disso: toda tool que mexe no pedido devolve **o carrinho
+inteiro em texto**, o que reinjeta o estado a cada turno. Se a janela voltasse a
+5, o pedido continuaria de pé — é essa independência que é a trava, não o
+número.
 
 Mesmo princípio do `tenant_id`, que já vem do webhook e nunca do LLM:
 **o LLM decide o quê, o servidor decide quanto.**
@@ -90,10 +123,13 @@ ninguém pediu.
 
 ## Modelo de dados
 
-`produtos`, `pedidos`, `pedido_itens`. Rascunho em `vendas_core.sql` (fora do
-repo) — precisa de ajuste ao padrão do projeto antes de virar migração:
-`deletado_em` em vez de `ativo`, grant só para `n8n_agent`, par `_rollback.sql`,
-nome batendo com o ledger.
+`produtos`, `pedidos`, `pedido_itens`. **Aplicado** — migrações 23 a 28, mais a
+38 (expiração). O rascunho `vendas_core.sql` ficou fora do repo e **não é fonte
+de nada**: o que sobreviveu dele foi ajustado ao padrão do projeto e o que não
+sobreviveu não existe. Um exemplo do segundo caso custou uma investigação:
+`api_n8n_expirar_pedidos` estava lá, nunca virou migração, e só o estado
+`expirado` chegou à CHECK — um estado que nada escrevia, até a migração 38.
+Ao procurar algo "que a gente já escreveu", confira no banco, não no rascunho.
 
 Decisões de modelagem:
 - Dinheiro em **integer de centavos**, nunca float
@@ -225,15 +261,21 @@ variacoes = {
 A coluna `variacoes jsonb` continua em `produtos` desde a migração 23, vazia e
 sem UI. Não atrapalha e evita uma migração quando o gatilho vier.
 
-### Foto de produto — transporte VERIFICADO, implementação junto com `variacoes`
+### Foto de produto — ENTREGUE e em produção
 
-Testado em 11/08/2026 contra o sandbox real (ChatYou, `chatwoot_account_id = 1`,
-inbox "WA - Testes", conversa 1864), com recebimento confirmado no aparelho.
-**Nada implementado** — a decisão de modelo espera `variacoes`, pelo motivo no
-fim desta seção.
+Transporte verificado em 11/08/2026 contra o sandbox real (ChatYou,
+`chatwoot_account_id = 1`, inbox "WA - Testes", conversa 1864). Implementada e
+no ar desde 13/08: o agente envia a foto do item pelo Chatwoot, com trava de
+janela para não disparar várias na mesma conversa.
 
-**Assunto fechado por ora.** O transporte está resolvido e não precisa de mais
-investigação para começar a fatia 2.
+O que segue abaixo é o registro do que o teste de transporte respondeu — vale
+como referência de por que o multipart é obrigatório e por que `data_url` no
+corpo não funciona. **Uma foto por produto**, e o motivo está em "Foto por
+variação, quando `variacoes` entrar".
+
+**O que ainda não foi exercitado:** item sem foto, módulo não contratado, e duas
+fotos no mesmo turno. O terceiro é o único que testa código escrito só para ele
+(a recusa por `janela`), e por isso é o que importa.
 
 #### O que o teste respondeu
 
@@ -300,13 +342,18 @@ TXT (migração 14). Foto precisa de bucket novo — o MIME type não bate. O pa
 de path a seguir é o de lá: `{tenant_id}/{uuid}.{ext}`, com RLS de Storage
 escopando por tenant.
 
-#### Por que não implementar agora
+#### Foto por variação, quando `variacoes` entrar
 
-A saída natural é `fotos jsonb` em `produtos`, uma lista de paths. Funciona até
-chegar o pedido óbvio seguinte, que é **foto por variação** — camisa azul e
-vermelha não mostram a mesma imagem. Como `variacoes` está em aberto (seção
-acima), fazer foto agora e variação depois obriga a remodelar foto. **As duas se
-desenham juntas, na fatia 2.**
+Hoje é **uma foto por produto**, e foi decisão consciente de não esperar
+`variacoes` para entregar o caso comum.
+
+O pedido óbvio seguinte é **foto por variação** — camisa azul e vermelha não
+mostram a mesma imagem. Quando `variacoes` entrar (gatilho na seção acima), a
+foto será remodelada junto: o custo dessa remodelagem foi aceito de propósito,
+em troca de o restaurante ter foto de prato agora.
+
+A saída natural na hora será `fotos jsonb` em `produtos` ou na variação, uma
+lista de paths. Não vale desenhar antes — `variacoes` é que decide a forma.
 
 #### Exclusão — decidido: o arquivo fica
 
@@ -391,9 +438,27 @@ cancelar_pedido                                             +4
 porque o endgame é refatoração do fluxo principal e não cabe junto com a
 entrega de vendas — misturar as duas tornaria impossível saber o que quebrou.
 
-**Fatia 3 é o endgame.** Ele também resolve, de graça, a consolidação: com tools
-montadas por tenant, separar `adicionar_item` de `remover_item` volta a custar
-zero para quem não vende.
+### O que a fatia 3 ENTREGOU — e por que não foi o endgame
+
+**Entregue: dois AI Agents, um por perfil**, roteados por Switch (`Vende?`).
+Quem não contratou vendas cai no agente básico e não carrega o schema das 4
+tools de venda em nenhuma mensagem — que é o custo que `tool_ativa` não cobria,
+porque ele bloqueia o EFEITO, não o CUSTO.
+
+**Não foi a montagem dinâmica descrita acima, e o motivo é do n8n, não de
+escopo:** as conexões `ai_tool` são **estáticas na definição do workflow**. Não
+existe montar a lista de tools em runtime a partir de `api_n8n_tools_ativas`. O
+endgame como imaginado não é implementável no n8n atual.
+
+O corte "vende ou não vende" foi escolhido por ser o único que não vira
+combinatória (2^7 perfis), e se sustenta porque as 3 tools básicas são baseline
+— todo tenant tem. Se um dia houver um terceiro eixo de contratação com peso de
+contexto parecido, a conta muda e vale reabrir.
+
+O que o endgame prometia e **continua não valendo**: `contratado/ativo` do painel
+ainda não corta o agente por tenant, só o perfil corta. Adicionar tool nova
+continua exigindo mexer no workflow principal (`docs/ADICIONAR-TOOL.md`, passos
+2 e 3).
 
 ### Regra que fica desta rodada
 
@@ -548,45 +613,113 @@ como todas.
 
 ## Pagamento
 
-**Não iniciado.** Sem conta em provedor.
+**Provedor definido: Asaas.** Stripe segue descartado — histórico irregular no
+Brasil e sem os meios de pagamento que os clientes esperam.
 
-Modelo definido: você tem uma **conta raiz** e cria por API uma **conta separada
-por cliente** (CNPJ dele, banco dele). O dinheiro cai direto na conta do cliente;
-você nunca toca nele — se tocasse, seria intermediação financeira e exigiria
-autorização do Banco Central.
+**Nenhuma linha de código escrita, e não deve ser escrita ainda.** O que trava
+não é técnico: é o contrato e a decisão de preço que sai dele.
 
-Provedor provável: **Asaas** (subconta + split, Pix e boleto nativos). Stripe
-descartado: histórico irregular no Brasil e sem os meios de pagamento que os
-clientes esperam.
+### O perfil é BaaS, e isso não é detalhe de nomenclatura
 
-Gargalo é regulatório, não técnico:
-- Período de avaliação: 10 subcontas, R$ 2.000 por subconta, 60 dias
-- Só CNPJ (Resoluções Conjuntas 16 e 17 do BC)
-- Modelo BaaS exige exibir a marca Asaas nos pontos de contato com o cliente final
-- Liberação prévia com gerente de contas
+O guia do Asaas separa três formas de trabalhar com eles, e a nossa é a terceira:
 
-Abrir essa conversa cedo — é papelada, não código.
+| perfil | o que é | contrato específico |
+|---|---|---|
+| Parceiro de indicação | você indica, o cliente abre a conta dele | não |
+| Gateway | você integra o checkout, a conta é do cliente | não |
+| **BaaS** | **você cria subconta por cliente e opera via API dentro da sua marca** | **sim** |
+
+É BaaS porque o cliente final nunca vê o Asaas como fornecedor dele: a conta é
+criada por nós, por API, e a experiência é do ChatYou. Isso é exatamente o que
+queremos do produto — e é o que aciona o contrato específico, com o Anexo I
+descrito abaixo.
+
+O desenho financeiro não mudou: **conta raiz** nossa, **subconta por cliente**
+(CNPJ e banco dele), dinheiro caindo direto na conta do cliente. Nunca passa por
+nós — se passasse, seria intermediação financeira e exigiria autorização do
+Banco Central.
+
+### Estado da conta
+
+- Reunião **feita**.
+- Limites do período de avaliação (10 subcontas, R$ 2.000 por subconta, 60 dias)
+  são **negociáveis** — não são teto rígido.
+- **Proposta comercial na próxima semana.**
+- **Em aberto:** a pergunta sobre sandbox ficou sem resposta. Sem ela não dá
+  para estimar quanto da integração é testável antes de assinar, e isso muda a
+  ordem de construção.
+- Só CNPJ (Resoluções Conjuntas 16 e 17 do BC) — inalterado.
+- BaaS exige exibir a marca Asaas nos pontos de contato com o cliente final.
+
+### A exposição do Anexo I — decidir ANTES de assinar
+
+Este é o ponto que muda o preço do módulo, e é decisão de negócio, não de
+engenharia. Fica registrado aqui porque ninguém deve descobrir isso durante a
+implementação.
+
+**Responsabilidade solidária e irrevogável pelos impactos financeiros dos
+clientes finais.** Chargeback, estorno e saldo negativo de qualquer subconta
+podem ser cobrados de nós. Na prática: um cliente nosso que suma com saldo
+negativo vira dívida nossa, e "solidária" significa que o Asaas pode cobrar de
+nós direto, sem precisar tentar o cliente primeiro.
+
+**Multas do item 13: de R$ 20 mil a R$ 500 mil por infração.**
+
+Três consequências que precisam de decisão antes da assinatura:
+
+1. **O preço do módulo de vendas tem que embutir esse risco.** Vender pagamento
+   pelo mesmo valor dos outros módulos é subsidiar o prejuízo de quem der
+   chargeback com a margem de quem não der.
+2. **Cliente de vendas precisa de critério de entrada.** Se qualquer tenant pode
+   contratar o módulo, qualquer tenant pode gerar saldo negativo em nosso nome.
+   Hoje contratar é um booleano no admin — sem análise, sem garantia, sem limite.
+3. **Precisa haver teto por subconta.** O limite de R$ 2.000 do período de
+   avaliação some quando a conta for liberada, e some junto o único freio
+   automático que existe hoje.
+
+Nada disso é código antes da proposta chegar. Mas o **desenho** do módulo muda
+conforme a resposta: se a exposição for aceita, o painel precisa de campos de
+análise e limite por cliente que hoje não existem.
+
+### Consequência para a ordem
+
+Enquanto a proposta não chega e o sandbox não é respondido, **não vale escrever
+integração**. O que vale é o que não depende do Asaas: exercitar os três ramos
+da foto, e decidir o preço do módulo com o Anexo I na mesa.
 
 ## Ordem de construção
 
-1. Migração de vendas + rollback, aplicada fora de produção primeiro
-2. Teste de isolamento: tenant B não vê produto nem pedido do tenant A
-3. **Tela de catálogo no painel** — é o custo real da feature, não o SQL
-4. Sub-workflows das tools, com a trava `tool_ativa`
-5. Catálogo + registro + contratar para **um tenant de teste**, nunca a Acqua
-6. Pagamento, quando houver conta em provedor
+Os passos 1 a 5 estão **feitos e em produção**:
 
-O passo 4 antes do 6 é de propósito: a parte difícil não é gerar link de
-pagamento, é o agente conduzir a conversa até lá sem se perder. Vale testar com
-pedido fechado manualmente antes de plugar dinheiro.
+1. ~~Migração de vendas + rollback~~
+2. ~~Teste de isolamento: tenant B não vê produto nem pedido do tenant A~~
+3. ~~Tela de catálogo no painel~~ — foi mesmo o custo real da feature, não o SQL
+4. ~~Sub-workflows das tools, com a trava `tool_ativa`~~
+5. ~~Catálogo + contratar para um tenant de teste~~ (`restaurante-teste`,
+   nunca a Acqua)
+6. **Pagamento** — bloqueado no contrato, não no código. Ver a seção Pagamento.
+
+O passo 4 antes do 6 era de propósito e se provou certo: a parte difícil não foi
+gerar link de pagamento, foi o agente conduzir a conversa até o fechamento sem
+se perder — e isso já está exercitado, com pedido fechado à mão.
 
 ## Pendências fora de vendas
 
-- Limpeza do ledger — `docs/DIVERGENCIA-LEDGER-MIGRACOES.md`
-- Migração 18 do índice em `mensagens_log`, barata agora com a tabela vazia
-- Descobrir se a Acqua ainda usa o produto (zero tráfego desde 24/07; token não
-  foi revogado, o que favorece a hipótese de webhook parado)
-- `contextWindowLength` da memória Redis: subir de 5 para ~20 antes de vendas
+Fechadas nesta rodada:
+
+- ~~Limpeza do ledger~~ — reconciliado; ver `docs/DIVERGENCIA-LEDGER-MIGRACOES.md`.
+  Os objetos `podcast_*` **não** eram código morto e não foram dropados.
+- ~~Índice do histórico em `mensagens_log`~~ — aplicado como migração 39
+  (era o segundo arquivo numerado 18). 72 linhas, 70 ms.
+
+Abertas:
+
+- **Acqua sem tráfego desde 24/07.** Token não foi revogado, o que favorece a
+  hipótese de webhook parado em vez de cliente perdido. Continua sem diagnóstico.
+- **Três ramos da foto nunca exercitados** — ver "Onde isto está agora".
+- **`S_básico` ainda não medido** (266, `medido: false` em
+  `scripts/gerar-principal.mjs`). O perfil de vendas já foi calibrado; o básico
+  não, então o rateio dele carrega a incerteza que o outro já não tem.
 
 ## Rateio de custo: o `Estima Tokens` estava errado em até 10x
 
