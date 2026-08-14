@@ -33,7 +33,8 @@
     "teste:superficie": "node --import ./tests/lib/ts.mjs tests/superficie-de-tool.mjs",
     "teste:descontratar": "node --env-file=.env.local tests/descontratar-preserva-dado.mjs",
     "teste:billing-idempotente": "node --env-file=.env.local tests/migracao-billing-idempotente.mjs",
-    "teste:assinaturas": "node --env-file=.env.local tests/assinatura-unica.mjs"
+    "teste:assinaturas": "node --env-file=.env.local tests/assinatura-unica.mjs",
+    "teste:log-idempotente": "node --env-file=.env.local tests/migracao-log-idempotente.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
