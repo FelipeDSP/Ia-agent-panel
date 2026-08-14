@@ -1,75 +1,139 @@
-# Ledger de migrações divergente do diretório, nos dois sentidos
+# Ledger de migrações × diretório — RESOLVIDO em 2026-08-14
 
-Levantado em 2026-08-11 durante a preparação da migração 16, comparando
-`supabase_migrations.schema_migrations` (produção) com `supabase/migrations/`.
-**Não bloqueia a 16** — está aberta como higiene separada, de propósito, para não
-misturar reconciliação de ledger com um deploy de segurança.
+Levantado em 2026-08-11 durante a preparação da migração 16. Os quatro achados
+estão fechados. Este documento vira o registro do que foi decidido e **por quê**,
+principalmente no achado 4, onde a conclusão foi o oposto do que três auditorias
+tinham escrito.
 
-Contexto do CLAUDE.md: já houve um episódio em que nenhum arquivo batia com o
-ledger, porque as migrações vinham sendo aplicadas por SQL avulso (editor/MCP),
-que grava a versão com o timestamp do momento da aplicação, enquanto o arquivo
-ficava com outro. Foram renomeadas na época. Estes quatro casos são o resíduo.
-
-## Achado 1 — migração 17 aplicada em produção, ausente do ledger
-
-`20260804130000_17_clamp_match_count.sql` não tem entrada em
-`schema_migrations`, mas **está aplicada**: `pg_get_functiondef` de
-`match_kb_documentos` mostra o clamp de `match_count` no corpo.
-
-Efeito: um `supabase db push` a trataria como nova e a replayaria contra
-produção. Neste caso o replay é `create or replace function` e seria inofensivo,
-mas o mecanismo é o mesmo que tornaria perigoso um replay de migração com DDL
-destrutivo.
-
-## Achado 2 — migração 18_indice_historico_conversa genuinamente pendente
-
-`20260805120000_18_indice_historico_conversa.sql` não está no ledger **e não
-está aplicada**: `mensagens_log` tem só `idx_log_tenant_data`
-`(tenant_id, criado_em desc)`; o índice com `conversation_id` não existe.
-
-O próprio cabeçalho do arquivo explica a urgência baixa e a janela: a tabela tem
-8 linhas hoje porque o n8n ainda não chama `api_n8n_registrar_mensagem` em
-produção. Criar o índice agora é instantâneo; criar depois, com carga, é janela
-de manutenção. Vale aplicar antes de o log começar a ser gravado de verdade.
-
-## Achado 3 — dois arquivos numerados 18
+Estado final, medido:
 
 ```
-20260805120000_18_indice_historico_conversa.sql   (pendente — achado 2)
-20260805155810_18_seguranca_tenant_tools.sql      (aplicada, no ledger)
+ledger: 41 entradas | arquivos: 31
+só em arquivo (não aplicada):      nenhuma
+mesma versão com nome diferente:   nenhuma
+números de migração duplicados:    nenhum
+só no ledger (sem arquivo):        10 — as 8 da baseline + as 2 do podcast
 ```
 
-O prefixo numérico é convenção humana e não afeta a ordenação real (que é por
-timestamp), mas duplicar o número quebra a referência por número usada em todo
-o repo — comentários de migração citam "migração 13", "migração 15", "migração
-16". "Migração 18" hoje é ambígua.
+As 10 sem arquivo são as duas categorias **deliberadas** descritas abaixo. Toda
+outra divergência foi eliminada.
 
-## Achado 4 — duas entradas no ledger sem arquivo correspondente
+---
+
+## Achado 4 (o que mais importava) — `podcast_*` NÃO é código morto
+
+Três auditorias marcaram `podcast_agendamentos`, `agendar_podcast` e os índices
+como código morto, com o argumento "zero referências em `src/`".
+
+**A premissa está certa e a conclusão está errada.** Zero referências neste repo
+é exatamente o que se espera de uma aplicação **diferente** que compartilha o
+banco. Ausência de referência num codebase não é evidência de morte; é evidência
+de não ser nosso.
+
+### A prova de que está viva
+
+| evidência | valor |
+|---|---|
+| linhas | **14** (a auditoria dizia 13 — o número envelheceu) |
+| última escrita | **2026-08-09**, cinco dias antes desta análise |
+| inserts / deletes na janela de 30 dias | **23 inserts, 9 deletes** |
+| `idx_scan` na mesma janela | **117** |
+| distribuição | 89 em `dia`, 26 em `whatsapp`, 2 na pkey |
+
+A distribuição é o argumento mais forte: ela bate **exatamente** com o desenho.
+`whatsapp` tem índice único (deduplicar quem já se inscreveu) e `dia` serve a
+view de vagas. Uma tabela abandonada não produz esse padrão — produz zero.
+
+### Por que a RLS "sem policy" não significa abandono
+
+`podcast_agendamentos` tem RLS ativo e **zero policies**, o que à primeira vista
+parece tabela esquecida com segurança pela metade. É o contrário: é um desenho
+de acesso fechado, em que ninguém toca a tabela direto e tudo passa por dois
+objetos que **contornam a RLS de propósito**:
+
+- `agendar_podcast(date, text, text, text)` — `SECURITY DEFINER`, dono `postgres`;
+- `podcast_vagas` — view do `postgres` sem `security_invoker`.
+
+Com RLS ligada e nenhuma policy, `anon` e `authenticated` não enxergam uma linha
+sequer pela tabela, mesmo tendo GRANT. O caminho é a função e a view, e só.
+
+### O que a tabela contém
+
+Nome, empresa e **WhatsApp de 14 pessoas reais**, inscritas no *Podcast Vitrine
+ACIA de Negócios (FEMUAR)* — o nome está no comentário da própria migração
+guardada no ledger. Não é dado nosso.
+
+### Decisão: NÃO DROPAR. Nunca.
+
+Vale mesmo agora que o evento acabou (a view fixa a janela `2026-08-01` a
+`2026-08-09`, e a última inscrição é de 09/08). Evento encerrado não torna o
+dado nosso — torna-o histórico de terceiros.
+
+> Uma tabela de outra aplicação convivendo é chato; uma tabela de outra
+> aplicação apagada é incidente de terceiros.
+
+**Onde o SQL delas vive:** na coluna `statements` do próprio ledger, íntegro.
+Não foi reconstruído em `supabase/migrations/` de propósito — um ambiente novo
+deste repo **não deve** criar tabela de outra aplicação. A divergência é a
+resposta certa, e passa a ser documentada em vez de invisível.
+
+**Se um dia precisar mexer:** procure o dono do Podcast Vitrine ACIA antes.
+
+---
+
+## Achado 1 — migração 17 aplicada e fora do ledger — RESOLVIDO
+
+`match_kb_documentos` tinha o clamp de `match_count` no corpo, mas não havia
+entrada em `schema_migrations`.
+
+Registrada como `20260804130000 / 17_clamp_match_count`, com os `statements` do
+arquivo. **A inserção foi condicionada à verificação do efeito** (`pg_get_functiondef`
+contendo o clamp): marcar como aplicada uma migração que não rodou seria pior
+que a divergência original — a próxima pessoa confiaria no ledger.
+
+---
+
+## Achado 2 — índice do histórico pendente — RESOLVIDO
+
+`idx_log_conversa (tenant_id, conversation_id, criado_em)` não existia.
+`conversa_historico()` varria todas as mensagens do tenant para abrir UMA
+conversa.
+
+Aplicado em 14/08 com `mensagens_log` em **72 linhas**: 70 ms. O arquivo previa
+8 linhas; a diferença não muda nada, mas a urgência subiu — desde a migração 37
+o log é gravado a cada mensagem, então a tabela deixou de ser estática.
+
+**O planner ainda NÃO usa o índice, e isso está certo.** Um `explain (analyze)`
+da consulta do `conversa_historico()` hoje mostra `Sort` + varredura: com 72
+linhas, ler a tabela inteira é mais barato que descer no índice. Quem conferir
+agora e esperar ver `Index Scan` vai achar que a migração falhou — não falhou.
+O índice existe para o dia em que cada cliente tiver milhares de mensagens, e é
+justamente por isso que ele foi criado enquanto criar custa 70 ms.
+
+É a mesma forma do índice HNSW descrita no CLAUDE.md: existir e não ser usado
+pelo plano atual não é defeito, desde que se saiba por quê.
+
+---
+
+## Achado 3 — dois arquivos numerados 18 — RESOLVIDO
 
 ```
-20260729130722  podcast_vitrine_acia_agendamentos
-20260729130741  podcast_vitrine_acia_funcao_agendar
+20260805120000_18_indice_historico_conversa.sql   (pendente)
+20260805155810_18_seguranca_tenant_tools.sql      (aplicada)
 ```
 
-Aplicadas em produção em 29/07, sem arquivo em `supabase/migrations/`. Pelo nome
-parecem de outra iniciativa (vitrine/podcast) que compartilhou o mesmo banco.
+Renumerado o **pendente**, porque renumerar o aplicado quebraria a
+correspondência nome ↔ versão do ledger:
 
-Precisa decidir: (a) reconstruir os arquivos a partir de
-`pg_get_functiondef`/`pg_dump` como foi feito com as migrações 01–08 em
-`supabase/baseline/`, ou (b) documentar explicitamente que são de outro escopo e
-que o ledger deste repo não as cobre. O que não pode continuar é ficarem
-invisíveis: quem levantar um ambiente novo a partir do repo não terá os objetos
-que elas criaram, e o ambiente novo diverge de produção sem aviso.
+```
+20260814170000_39_indice_historico_conversa.sql
+```
 
-## Ordem sugerida
+O timestamp acompanhou o número e bate com a versão gravada na aplicação real.
 
-1. Achado 4 primeiro — decidir se os objetos do podcast fazem parte deste schema.
-   Isso determina o que "ambiente limpo reproduzível" significa aqui.
-2. Achado 2 — aplicar o índice enquanto `mensagens_log` está vazia.
-3. Achados 1 e 3 — renomear arquivos e inserir a entrada faltante no ledger,
-   alinhando nome ↔ versão conforme a regra do CLAUDE.md.
+---
 
-## Como reproduzir
+## Como reconferir
 
 ```bash
 node -e "
@@ -79,8 +143,12 @@ const {Client}=require('pg');
 const c=new Client({connectionString:m[1].trim(),ssl:{rejectUnauthorized:false}});
 (async()=>{await c.connect();
 const r=await c.query('select version, name from supabase_migrations.schema_migrations order by version');
-r.rows.forEach(x=>console.log(x.version, x.name||''));
+const arq=new Set(fs.readdirSync('supabase/migrations').filter(f=>f.endsWith('.sql')&&!f.endsWith('_rollback.sql')).map(f=>f.slice(0,14)));
+console.log('so no ledger:', r.rows.filter(x=>!arq.has(x.version)).map(x=>x.name).join(', '));
 await c.end();})();
 "
-ls supabase/migrations/
 ```
+
+O esperado é **exatamente** 10 nomes: `01_extensions_e_helpers` … `08_hardening_permissoes`
+(reconstruídas em `supabase/baseline/`) e as duas `podcast_vitrine_acia_*`.
+Qualquer nome a mais é divergência nova.

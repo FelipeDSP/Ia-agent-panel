@@ -83,7 +83,24 @@ e ausentes localmente. Isso é esperado. Se algum dia quiserem silenciar,
 
 **As migrações do produto `podcast_vitrine_acia`** (`20260729130722` e
 `20260729130741`) estão no mesmo banco e no mesmo ledger, e não pertencem a este
-projeto. Não foram reconstruídas aqui.
+projeto. Não foram reconstruídas aqui — um ambiente novo DESTE repo não deve
+criar tabela de outra aplicação.
+
+> **NÃO DROPE `podcast_agendamentos`, `agendar_podcast`, `podcast_vagas` nem os
+> índices.** Três auditorias os marcaram como código morto pelo argumento "zero
+> referências em `src/`" — premissa certa, conclusão errada: zero referências
+> aqui é o que se espera de outra aplicação no mesmo banco.
+>
+> Medido em 14/08/2026: 14 linhas, última escrita em 09/08, 23 inserts e 9
+> deletes numa janela de 30 dias, 117 varreduras de índice distribuídas
+> exatamente como o desenho prevê (89 em `dia`, 26 em `whatsapp`). A tabela
+> guarda nome, empresa e WhatsApp de 14 pessoas reais. O SQL original está
+> íntegro na coluna `statements` do ledger.
+>
+> Detalhe que engana: RLS ativa com ZERO policies parece tabela esquecida. É o
+> contrário — o acesso passa por `agendar_podcast` (`SECURITY DEFINER`) e pela
+> view `podcast_vagas`, que contornam a RLS de propósito. Ver
+> `docs/DIVERGENCIA-LEDGER-MIGRACOES.md`.
 
 ## Como levantar um ambiente novo
 

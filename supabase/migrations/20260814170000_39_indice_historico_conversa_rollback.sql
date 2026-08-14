@@ -1,4 +1,4 @@
--- Rollback de 18_indice_historico_conversa
+-- Rollback da migracao 39 (indice do historico de conversa)
 --
 -- Derruba o indice. Nenhum dado e perdido e nenhum comportamento muda:
 -- conversa_historico() volta a ser servida por idx_log_tenant_data, varrendo as
