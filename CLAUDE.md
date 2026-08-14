@@ -215,6 +215,25 @@ trocar o tamanho do chunk sem medir: quebra calado.
   reprova — já houve `|| true` numa condição e um regex casando com o comentário
   em vez do código.
 
+  **A sabotagem não é zelo, é a única coisa que pega.** Só na semana de
+  2026-08-14 ela encontrou seis defeitos que revisão não tinha achado: asserção
+  tautológica comparando o resultado contra a própria implementação; sabotagem
+  que não mutou nada (CRLF, e regex multi-linha com `\n` nunca casa neste repo);
+  teste que pulava todos os casos e imprimia verde; prefixo `/painel` tornando a
+  regra vacuosa; checagem duplicada de uma que já existia; e asserção que
+  afirmava estado do mundo — escrita **quatro horas depois** de esta seção ser
+  escrita, pela mesma pessoa. Ler o próprio teste não basta, e escrever a regra
+  também não.
+
+  Duas exigências práticas que saíram desses casos:
+
+  - **Confirme que a mutação entrou** antes de acreditar no resultado. Imprima
+    a linha alterada, ou o md5 antes/depois. "Rodou e não falhou" com a
+    sabotagem que não aplicou é falso verde — aconteceu duas vezes.
+  - **Rejeição inesperada tem que virar FALHA, não crash.** `await` cru numa
+    chamada que a sabotagem faz estourar derruba o processo antes das asserções
+    seguintes, e você fica sem saber qual propriedade quebrou.
+
 ## Convenções
 
 - Nomes de tabela e coluna em português (o schema existente já é assim: `criado_em`,
