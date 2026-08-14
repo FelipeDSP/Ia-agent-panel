@@ -31,7 +31,9 @@
     "teste:grupos": "node --import ./tests/lib/ts.mjs tests/grupos-modulos.mjs",
     "modulos:visiveis": "node --env-file=.env.local --import ./tests/lib/ts.mjs scripts/conferir-modulos-visiveis.mjs",
     "teste:superficie": "node --import ./tests/lib/ts.mjs tests/superficie-de-tool.mjs",
-    "teste:descontratar": "node --env-file=.env.local tests/descontratar-preserva-dado.mjs"
+    "teste:descontratar": "node --env-file=.env.local tests/descontratar-preserva-dado.mjs",
+    "teste:billing-idempotente": "node --env-file=.env.local tests/migracao-billing-idempotente.mjs",
+    "teste:assinaturas": "node --env-file=.env.local tests/assinatura-unica.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

@@ -287,14 +287,34 @@ async function processar(job: Job, textoColado?: string): Promise<void> {
 
     // Registra o consumo de embedding para o billing (Fase 5). Best-effort: se
     // falhar, nao derruba a ingestao — o documento ja foi indexado.
+    //
+    // UM JOB COBRA UMA VEZ. `tokensEmbedding` acumula todos os lotes e chega
+    // aqui somado, entao a linha e uma so por job — e `job_id` e a chave que diz
+    // isso ao banco (migracao 36). Sem ela, um job que falhasse DEPOIS do swap e
+    // fosse reprocessado reescrevia os mesmos chunks de graca e somava os tokens
+    // outra vez.
+    //
+    // O `.select()` existe para o pulo NAO ser calado: com `ignoreDuplicates` o
+    // conflito nao gera erro nenhum, e sem pedir a linha de volta nao haveria
+    // como distinguir "cobrei" de "ja estava cobrado". A segunda e informacao —
+    // e o sintoma de que este job rodou duas vezes.
     if (tokensEmbedding > 0) {
-      const { error: usoErro } = await admin.from('uso_ingestao').insert({
-        tenant_id: job.tenant_id,
-        modelo: MODELO_EMBEDDING,
-        tokens: tokensEmbedding,
-        job_id: job.id,
-      });
+      const { data: usoLinhas, error: usoErro } = await admin
+        .from('uso_ingestao')
+        .upsert(
+          {
+            tenant_id: job.tenant_id,
+            modelo: MODELO_EMBEDDING,
+            tokens: tokensEmbedding,
+            job_id: job.id,
+          },
+          { onConflict: 'job_id', ignoreDuplicates: true },
+        )
+        .select('id');
       if (usoErro) console.error('uso_ingestao falhou:', usoErro.message);
+      else if (!usoLinhas?.length) {
+        console.warn(`uso_ingestao: job ${job.id} ja cobrado, nao somei de novo`);
+      }
     }
 
     await admin

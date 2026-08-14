@@ -129,6 +129,18 @@ perde trabalho de cadastro que ninguém consegue devolver.
 - As migrações 01–08 nunca foram versionadas. A reconstrução delas está em
   `supabase/baseline/` — é o que permite levantar um ambiente novo sem tocar em
   produção. Leia o README de lá antes de mexer em migração.
+- **Acrescentar parâmetro com DEFAULT a uma função exige `drop function` da
+  assinatura antiga, explícito, antes do `create or replace`.** `or replace` só
+  substitui a função de mesma aridade: com o parâmetro novo, as duas ficam vivas,
+  e a chamada com a contagem ANTIGA de argumentos passa a ser **ambígua** — que é
+  exatamente a chamada que o n8n faz hoje. Falha em runtime, no primeiro cliente,
+  e não na migração. Aconteceu na 28 (`fechar_pedido`), foi evitado na 32
+  (`api_n8n_registrar_mensagem`) e de novo na 37. Drope pela lista completa de
+  tipos (`drop function if exists f(uuid, bigint, text, ...)`), não pelo nome —
+  dropar pelo nome com várias assinaturas vivas erra ou derruba a errada. Mantenha
+  o `create or replace` depois do drop: sem ele a migração não é reexecutável, e
+  o teste que aplica em transação abortada para de rodar assim que ela entra em
+  produção.
 
 ## Ingestão de documentos
 
