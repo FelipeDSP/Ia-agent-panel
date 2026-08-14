@@ -6,6 +6,12 @@ import { revalidatePath } from 'next/cache';
 
 import { exigirTenantAdmin } from '@/lib/auth';
 import { invocarProcessamento } from '@/lib/ingestao';
+import {
+  MSG_JOB_MORTO,
+  STATUS_EM_ANDAMENTO,
+  filtroJobDispensavel,
+  limiteJobMorto,
+} from '@/lib/jobs-mortos';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 export type EstadoIngestao = {
@@ -225,27 +231,46 @@ export async function excluirDocumento(origem: string): Promise<EstadoIngestao> 
 }
 
 /**
- * Dispensa (remove) um job de ingestão que falhou. Só age em jobs com status
- * 'erro' — um job em andamento ou concluído não se dispensa por aqui. O job é
+ * Dispensa (remove) um job de ingestão que não vai mais a lugar nenhum. O job é
  * metadado de processamento efêmero (não é conteúdo do cliente), então é delete
  * físico, escopado por tenant + id + status. Guarda de rowcount como no
  * excluirDocumento: não mente "dispensado" se nada mudou.
+ *
+ * BUG PRÓPRIO, CONSERTADO AQUI — não é consequência da falta de expiração, e
+ * está escrito separado de propósito: se um dia alguém remover
+ * `marcarJobsMortos`, este conserto tem de continuar de pé sozinho.
+ *
+ * A versão anterior aceitava SÓ `status = 'erro'`. Um job travado em
+ * `processando` (Edge Function morta no meio) não podia ser dispensado por
+ * ninguém: a tela mostrava "processando" para sempre e o botão recusava. Saída
+ * nenhuma, nem para o cliente nem para a agência.
+ *
+ * Agora aceita também `pendente` e `processando` — mas só depois do mesmo
+ * limite que `marcarJobsMortos` usa, para não deixar o cliente matar um job que
+ * está trabalhando. `concluido` segue fora: aquilo virou documento, e apagar o
+ * registro esconderia o que existe na base.
  */
 export async function dispensarJob(jobId: string): Promise<EstadoIngestao> {
   const usuario = await exigirTenantAdmin();
   const supabase = await criarClienteServidor();
 
+  const limite = limiteJobMorto();
+
+  // Duas condições em OR, porque são dois motivos diferentes de o job estar
+  // acabado: falhou (erro, a qualquer momento) ou travou (em andamento, além do
+  // limite). `or` do PostgREST, com o filtro de tenant e id fora dele —
+  // esses valem sempre.
   const { data: afetados, error } = await supabase
     .from('jobs_ingestao')
     .delete()
     .eq('tenant_id', usuario.tenantId)
     .eq('id', jobId)
-    .eq('status', 'erro')
+    .or(filtroJobDispensavel(limite))
     .select('id');
 
   if (error) return { erro: `Não foi possível dispensar: ${error.message}` };
   if (!afetados || afetados.length === 0) {
-    return { erro: 'Processamento não encontrado (ou não está com erro).' };
+    return { erro: 'Processamento não encontrado (ou ainda está em andamento).' };
   }
 
   revalidatePath('/painel/conhecimento');
@@ -295,10 +320,47 @@ export type JobStatus = {
   criado_em: string;
 };
 
+/**
+ * Marca como `erro` os jobs em andamento parados além do limite.
+ *
+ * EXPIRA NA LEITURA, sem agendador. O momento em que um job preso incomoda é
+ * exatamente o momento em que alguém olha a tela — não às 3h da manhã. E o
+ * polling já passa por aqui de 2,5 em 2,5 s enquanto houver job ativo, então o
+ * gatilho já existe: não há função nova para alguém esquecer de chamar.
+ *
+ * O relógio é o do servidor do painel, não o do Postgres. A diferença entre os
+ * dois é de segundos num limite de 15 minutos.
+ *
+ * Filtro explícito de tenant além da RLS, como toda escrita deste projeto.
+ */
+async function marcarJobsMortos(
+  supabase: Awaited<ReturnType<typeof criarClienteServidor>>,
+  tenantId: string,
+): Promise<void> {
+  const limite = limiteJobMorto();
+
+  const { error } = await supabase
+    .from('jobs_ingestao')
+    .update({
+      status: 'erro',
+      erro_msg: MSG_JOB_MORTO,
+      concluido_em: new Date().toISOString(),
+    })
+    .eq('tenant_id', tenantId)
+    .in('status', [...STATUS_EM_ANDAMENTO])
+    .lt('criado_em', limite);
+
+  // Best-effort: se falhar, a listagem ainda vale. O job continua preso, que é
+  // o estado de antes — nunca pior.
+  if (error) console.error('marcarJobsMortos:', error.message);
+}
+
 /** Jobs recentes do tenant, para o polling de progresso. */
 export async function listarStatusJobs(): Promise<JobStatus[]> {
   const usuario = await exigirTenantAdmin();
   const supabase = await criarClienteServidor();
+
+  await marcarJobsMortos(supabase, usuario.tenantId);
 
   const { data } = await supabase
     .from('jobs_ingestao')

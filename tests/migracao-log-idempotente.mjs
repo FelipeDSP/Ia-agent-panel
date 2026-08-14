@@ -119,20 +119,42 @@ try {
   console.log('\n-- 1. Aplicar não mexe no que já existe --\n');
 
   const antes = await contar();
+  // A coluna pode não existir ainda (primeira aplicação) — nesse caso, zero.
+  const comChave = async () => {
+    const r = await tentar(
+      `select count(*)::int n from public.mensagens_log where execucao_id is not null`,
+    );
+    return r.erro ? 0 : r.rows[0].n;
+  };
+  const comChaveAntes = await comChave();
+
   const aplicou = await tentar(M37);
   chk('migração aplica', aplicou.erro === null, `veio ${aplicou.erro}`);
   if (aplicou.erro) throw new Error('migração 37 não aplica');
 
   const depois = await contar();
+  const comChaveDepois = await comChave();
   chk('contagem de linhas não muda', antes.n === depois.n, `${antes.n} -> ${depois.n}`);
   chk(
     'soma de tokens não muda',
     antes.te === depois.te && antes.ts === depois.ts,
     `${antes.te}/${antes.ts} -> ${depois.te}/${depois.ts}`,
   );
+  // PROPRIEDADE, não estado do mundo.
+  //
+  // A primeira versão afirmava "nenhuma linha tem execucao_id". Era verdade no
+  // minuto em que foi escrita e ficou FALSA quatro horas depois — porque a
+  // migração entrou em produção e o n8n passou a gravar a chave, que é
+  // exatamente o que se queria. Teste que fica vermelho porque o sistema
+  // funcionou treina todo mundo a ignorar vermelho.
+  //
+  // O que a migração promete é não INVENTAR chave para linha que não tinha:
+  // a contagem de linhas com execucao_id não muda ao aplicar, qualquer que ela
+  // seja hoje.
   chk(
-    'as linhas antigas ficam com execucao_id nulo (sem backfill inventado)',
-    (await c.query(`select count(*)::int n from public.mensagens_log where execucao_id is not null`)).rows[0].n === 0,
+    'aplicar não preenche execucao_id em linha nenhuma (sem backfill inventado)',
+    comChaveAntes === comChaveDepois,
+    `antes ${comChaveAntes}, depois ${comChaveDepois}`,
   );
 
   // -------------------------------------------------------------------------
