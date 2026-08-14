@@ -927,16 +927,38 @@ w.connections['Enviar Foto do Produto'] = {
 
 // `audio_segundos` entra como oitavo parametro do registro da mensagem de
 // ENTRADA. Unidade propria: nao se soma a token (migracao 32).
+//
+// `execucao_id` entra como NONO, nas duas chamadas, e e a chave de idempotencia
+// do billing (migracao 37). A unidade de cobranca e o TURNO: esta execucao
+// passou pelo `Volta a Um Item` (maxItems 1), fez UMA chamada a OpenAI e gera
+// UM par de linhas. Retry de no, "retry from here" e resume do `Wait Debounce`
+// mantem o mesmo `$execution.id`, entao a segunda gravacao vira no-op em vez de
+// cobrar de novo.
+//
+// NAO cobre webhook reentregue pelo Chatwoot: execucao nova, id novo, billing
+// dobra. Esse caso manda duas respostas ao cliente, entao nao e silencioso — o
+// conserto dele e dedupe na entrada do webhook, nao chave de log.
+//
+// `$execution.id` foi confirmado em execucao real (3966582): resolve para
+// string e resolve DENTRO da expressao de array, que e a forma deste
+// `queryReplacement`. No editor ele NAO resolve — mostra
+// `[filled at execution time]`.
+//
+// Na chamada de SAIDA o oitavo argumento vai `null::numeric` explicito: e o que
+// permite alcancar o nono por posicao. O cast e redundante hoje (so existe uma
+// assinatura), e fica de proposito — se alguem reintroduzir sobrecarga, um
+// `null` sem tipo seria ambiguo.
 {
   const reg = no('Registra Mensagem');
   reg.parameters.query =
-    "SELECT public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'entrada', $7::text, 0, 0, $6::text, $8::numeric) AS log_entrada,\n" +
-    "       public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'saida', $3::text, $4::int, $5::int, $6::text) AS log_saida;";
+    "SELECT public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'entrada', $7::text, 0, 0, $6::text, $8::numeric, $9::text) AS log_entrada,\n" +
+    "       public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'saida', $3::text, $4::int, $5::int, $6::text, null::numeric, $9::text) AS log_saida;";
   reg.parameters.options.queryReplacement =
     "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id, " +
     "$('Estima Tokens').first().json.output, $('Estima Tokens').first().json.tokens_entrada, " +
     "$('Estima Tokens').first().json.tokens_saida, $('Resolve Tenant').first().json.modelo, " +
-    "$('Lista Depois').first().json.lista_depois, $('Mensagem Pronta').first().json.audio_segundos ] }}";
+    "$('Lista Depois').first().json.lista_depois, $('Mensagem Pronta').first().json.audio_segundos, " +
+    "$execution.id ] }}";
 }
 
 const novosNoCanvas = restaurarLayout();

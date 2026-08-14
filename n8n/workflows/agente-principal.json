@@ -798,9 +798,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'entrada', $7::text, 0, 0, $6::text, $8::numeric) AS log_entrada,\n       public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'saida', $3::text, $4::int, $5::int, $6::text) AS log_saida;",
+        "query": "SELECT public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'entrada', $7::text, 0, 0, $6::text, $8::numeric, $9::text) AS log_entrada,\n       public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'saida', $3::text, $4::int, $5::int, $6::text, null::numeric, $9::text) AS log_saida;",
         "options": {
-          "queryReplacement": "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id, $('Estima Tokens').first().json.output, $('Estima Tokens').first().json.tokens_entrada, $('Estima Tokens').first().json.tokens_saida, $('Resolve Tenant').first().json.modelo, $('Lista Depois').first().json.lista_depois, $('Mensagem Pronta').first().json.audio_segundos ] }}"
+          "queryReplacement": "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id, $('Estima Tokens').first().json.output, $('Estima Tokens').first().json.tokens_entrada, $('Estima Tokens').first().json.tokens_saida, $('Resolve Tenant').first().json.modelo, $('Lista Depois').first().json.lista_depois, $('Mensagem Pronta').first().json.audio_segundos, $execution.id ] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
