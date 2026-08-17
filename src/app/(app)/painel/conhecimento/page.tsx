@@ -1,9 +1,10 @@
 import { exigirTenantAdmin } from '@/lib/auth';
 import { DICAS_BASE } from '@/lib/orientacao';
+import { agruparDocumentos, type ChunkDaLista } from '@/lib/conhecimento/agrupar';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 import { listarStatusJobs, type JobStatus } from './acoes';
-import { GestaoConhecimento, type Documento } from './componentes';
+import { GestaoConhecimento } from './componentes';
 
 export default async function PaginaConhecimento() {
   const usuario = await exigirTenantAdmin();
@@ -19,25 +20,7 @@ export default async function PaginaConhecimento() {
     .is('deletado_em', null)
     .order('criado_em', { ascending: false });
 
-  const porOrigem = new Map<string, Documento>();
-  for (const c of chunks ?? []) {
-    const origem = (c.origem as string) ?? '(sem origem)';
-    const meta = (c.metadata ?? {}) as Record<string, unknown>;
-    const nome = (meta['arquivo'] as string) ?? (meta['fonte'] as string) ?? origem;
-    const existente = porOrigem.get(origem);
-    if (existente) {
-      existente.chunks += 1;
-    } else {
-      porOrigem.set(origem, {
-        origem,
-        nome,
-        chunks: 1,
-        criadoEm: c.criado_em as string,
-      });
-    }
-  }
-
-  const documentos = Array.from(porOrigem.values());
+  const documentos = agruparDocumentos(chunks as ChunkDaLista[] | null);
   const jobs: JobStatus[] = await listarStatusJobs();
 
   return (

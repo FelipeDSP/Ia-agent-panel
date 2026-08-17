@@ -43,6 +43,7 @@
     "teste:deletes": "node tests/deletes-escopados.mjs",
     "teste:seed-independente": "node tests/seed-independente.mjs",
     "teste:grants-n8n": "node tests/grants-n8n.mjs",
+    "teste:conhecimento": "node --import ./tests/lib/ts.mjs tests/conhecimento-lista.mjs",
     "guarda": "node tests/lib/com-guarda.mjs"
   },
   "dependencies": {
