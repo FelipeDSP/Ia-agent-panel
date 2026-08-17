@@ -32,6 +32,10 @@ documentação e material de referência.
 - [`SIMULACAO-MIGRACAO-V2.md`](SIMULACAO-MIGRACAO-V2.md) — **planejamento, não executado.**
   Migração para um schema v2 (documentos normalizados, CHECK de modelo, HNSW parcial):
   queries afetadas, plano expand/contract e estimativa de 29–45 h.
+- [`PENDENCIA-SEED-DOS-TESTES.md`](PENDENCIA-SEED-DOS-TESTES.md) — **a fazer, com prazo.**
+  Os testes de isolamento dependem de tenants de seed que qualquer pessoa apaga pelo
+  painel; ficaram 4 dias cegos em 13–17/08. Inventário dos 6 testes acoplados, por que
+  5 passaram por acaso, e o padrão-alvo (criar/limpar o próprio tenant).
 - [`PENDENCIA-MARGEM.md`](PENDENCIA-MARGEM.md) — **decidido não fazer, com gatilho.**
   Margem por cliente em `/admin/consumo`: por que não agora (não há valor de plano no
   schema, provedor de pagamento em aberto, custo de centavos) e o que a retoma.
