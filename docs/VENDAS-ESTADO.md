@@ -131,6 +131,19 @@ sobreviveu não existe. Um exemplo do segundo caso custou uma investigação:
 `expirado` chegou à CHECK — um estado que nada escrevia, até a migração 38.
 Ao procurar algo "que a gente já escreveu", confira no banco, não no rascunho.
 
+**Migração 40 (17/08) fecha uma ponta solta da 38.** A 38 fez a leitura de pedido
+expirar o pedido vencido — ou seja, **ler pedido escreve** — e ela mesma
+documentou que isso obriga `volatile` em vez de `stable`. Aplicou em
+`pedido_aberto_da_conversa`, `api_n8n_tem_pedido_pendente` e
+`api_n8n_adicionar_item`, e passou por `api_n8n_ver_pedido`, que chama a mesma
+função. Consequência: o PostgREST executa função `stable` em transação **read
+only**, então `ver_pedido` por supabase-js estourava `25006` / HTTP 405. O n8n
+nunca sentiu porque chama pelo nó Postgres (conexão direta, não read-only) — o
+defeito era latente, e apareceu só porque `tests/isolamento-pedidos.mjs` cobre as
+duas superfícies. Se acrescentar função de pedido, a pergunta não é "ela parece
+leitura?", é **"ela passa por `pedido_aberto_da_conversa`?"** — se passa, é
+`volatile`.
+
 Decisões de modelagem:
 - Dinheiro em **integer de centavos**, nunca float
 - Preço em **snapshot** no item: reajuste no catálogo não muda pedido antigo

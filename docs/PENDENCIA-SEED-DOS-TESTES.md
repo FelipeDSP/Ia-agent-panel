@@ -50,6 +50,36 @@ a aplicação considera excluídos**. Verde por um motivo que ninguém escolheu.
 
 E um `DELETE` físico (ou um cascade futuro) derruba os seis de uma vez.
 
+### Já feito em 17/08: os quatro passaram a falhar alto
+
+Os quatro que não filtravam receberam `.is('deletado_em', null)` na query de
+seed. **Isso não é a reescrita** — eles continuam dependendo de dado externo. O
+que muda é o modo de falha: apagar seed virou reprovação na pré-condição em vez
+de verde mentiroso.
+
+Verificado por sabotagem real, não por leitura: `clinica-teste` foi soft-deletado
+de verdade, `teste:modulos` reprovou com
+`esperava 3 tenants (…), achei 2` e saída não-zero, e o seed foi restaurado no
+`finally` do mesmo processo. Restaurar em script separado deixaria o seed apagado
+se algo estourasse no meio — que é o estado que esta semana foi gasta
+consertando.
+
+## Critério de aceitação da reescrita
+
+Uma frase, e ela é verificável:
+
+> **Apagar seed nenhum consegue deixá-los verdes.**
+
+Ou seja: não basta o teste reprovar quando o seed falta (isso já vale). O alvo é
+o teste **não ter seed para faltar** — ele cria o tenant que usa e remove no
+fim. A prova é a mesma sabotagem acima, com o resultado invertido: apagar
+`clinica-teste`, `sandbox-de-testes` e `restaurante-teste` e a suíte continuar
+verde, porque nenhum dos cinco olha para eles.
+
+Enquanto o critério não for atingido, registro é lembrete. O que segura é
+constraint, trigger e teste que falha alto — e dos três, aqui só cabe o
+terceiro.
+
 ## O alvo
 
 **Cada teste cria e limpa o próprio tenant.** Nenhuma asserção depende de linha
@@ -101,4 +131,6 @@ subindo.
 
 Enquanto não for feito, o paliativo é operacional e frágil: **não excluir**
 `clinica-teste`, `sandbox-de-testes` e `restaurante-teste` pelo painel.
-Escrito aqui porque paliativo que só existe na cabeça de alguém não é paliativo.
+Escrito aqui porque paliativo que só existe na cabeça de alguém não é paliativo —
+e mesmo escrito não impediu nada em 13/08, porque a nota já existia. A diferença
+agora é que a suíte reclama; o paliativo deixou de ser a única linha de defesa.

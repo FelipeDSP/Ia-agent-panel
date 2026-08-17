@@ -69,7 +69,13 @@ const jpegMinimo = () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00,
 async function main() {
   console.log('\n== Isolamento das fotos de produto ==\n');
 
-  const { data: tenants, error: erroT } = await admin.from('tenants').select('id, slug').in('slug', SLUGS);
+  // .is('deletado_em', null) NAO e detalhe: sem ele esta query enxerga tenant
+  // SOFT-DELETADO e o teste segue verde "testando" isolamento entre clientes que
+  // a aplicacao considera excluidos. Foi o que aconteceu entre 13 e 17/08 — dos
+  // seis testes acoplados a estes slugs, so o que filtrava reprovou, e os outros
+  // compraram confianca. Com o filtro, apagar seed vira FALHA ALTA na
+  // pre-condicao. Ver docs/PENDENCIA-SEED-DOS-TESTES.md.
+  const { data: tenants, error: erroT } = await admin.from('tenants').select('id, slug').in('slug', SLUGS).is('deletado_em', null);
   if (erroT) throw new Error(`carregar tenants: ${erroT.message}`);
   if ((tenants ?? []).length !== 3) {
     throw new Error(`esperava 3 tenants (${SLUGS.join(', ')}), achei ${tenants?.length ?? 0}`);

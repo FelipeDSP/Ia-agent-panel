@@ -62,7 +62,13 @@ async function autenticar(email) {
 async function main() {
   console.log('\n== Isolamento de pedidos — JWT real, 3 tenants ==\n');
 
-  const { data: tenants, error: erroT } = await admin.from('tenants').select('id, slug').in('slug', SLUGS);
+  // .is('deletado_em', null) NAO e detalhe: sem ele esta query enxerga tenant
+  // SOFT-DELETADO e o teste segue verde "testando" isolamento entre clientes que
+  // a aplicacao considera excluidos. Foi o que aconteceu entre 13 e 17/08 — dos
+  // seis testes acoplados a estes slugs, so o que filtrava reprovou, e os outros
+  // compraram confianca. Com o filtro, apagar seed vira FALHA ALTA na
+  // pre-condicao. Ver docs/PENDENCIA-SEED-DOS-TESTES.md.
+  const { data: tenants, error: erroT } = await admin.from('tenants').select('id, slug').in('slug', SLUGS).is('deletado_em', null);
   if (erroT) throw new Error(`carregar tenants: ${erroT.message}`);
   if ((tenants ?? []).length !== 3) throw new Error(`esperava 3 tenants, achei ${tenants?.length ?? 0}`);
   const porSlug = Object.fromEntries(tenants.map((t) => [t.slug, t]));
