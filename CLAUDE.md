@@ -247,6 +247,23 @@ trocar o tamanho do chunk sem medir: quebra calado.
   algo que uma pessoa pode mudar pela interface, ela não é sobre propriedade —
   ou o teste arranja aquele algo, ou está contando com sorte.
 
+  **Limpeza de teste é escopada por tenant, sempre.** Até 2026-08-17 quatro
+  limpezas rodavam sem escopo, como `service_role` (que ignora RLS): duas
+  apagavam `produtos` por padrão de NOME na tabela inteira, uma apagava `pedidos`
+  por `conversation_id` — que **não é único entre tenants**, e o teste de pedidos
+  existe justamente para provar isso — e uma apagava o histórico de prompt
+  inteiro de um cliente. O que separava o catálogo do Empório do catálogo do
+  teste era o nome ser improvável. `tests/deletes-escopados.mjs` planta uma isca
+  que casa com o critério de limpeza mas pertence a outro tenant, roda os testes
+  de verdade e exige que ela sobreviva; tirar o filtro faz a isca morrer, o que
+  foi verificado nos quatro. Padrão de nome continua útil — ele separa um teste
+  do outro **dentro** dos mesmos tenants —, mas nunca é o único filtro.
+
+  Complemento, em outra camada: `npm run guarda -- <comando>` tira um retrato
+  (md5 por linha) de cada tenant antes e depois de qualquer comando e reprova se
+  ele tocou tenant que não criou. **Detecta, não previne** — quando o alarme toca
+  a linha já sumiu. Serve para rodar suíte nova ou script duvidoso.
+
   Duas exigências práticas que saíram desses casos:
 
   - **Confirme que a mutação entrou** antes de acreditar no resultado. Imprima

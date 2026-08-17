@@ -30,11 +30,13 @@ módulo não contratado, e **duas fotos no mesmo turno**. O terceiro é o único
 testa código que existe só para ele (a recusa por `janela`). É conversa de dois
 minutos no WhatsApp de teste, não é código.
 
-**A decisão mais cara em aberto não é técnica.** O contrato BaaS do Asaas traz
-responsabilidade **solidária e irrevogável** pelos impactos financeiros dos
-clientes finais — chargeback, estorno, saldo negativo — e multas de R$ 20 mil a
-R$ 500 mil por infração. Isso precisa entrar no preço do módulo de vendas e nos
-critérios de quem pode contratá-lo, **antes de assinar**. Ver "Pagamento".
+**A decisão mais cara em aberto não é técnica** — e o provedor de pagamento
+**não está escolhido**. O contrato BaaS que serve de referência (Asaas, o
+primeiro lido inteiro) traz responsabilidade **solidária e irrevogável** pelos
+impactos financeiros dos clientes finais — chargeback, estorno, saldo negativo —
+e multas de R$ 20 mil a R$ 500 mil por infração. Isso precisa entrar no preço do
+módulo de vendas e nos critérios de quem pode contratá-lo, **antes de assinar
+com quem quer que seja**. Ver "Pagamento".
 
 ## Escopo do lançamento
 
@@ -626,8 +628,20 @@ como todas.
 
 ## Pagamento
 
-**Provedor definido: Asaas.** Stripe segue descartado — histórico irregular no
-Brasil e sem os meios de pagamento que os clientes esperam.
+**Provedor NÃO definido. Asaas está em avaliação, e trocar continua sobre a
+mesa.** Foi o primeiro contrato lido inteiro e virou o **benchmark** — é dele
+que saiu a lista de perguntas a fazer a qualquer provedor (ver
+[`vendas-tetos-e-provedor.md`](vendas-tetos-e-provedor.md)). Ser referência não é
+ser escolhido.
+
+Stripe segue descartado — histórico irregular no Brasil e sem os meios de
+pagamento que os clientes esperam.
+
+> **Correção de 2026-08-17.** Esta seção dizia "Provedor definido: Asaas". Era
+> falso: a reunião aconteceu e a proposta ainda não chegou. Fica registrado
+> porque a frase estava a caminho de virar premissa — quem lesse o doc começaria
+> a integração pelo provedor errado, e doc errado sobrevive à conversa que o
+> corrigiria.
 
 **Nenhuma linha de código escrita, e não deve ser escrita ainda.** O que trava
 não é técnico: é o contrato e a decisão de preço que sai dele.

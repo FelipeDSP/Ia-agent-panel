@@ -81,8 +81,19 @@ async function main() {
   let pedidoA = null;
   let pedidoB = null;
 
+  /*
+   * ESCOPADO POR TENANT. `conversation_id` NÃO é único entre tenants — é o id da
+   * conversa no Chatwoot, e a própria seção 3 deste teste existe para provar que
+   * dois tenants podem ter a MESMA conversation_id. Apagar por ela sem filtro de
+   * tenant, como service_role, apagava o pedido de quem por acaso tivesse 990001.
+   * A faixa 99xxxx ser improvável era a única proteção.
+   */
   async function limparTudo() {
-    await admin.from('pedidos').delete().in('conversation_id', [CONV_A, CONV_B]);
+    await admin
+      .from('pedidos')
+      .delete()
+      .in('tenant_id', [A.id, B.id, C.id])
+      .in('conversation_id', [CONV_A, CONV_B]);
   }
 
   try {

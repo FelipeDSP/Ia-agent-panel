@@ -59,6 +59,24 @@ async function main() {
     .eq('slug', 'clinica-teste')
     .single();
 
+  if (!tenant) {
+    throw new Error('tenant de seed "clinica-teste" ausente — ver docs/PENDENCIA-SEED-DOS-TESTES.md');
+  }
+
+  /*
+   * Quais versões de prompt JÁ existiam.
+   *
+   * A limpeza no `finally` apagava `prompt_versoes` inteiro do clinica-teste —
+   * escopado por tenant, sim, mas levando junto o histórico que o teste não
+   * criou. Como as versões nascem por trigger, o teste não conhece os ids que
+   * gerou; então a regra é a inversa: apaga tudo MENOS o que já estava lá.
+   */
+  const { data: versoesAntes } = await admin
+    .from('prompt_versoes')
+    .select('id')
+    .eq('tenant_id', tenant.id);
+  const idsPreexistentes = (versoesAntes ?? []).map((v) => v.id);
+
   const emailTenant = 'teste-coluna-tenant@exemplo.invalido';
   const emailSuper = 'teste-coluna-super@exemplo.invalido';
   let idTenant = null;
@@ -161,8 +179,13 @@ async function main() {
     console.log('\n  Limpando...');
     if (idTenant) await removerPorId(admin, idTenant);
     if (idSuper) await removerPorId(admin, idSuper);
-    // remove as versões geradas pelo teste, deixando prompt_versoes como estava
-    await admin.from('prompt_versoes').delete().eq('tenant_id', tenant.id);
+    // Remove só as versões que o teste gerou. Sem o `not in`, isto apagava o
+    // histórico de prompt inteiro do cliente — que é dado que ninguém devolve.
+    let limpeza = admin.from('prompt_versoes').delete().eq('tenant_id', tenant.id);
+    if (idsPreexistentes.length) {
+      limpeza = limpeza.not('id', 'in', `(${idsPreexistentes.join(',')})`);
+    }
+    await limpeza;
     console.log('  Usuários e versões de teste removidos.');
   }
 

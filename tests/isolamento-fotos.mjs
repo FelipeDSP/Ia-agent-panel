@@ -224,7 +224,13 @@ async function main() {
       `ficou ${JSON.stringify(comFoto?.foto_path)}`);
   } finally {
     if (prodCriadoId) await admin.from('produtos').delete().eq('id', prodCriadoId);
-    await admin.from('produtos').delete().like('nome', `${MARCA_PRODUTO}%`);
+    // Escopado por tenant: o `like` sozinho varria a tabela inteira como
+    // service_role. Ver a mesma correção em isolamento-produtos.mjs.
+    await admin
+      .from('produtos')
+      .delete()
+      .in('tenant_id', [A.id, B.id, C.id])
+      .like('nome', `${MARCA_PRODUTO}%`);
     await limparObjetos();
     for (const p of ['grande.jpg', 'doc.pdf']) await admin.storage.from(BUCKET).remove([`${A.id}/${p}`]);
     for (const k of ['A', 'B', 'C']) if (ids[k]) await removerPorId(admin, ids[k]);

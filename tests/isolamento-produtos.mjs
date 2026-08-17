@@ -82,8 +82,22 @@ async function main() {
   const ids = { A: null, B: null };
   const prod = { A: null, B: null, C: null };
 
+  /*
+   * ESCOPADO POR TENANT. Antes esta limpeza era `delete ... like '<marca>%'` na
+   * tabela INTEIRA, rodando como service_role (que ignora RLS). O que separava o
+   * catálogo do Empório do catálogo do teste era o nome ser improvável — não um
+   * filtro. Bastava um cliente cadastrar um produto com esse prefixo para o
+   * catálogo dele ir embora sem que teste nenhum reclamasse.
+   *
+   * A marca continua: ela protege as linhas de OUTRO teste dentro dos MESMOS
+   * três tenants. As duas juntas é que delimitam.
+   */
   async function limparTudo() {
-    await admin.from('produtos').delete().like('nome', `${MARCA}%`);
+    await admin
+      .from('produtos')
+      .delete()
+      .in('tenant_id', [A.id, B.id, C.id])
+      .like('nome', `${MARCA}%`);
   }
 
   try {

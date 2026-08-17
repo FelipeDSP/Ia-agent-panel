@@ -37,7 +37,11 @@
     "teste:log-idempotente": "node --env-file=.env.local tests/migracao-log-idempotente.mjs",
     "teste:expirar-pedido": "node --env-file=.env.local tests/migracao-expirar-pedido.mjs",
     "teste:jobs-mortos": "node --env-file=.env.local --import ./tests/lib/ts.mjs tests/jobs-mortos.mjs",
-    "teste:consumo": "node --import ./tests/lib/ts.mjs tests/consumo-mes.mjs"
+    "teste:consumo": "node --import ./tests/lib/ts.mjs tests/consumo-mes.mjs",
+    "teste:guarda": "node tests/guarda-logica.mjs",
+    "teste:guarda-e2e": "node tests/guarda-sabotagem.mjs",
+    "teste:deletes": "node tests/deletes-escopados.mjs",
+    "guarda": "node tests/lib/com-guarda.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
