@@ -155,6 +155,39 @@ perde trabalho de cadastro que ninguém consegue devolver.
   o teste que aplica em transação abortada para de rodar assim que ela entra em
   produção.
 
+- **`DROP FUNCTION` APAGA TODOS OS GRANTS. Recriar restaura só o que o script
+  listar.** É a quinta armadilha da mesma família (28, 32, 37, 40, 41) e a
+  primeira cujo modo de falha **não** é ambiguidade de aridade: a chamada resolve
+  certo e morre em `permission denied for function`.
+
+  Toda `api_n8n_*` precisa de **duas** linhas, não uma:
+
+  ```sql
+  grant execute on function public.f(tipos) to service_role;
+  grant execute on function public.f(tipos) to n8n_agent;
+  ```
+
+  `service_role` é o role do PostgREST/supabase-js. **O n8n não passa por ali —
+  ele conecta como `n8n_agent`**, então é essa a linha que o agente usa em toda
+  mensagem, e era essa que faltava. As migrações 40 e 41 saíram só com
+  `service_role`: a 41 derrubou o catálogo do `emporio` na hora, e a 40 tinha
+  deixado `api_n8n_ver_pedido` quebrada horas antes, sem ninguém esbarrar.
+
+  **Verificar grant contra a lista que você espera é auto-confirmação.** A
+  verificação da 41 conferiu `service_role`, `authenticated` e `anon` — os três
+  que eu tinha escrito — e reportou "grants intactos". `n8n_agent` não estava na
+  lista porque eu não sabia que existia. O que pega é **diff do ACL antes/depois
+  do drop**, ou comparar com as funções irmãs, nunca com a própria expectativa.
+
+  E chamar como superusuário não vale como teste: `postgres` ignora grant. A
+  prova é `set local role n8n_agent` e chamar.
+
+  `npm run teste:grants-n8n` varre `api_n8n_*` (não é lista fixa: função nova
+  entra sozinha), exige o grant nos dois roles, confere que nenhuma abriu para
+  `anon`/`authenticated` sem querer, e **chama de verdade** como `n8n_agent` —
+  porque `has_function_privilege` diz o que o ACL contém e chamar diz o que
+  acontece.
+
 ## Ingestão de documentos
 
 - É assíncrona. Um PDF de 50 páginas leva 30-60s; não cabe em request HTTP.

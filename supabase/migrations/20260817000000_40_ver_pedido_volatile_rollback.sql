@@ -40,3 +40,6 @@ revoke all on function public.api_n8n_ver_pedido(uuid, bigint) from public;
 revoke all on function public.api_n8n_ver_pedido(uuid, bigint) from anon;
 revoke all on function public.api_n8n_ver_pedido(uuid, bigint) from authenticated;
 grant execute on function public.api_n8n_ver_pedido(uuid, bigint) to service_role;
+-- O role com que o n8n CONECTA. Sem esta linha a tool morre com
+-- "permission denied for function" no primeiro cliente.
+grant execute on function public.api_n8n_ver_pedido(uuid, bigint) to n8n_agent;

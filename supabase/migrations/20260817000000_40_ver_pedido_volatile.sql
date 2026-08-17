@@ -35,6 +35,22 @@
 --
 -- Rollback: 20260817000000_40_ver_pedido_volatile_rollback.sql
 
+-- ---------------------------------------------------------------------------
+-- GRANTS: `drop function` APAGA TODOS OS GRANTS DA FUNCAO
+-- ---------------------------------------------------------------------------
+--
+-- Isto nao e detalhe de estilo, e o defeito que esta migracao ja causou em
+-- producao. O `drop` leva o ACL inteiro junto; recriar restaura so o que o
+-- script listar. Faltou `n8n_agent` -- que e o role com que o n8n CONECTA -- e a
+-- tool morreu com "permission denied for function".
+--
+-- `service_role` sozinho nao cobre: ele e o role do PostgREST/supabase-js, e o
+-- n8n nao passa por ali. As duas linhas sao obrigatorias, e a de n8n_agent e a
+-- que o agente usa em toda mensagem.
+--
+-- `npm run teste:grants-n8n` reprova qualquer api_n8n_* sem grant para
+-- n8n_agent, justamente para este esquecimento nao depender de memoria.
+
 drop function if exists public.api_n8n_ver_pedido(uuid, bigint);
 
 create or replace function public.api_n8n_ver_pedido(
@@ -71,3 +87,6 @@ revoke all on function public.api_n8n_ver_pedido(uuid, bigint) from public;
 revoke all on function public.api_n8n_ver_pedido(uuid, bigint) from anon;
 revoke all on function public.api_n8n_ver_pedido(uuid, bigint) from authenticated;
 grant execute on function public.api_n8n_ver_pedido(uuid, bigint) to service_role;
+-- O role com que o n8n CONECTA. Sem esta linha a tool morre com
+-- "permission denied for function" no primeiro cliente.
+grant execute on function public.api_n8n_ver_pedido(uuid, bigint) to n8n_agent;

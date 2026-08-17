@@ -54,6 +54,17 @@ const um = async (sql, p = []) => { const r = await c.query(sql, p); return r.ro
 await c.connect();
 await c.query('begin');
 try {
+  /*
+   * O DROP ANTES DA 26 nao e zelo: sem ele o replay quebra assim que a 41 entra
+   * em producao. A 26 cria buscar_produtos com `create or replace` e o tipo de
+   * retorno ANTIGO; contra um banco onde a 41 ja mudou o retorno, o Postgres
+   * recusa com "cannot change return type of existing function".
+   *
+   * Mesma classe do que aconteceu em migracao-audio: replay de um elo contra um
+   * banco que ja viu o elo seguinte. O que se replaya e a CADEIA, e a cadeia
+   * comeca do estado que um ambiente novo teria -- sem a funcao.
+   */
+  await c.query('drop function if exists public.api_n8n_buscar_produtos(uuid, text)');
   await c.query(M25); await c.query(M26); await c.query(M41);
   console.log('migracoes 25 e 26 aplicadas\n');
 

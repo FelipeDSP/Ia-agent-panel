@@ -42,6 +42,7 @@
     "teste:guarda-e2e": "node tests/guarda-sabotagem.mjs",
     "teste:deletes": "node tests/deletes-escopados.mjs",
     "teste:seed-independente": "node tests/seed-independente.mjs",
+    "teste:grants-n8n": "node tests/grants-n8n.mjs",
     "guarda": "node tests/lib/com-guarda.mjs"
   },
   "dependencies": {
