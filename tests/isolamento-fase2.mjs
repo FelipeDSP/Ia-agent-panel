@@ -217,48 +217,56 @@ async function testarBanco(usuarios, vitima) {
       `viu ${tenantsVistos?.length ?? 0}: ${(tenantsVistos ?? []).map((t) => t.slug).join(', ')}`,
     );
 
-    const { data: docs } = await cliente.from('kb_documentos').select('id, tenant_id');
+    /*
+      * `!erro &&` NAO E ZELO. Sem ele, uma query que ERRA devolve `data: null`,
+      * `(null ?? []).length` e 0, e a assercao passa sem ter exercido nada. Foi
+      * exatamente assim que a assercao do token de Chatwoot passou seis dias
+      * verde depois que a migracao 21 mudou a coluna de tabela. Confirmado em
+      * producao: coluna inexistente devolve 42703 com data null; tabela
+      * inexistente, PGRST205 com data null.
+      */
+    const { data: docs, error: erroDocs } = await cliente.from('kb_documentos').select('id, tenant_id');
     const docsAlheios = (docs ?? []).filter((d) => d.tenant_id !== usuario.tenantId);
     checar(
       `${usuario.slug}: nenhum documento de outro tenant na listagem`,
-      docsAlheios.length === 0,
-      `${docsAlheios.length} alheios`,
+      !erroDocs && docsAlheios.length === 0,
+      erroDocs ? `a query ERROU (${erroDocs.code})` : `${docsAlheios.length} alheios`,
     );
 
-    const { data: convs } = await cliente.from('conversas').select('id, tenant_id');
+    const { data: convs, error: erroConvs } = await cliente.from('conversas').select('id, tenant_id');
     const convsAlheias = (convs ?? []).filter((c) => c.tenant_id !== usuario.tenantId);
     checar(
       `${usuario.slug}: nenhuma conversa de outro tenant na listagem`,
-      convsAlheias.length === 0,
-      `${convsAlheias.length} alheias`,
+      !erroConvs && convsAlheias.length === 0,
+      erroConvs ? `a query ERROU (${erroConvs.code})` : `${convsAlheias.length} alheias`,
     );
 
     // -- Camada 2: tenant_id alheio passado explicitamente --------------------
 
     for (const outro of outros) {
-      const { data } = await cliente
+      const { data, error } = await cliente
         .from('kb_documentos')
         .select('id')
         .eq('tenant_id', outro.tenantId);
 
       checar(
         `${usuario.slug}: forjar tenant_id de ${outro.slug} não devolve documento`,
-        (data ?? []).length === 0,
-        `${(data ?? []).length} linhas`,
+        !error && (data ?? []).length === 0,
+        error ? `a query ERROU (${error.code})` : `${(data ?? []).length} linhas`,
       );
     }
 
     // O caso que mais importa: a vítima faz o papel do cliente real, e tem
     // conteúdo conferido em prepararTenants() — senão isto passaria vazio.
-    const { data: docsAcqua } = await cliente
+    const { data: docsVitima, error: erroVitima } = await cliente
       .from('kb_documentos')
       .select('id')
       .eq('tenant_id', vitima.id);
 
     checar(
       `${usuario.slug}: não alcança a base da vítima (papel do cliente real)`,
-      (docsAcqua ?? []).length === 0,
-      `${(docsAcqua ?? []).length} linhas`,
+      !erroVitima && (docsVitima ?? []).length === 0,
+      erroVitima ? `a query ERROU (${erroVitima.code})` : `${(docsVitima ?? []).length} linhas`,
     );
 
     /*
@@ -309,7 +317,7 @@ async function testarBanco(usuarios, vitima) {
       erroInsert ? '' : 'insert passou',
     );
 
-    const { data: updateAlheio } = await cliente
+    const { data: updateAlheio, error: erroUpdAlheio } = await cliente
       .from('tenants')
       .update({ nome: 'sequestrado' })
       .eq('id', outros[0].tenantId)
@@ -317,7 +325,7 @@ async function testarBanco(usuarios, vitima) {
 
     checar(
       `${usuario.slug}: UPDATE no tenant de ${outros[0].slug} não afeta linha`,
-      (updateAlheio ?? []).length === 0,
+      !erroUpdAlheio && (updateAlheio ?? []).length === 0,
       `${(updateAlheio ?? []).length} linhas alteradas`,
     );
 
@@ -343,7 +351,7 @@ async function testarBanco(usuarios, vitima) {
     }
 
     // Filtro de metadata apontando para outro tenant não amplia escopo.
-    const { data: buscaForjada } = await cliente.rpc('match_kb_documentos', {
+    const { data: buscaForjada, error: erroForjada } = await cliente.rpc('match_kb_documentos', {
       query_embedding: `[${Array(1536).fill(0.01).join(',')}]`,
       match_count: 50,
       filter: { tenant_id: vitima.id },
@@ -351,8 +359,8 @@ async function testarBanco(usuarios, vitima) {
 
     checar(
       `${usuario.slug}: filtro de metadata com id da vítima devolve vazio`,
-      (buscaForjada ?? []).length === 0,
-      `${(buscaForjada ?? []).length} linhas`,
+      !erroForjada && (buscaForjada ?? []).length === 0,
+      erroForjada ? `a query ERROU (${erroForjada.code})` : `${(buscaForjada ?? []).length} linhas`,
     );
 
     // -- API do n8n não é alcançável pelo painel ------------------------------
@@ -381,7 +389,7 @@ async function testarBanco(usuarios, vitima) {
 
     // -- Usuários de outros tenants ------------------------------------------
 
-    const { data: usuariosVistos } = await cliente
+    const { data: usuariosVistos, error: erroUsuarios } = await cliente
       .from('usuarios_painel')
       .select('id, tenant_id');
 
@@ -391,13 +399,13 @@ async function testarBanco(usuarios, vitima) {
 
     checar(
       `${usuario.slug}: não lista usuários de outro tenant`,
-      usuariosAlheios.length === 0,
-      `${usuariosAlheios.length} alheios`,
+      !erroUsuarios && usuariosAlheios.length === 0,
+      erroUsuarios ? `a query ERROU (${erroUsuarios.code})` : `${usuariosAlheios.length} alheios`,
     );
 
     // -- Config de tools (tenant_tools) de outro tenant ----------------------
 
-    const { data: toolsVistas } = await cliente
+    const { data: toolsVistas, error: erroTools } = await cliente
       .from('tenant_tools')
       .select('id, tenant_id');
 
@@ -406,21 +414,21 @@ async function testarBanco(usuarios, vitima) {
     );
     checar(
       `${usuario.slug}: não lista tenant_tools de outro tenant`,
-      toolsAlheias.length === 0,
-      `${toolsAlheias.length} alheias`,
+      !erroTools && toolsAlheias.length === 0,
+      erroTools ? `a query ERROU (${erroTools.code})` : `${toolsAlheias.length} alheias`,
     );
 
-    const { data: toolsAcqua } = await cliente
+    const { data: toolsVitima, error: erroToolsVitima } = await cliente
       .from('tenant_tools')
       .select('id, config')
       .eq('tenant_id', vitima.id);
     checar(
       `${usuario.slug}: não lê a config de tools da vítima`,
-      (toolsAcqua ?? []).length === 0,
-      `${(toolsAcqua ?? []).length} linhas`,
+      !erroToolsVitima && (toolsVitima ?? []).length === 0,
+      erroToolsVitima ? `a query ERROU (${erroToolsVitima.code})` : `${(toolsVitima ?? []).length} linhas`,
     );
 
-    const { data: toolUpdate } = await cliente
+    const { data: toolUpdate, error: erroToolUpdate } = await cliente
       .from('tenant_tools')
       .update({ ativo: false })
       .eq('tenant_id', outros[0].tenantId)
@@ -428,8 +436,8 @@ async function testarBanco(usuarios, vitima) {
       .select('id');
     checar(
       `${usuario.slug}: UPDATE em tenant_tools de ${outros[0].slug} não afeta linha`,
-      (toolUpdate ?? []).length === 0,
-      `${(toolUpdate ?? []).length} linhas alteradas`,
+      !erroToolUpdate && (toolUpdate ?? []).length === 0,
+      erroToolUpdate ? `a query ERROU (${erroToolUpdate.code})` : `${(toolUpdate ?? []).length} linhas alteradas`,
     );
 
     await cliente.auth.signOut();

@@ -185,13 +185,26 @@ console.log('\n  -- coerência entre as duas camadas --');
     }
   }
 
+  /*
+   * `pares > 0` e o que impede o verde mais bonito e mais vazio da suite.
+   *
+   * Se a query base de `tenant_tools` errar ou vier vazia, o laco nao roda,
+   * `divergentes` fica vazio, e o teste ANUNCIA "as 2 camadas concordam em todos
+   * os 0 pares" — e passa. O numero estava no rotulo desde sempre; ninguem le
+   * rotulo de assercao verde.
+   *
+   * Verificado por sabotagem: filtrando a query base por um tool_nome
+   * inexistente, a versao anterior imprimia OK com "0 pares".
+   */
   checar(`as 2 camadas concordam em todos os ${pares} pares tenant×tool`,
-    divergentes.length === 0, divergentes.join(' | '));
+    pares > 0 && divergentes.length === 0,
+    pares === 0 ? 'ZERO pares comparados — a query base nao trouxe nada' : divergentes.join(' | '));
 
   // A regra por trás: uma tool só vale com contratado E ativo. Escrita
   // explicitamente para o teste falhar mesmo que AS DUAS funções errem juntas —
   // concordar não basta, elas têm que concordar no valor certo.
   const erradas = [];
+  let conferidas = 0;
   for (const l of linhas ?? []) {
     if (!porTenant.has(l.tenant_id)) continue;
     const { data: cfg } = await admin.rpc('api_n8n_config_tool', {
@@ -199,11 +212,15 @@ console.log('\n  -- coerência entre as duas camadas --');
     });
     const obtido = (Array.isArray(cfg) ? cfg[0] : cfg)?.tool_ativa === true;
     const esperado = l.contratado === true && l.ativo === true;
+    conferidas++;
     if (obtido !== esperado) {
       erradas.push(`${porTenant.get(l.tenant_id)}/${l.tool_nome}: esperado ${esperado}, veio ${obtido}`);
     }
   }
-  checar('config_tool = (contratado AND ativo) em toda linha', erradas.length === 0, erradas.join(' | '));
+  // Mesmo motivo do bloco acima: "nenhuma errada" entre zero linhas e vacuo.
+  checar(`config_tool = (contratado AND ativo) nas ${conferidas} linhas`,
+    conferidas > 0 && erradas.length === 0,
+    conferidas === 0 ? 'ZERO linhas conferidas — a query base nao trouxe nada' : erradas.join(' | '));
 }
 
 // ---------------------------------------------------------------------------

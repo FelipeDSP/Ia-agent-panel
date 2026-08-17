@@ -76,6 +76,35 @@ async function autenticar(email) {
 }
 
 // JPEG mínimo válido (SOI + EOI). Basta para o Storage aceitar como image/jpeg.
+/*
+ * `Boolean(error)` NAO BASTA, e o motivo foi medido, nao suposto.
+ *
+ * Sondagem em producao, com cliente autenticado:
+ *
+ *   bucket certo, objeto alheio  -> "Object not found"   (404)
+ *   BUCKET ERRADO                -> "Bucket not found"   (404)
+ *   Boolean(error) nos dois      -> true / true          NAO DISTINGUE
+ *
+ * Ou seja: no dia em que o bucket for renomeado, toda assercao de recusa deste
+ * arquivo passa a "confirmar" um isolamento que nao esta sendo exercido — e as
+ * duas piores sao o teto de 512 KB e a allowlist de MIME, que passariam a
+ * atestar limites que ninguem aplica.
+ *
+ * `recusaDePolicy` exige que a recusa NAO seja "bucket inexistente". Os limites
+ * do bucket vao mais longe e conferem o codigo exato (413 e 415), porque ali o
+ * que se afirma e QUAL regra recusou, nao apenas que houve recusa.
+ */
+function recusaDePolicy(r) {
+  const msg = r?.error?.message ?? '';
+  return Boolean(r?.error) && !/bucket not found/i.test(msg);
+}
+
+/** Detalhe util quando a assercao acima reprova. */
+function motivo(r) {
+  if (!r?.error) return 'NAO houve recusa';
+  return `${r.error.message} (${r.error.statusCode ?? '?'})`;
+}
+
 const jpegMinimo = () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9])], { type: 'image/jpeg' });
 
 async function main() {
@@ -143,7 +172,7 @@ async function main() {
     console.log('\n  -- outro tenant não alcança (API autenticada) --');
     for (const [nome, cli] of [['B', cB], ['C', cC]]) {
       const r = await cli.storage.from(BUCKET).download(pathA);
-      checar(`${nome} NÃO baixa a foto de A`, Boolean(r.error) || !r.data, r.error ? '' : 'veio conteúdo!');
+      checar(`${nome} NÃO baixa a foto de A`, recusaDePolicy(r) || (!r.error && !r.data), motivo(r));
 
       const l = await cli.storage.from(BUCKET).list(A.id);
       checar(`${nome} NÃO lista a pasta de A`, !l.error && (l.data ?? []).length === 0,
@@ -154,7 +183,7 @@ async function main() {
     // dado do outro, é plantar dado no outro.
     const invasao = await cB.storage.from(BUCKET)
       .upload(`${A.id}/invasao.jpg`, jpegMinimo(), { contentType: 'image/jpeg', upsert: true });
-    checar('B NÃO sobe dentro da pasta de A', Boolean(invasao.error), invasao.error ? '' : 'upload passou!');
+    checar('B NÃO sobe dentro da pasta de A', recusaDePolicy(invasao), motivo(invasao));
 
     const rem = await cB.storage.from(BUCKET).remove([pathA]);
     const aindaLa = await cA.storage.from(BUCKET).download(pathA);
@@ -183,22 +212,29 @@ async function main() {
     // ela tem de ser curta. O que se testa aqui é que ela só existe para quem
     // já podia ler — B não consegue nem gerá-la.
     const assinadaB = await cB.storage.from(BUCKET).createSignedUrl(pathA, 60);
-    checar('B NÃO consegue assinar URL do objeto de A', Boolean(assinadaB.error) || !assinadaB.data?.signedUrl,
-      assinadaB.error ? '' : 'assinou!');
+    checar('B NÃO consegue assinar URL do objeto de A',
+      recusaDePolicy(assinadaB) || (!assinadaB.error && !assinadaB.data?.signedUrl),
+      motivo(assinadaB));
 
     // -----------------------------------------------------------------------
     console.log('\n  -- as garantias que o navegador não dá --');
     const grande = new Blob([new Uint8Array(600 * 1024)], { type: 'image/jpeg' });
     const rGrande = await cA.storage.from(BUCKET)
       .upload(`${A.id}/grande.jpg`, grande, { contentType: 'image/jpeg', upsert: true });
-    checar('arquivo acima de 512 KB é recusado pelo bucket', Boolean(rGrande.error),
-      rGrande.error ? '' : 'subiu — o teto não está valendo');
+    // 413 e o codigo do teto. Qualquer outro erro aqui (bucket errado, rede,
+    // permissao) significa que o teto NAO foi exercido — e era isso que
+    // `Boolean(error)` deixava passar como se fosse prova.
+    checar('arquivo acima de 512 KB é recusado pelo bucket (413)',
+      rGrande.error?.statusCode === '413',
+      rGrande.error ? `veio ${motivo(rGrande)}` : 'subiu — o teto não está valendo');
 
     const pdf = new Blob([new Uint8Array([0x25, 0x50, 0x44, 0x46])], { type: 'application/pdf' });
     const rPdf = await cA.storage.from(BUCKET)
       .upload(`${A.id}/doc.pdf`, pdf, { contentType: 'application/pdf', upsert: true });
-    checar('MIME fora da allowlist é recusado', Boolean(rPdf.error),
-      rPdf.error ? '' : 'subiu — a allowlist não está valendo');
+    // 415 = unsupported media type. Mesmo raciocinio do teto acima.
+    checar('MIME fora da allowlist é recusado (415)',
+      rPdf.error?.statusCode === '415',
+      rPdf.error ? `veio ${motivo(rPdf)}` : 'subiu — a allowlist não está valendo');
 
     // -----------------------------------------------------------------------
     console.log('\n  -- a coluna acompanha o isolamento --');

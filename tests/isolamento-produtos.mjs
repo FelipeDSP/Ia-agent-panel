@@ -145,15 +145,26 @@ async function main() {
       const { data } = await cA.from('produtos').select('id, tenant_id').like('nome', `${MARCA}%`);
       const alheios = (data ?? []).filter((r) => r.tenant_id !== A.id);
       checar('A lê o próprio produto', (data ?? []).length === 1, `viu ${data?.length ?? 0}`);
+      /*
+       * SEGURA DE GRAÇA, e por isso NÃO leva `!error`.
+       *
+       * A asserção positiva logo acima usa o MESMO `data` desta query. Se ela
+       * errasse, `data` seria `null` e a positiva reprovaria primeiro — então o
+       * erro engolido (o defeito do chatwoot_token) não tem por onde entrar.
+       * Acrescentar a checagem seria ruído. O que sustenta é a positiva estar na
+       * MESMA query: mover uma das duas quebra a proteção sem aviso.
+       */
       checar('A NÃO lê produto de outro tenant', alheios.length === 0, `viu ${alheios.length} alheio(s)`);
     }
 
     // 2. LEITURA POR ID ALHEIO — o caso da URL de edição adulterada.
     {
-      const { data } = await cA.from('produtos').select('id, nome').eq('id', prod.B).maybeSingle();
-      checar('A NÃO lê produto de B por id direto', !data, data ? `leu "${data.nome}"` : '');
-      const { data: dC } = await cA.from('produtos').select('id').eq('id', prod.C).maybeSingle();
-      checar('A NÃO lê produto de C por id direto', !dC);
+      const { data, error } = await cA.from('produtos').select('id, nome').eq('id', prod.B).maybeSingle();
+      checar('A NÃO lê produto de B por id direto', !error && !data,
+        error ? `a query ERROU (${error.code})` : data ? `leu "${data.nome}"` : '');
+      const { data: dC, error: erroC } = await cA.from('produtos').select('id').eq('id', prod.C).maybeSingle();
+      checar('A NÃO lê produto de C por id direto', !erroC && !dC,
+        erroC ? `a query ERROU (${erroC.code})` : '');
     }
 
     // 3. ESCRITA EM ID ALHEIO — o caso da action chamada direto.
@@ -182,9 +193,10 @@ async function main() {
 
     // 5. SOFT DELETE alheio.
     {
-      const { data } = await cA.from('produtos')
+      const { data, error } = await cA.from('produtos')
         .update({ deletado_em: new Date().toISOString() }).eq('id', prod.B).select('id');
-      checar('A NÃO remove produto de B', (data ?? []).length === 0, `${data?.length} linha(s)`);
+      checar('A NÃO remove produto de B', !error && (data ?? []).length === 0,
+        error ? `a query ERROU (${error.code})` : `${data?.length} linha(s)`);
       const { data: chk } = await admin.from('produtos').select('deletado_em').eq('id', prod.B).single();
       checar('produto de B segue vivo', chk?.deletado_em === null);
     }
@@ -203,8 +215,9 @@ async function main() {
 
     // 7. DELETE FÍSICO alheio (a UI usa soft, mas a API expõe delete).
     {
-      const { data } = await cA.from('produtos').delete().eq('id', prod.B).select('id');
-      checar('A NÃO apaga fisicamente produto de B', (data ?? []).length === 0, `${data?.length} linha(s)`);
+      const { data, error } = await cA.from('produtos').delete().eq('id', prod.B).select('id');
+      checar('A NÃO apaga fisicamente produto de B', !error && (data ?? []).length === 0,
+        error ? `a query ERROU (${error.code})` : `${data?.length} linha(s)`);
       const { count } = await admin.from('produtos')
         .select('id', { count: 'exact', head: true }).eq('id', prod.B);
       checar('produto de B continua na tabela', (count ?? 0) === 1);
@@ -229,10 +242,11 @@ async function main() {
 
     // 9. VAZAMENTO NA OUTRA DIREÇÃO — B também não alcança A.
     {
-      const { data: lidos } = await cB.from('produtos').select('tenant_id').like('nome', `${MARCA}%`);
+      const { data: lidos, error: erroLidos } = await cB.from('produtos').select('tenant_id').like('nome', `${MARCA}%`);
       const alheios = (lidos ?? []).filter((r) => r.tenant_id !== B.id);
-      checar('B NÃO lê produto de outro tenant', alheios.length === 0, `viu ${alheios.length}`);
-      const { data } = await cB.from('produtos')
+      checar('B NÃO lê produto de outro tenant', !erroLidos && alheios.length === 0,
+        erroLidos ? `a query ERROU (${erroLidos.code})` : `viu ${alheios.length}`);
+      const { data, error } = await cB.from('produtos')
         .update({ preco_centavos: 7 }).eq('id', prod.A).select('id');
       checar('B NÃO altera produto de A', (data ?? []).length === 0, `${data?.length} linha(s)`);
     }

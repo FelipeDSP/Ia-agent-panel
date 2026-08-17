@@ -173,16 +173,27 @@ async function main() {
       const { data } = await cA.from('pedidos').select('id, tenant_id');
       const alheios = (data ?? []).filter((r) => r.tenant_id !== A.id);
       checar('A lê o próprio pedido', (data ?? []).some((r) => r.id === pedidoA.id));
+      /*
+       * SEGURA DE GRAÇA, e por isso NÃO leva `!error`.
+       *
+       * A asserção positiva logo acima usa o MESMO `data` desta query. Se ela
+       * errasse, `data` seria `null` e a positiva reprovaria primeiro — então o
+       * erro engolido (o defeito do chatwoot_token) não tem por onde entrar.
+       * Acrescentar a checagem seria ruído. O que sustenta é a positiva estar na
+       * MESMA query: mover uma das duas quebra a proteção sem aviso.
+       */
       checar('A NÃO lê pedido de outro tenant', alheios.length === 0, `viu ${alheios.length}`);
     }
     {
-      const { data } = await cA.from('pedidos').select('id').eq('id', pedidoB.id).maybeSingle();
-      checar('A NÃO lê pedido de B por id direto', !data, data ? 'leu' : '');
+      const { data, error } = await cA.from('pedidos').select('id').eq('id', pedidoB.id).maybeSingle();
+      checar('A NÃO lê pedido de B por id direto', !error && !data,
+        error ? `a query ERROU (${error.code})` : data ? 'leu' : '');
     }
     {
-      const { data } = await cA.from('pedido_itens').select('id, tenant_id');
+      const { data, error } = await cA.from('pedido_itens').select('id, tenant_id');
       const alheios = (data ?? []).filter((r) => r.tenant_id !== A.id);
-      checar('A NÃO lê item de pedido alheio', alheios.length === 0, `viu ${alheios.length}`);
+      checar('A NÃO lê item de pedido alheio', !error && alheios.length === 0,
+        error ? `a query ERROU (${error.code})` : `viu ${alheios.length}`);
     }
 
     // ---------------------------------------------------------------------
@@ -212,8 +223,9 @@ async function main() {
       checar('A NÃO insere pedido para B', barrado, error ? `código ${error.code}` : 'insert passou');
     }
     {
-      const { data } = await cA.from('pedidos').delete().eq('id', pedidoB.id).select('id');
-      checar('A NÃO apaga pedido de B', (data ?? []).length === 0, `${data?.length} linha(s)`);
+      const { data, error } = await cA.from('pedidos').delete().eq('id', pedidoB.id).select('id');
+      checar('A NÃO apaga pedido de B', !error && (data ?? []).length === 0,
+        error ? `a query ERROU (${error.code})` : `${data?.length} linha(s)`);
     }
 
     // ---------------------------------------------------------------------
@@ -251,11 +263,13 @@ async function main() {
     // 4. Vazamento na outra direção, e o terceiro tenant
     // ---------------------------------------------------------------------
     {
-      const { data } = await cB.from('pedidos').select('tenant_id');
+      const { data, error } = await cB.from('pedidos').select('tenant_id');
       const alheios = (data ?? []).filter((r) => r.tenant_id !== B.id);
-      checar('B NÃO lê pedido de outro tenant', alheios.length === 0, `viu ${alheios.length}`);
-      const { data: upd } = await cB.from('pedidos').update({ total_centavos: 7 }).eq('id', pedidoA.id).select('id');
-      checar('B NÃO altera pedido de A', (upd ?? []).length === 0);
+      checar('B NÃO lê pedido de outro tenant', !error && alheios.length === 0,
+        error ? `a query ERROU (${error.code})` : `viu ${alheios.length}`);
+      const { data: upd, error: erroUpd } = await cB.from('pedidos').update({ total_centavos: 7 }).eq('id', pedidoA.id).select('id');
+      checar('B NÃO altera pedido de A', !erroUpd && (upd ?? []).length === 0,
+        erroUpd ? `a query ERROU (${erroUpd.code})` : `${upd?.length} linha(s)`);
     }
     {
       const { count } = await admin.from('pedidos')

@@ -194,9 +194,10 @@ async function main() {
 
     // 6. Leitura: A não enxerga a linha de B (o card não pode listar módulo alheio).
     {
-      const { data } = await cA.from('tenant_tools').select('tenant_id').eq('tool_nome', TOOL);
+      const { data, error } = await cA.from('tenant_tools').select('tenant_id').eq('tool_nome', TOOL);
       const alheias = (data ?? []).filter((r) => r.tenant_id !== A.id);
-      checar('A não LÊ linha de outro tenant', alheias.length === 0, `viu ${alheias.length} alheia(s)`);
+      checar('A não LÊ linha de outro tenant', !error && alheias.length === 0,
+        error ? `a query ERROU (${error.code})` : `viu ${alheias.length} alheia(s)`);
     }
 
     // 7. Guard: `contratado` é da agência. A ação toca só `ativo` exatamente por
