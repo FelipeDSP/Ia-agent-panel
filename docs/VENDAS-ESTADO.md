@@ -714,7 +714,7 @@ Enquanto a proposta não chega e o sandbox não é respondido, **não vale escre
 integração**. O que vale é o que não depende do Asaas: exercitar os três ramos
 da foto, e decidir o preço do módulo com o Anexo I na mesa.
 
-## Catálogo: a busca informa o total (migração 41, 17/08)
+## Catálogo: a busca informa o total (migração 41, **aplicada** em 17/08)
 
 **O defeito.** O agente do `emporio` (40 produtos) respondeu *"o que vocês teriam
 para me oferecer?"* listando **três queijos**, como se fosse o catálogo inteiro.
@@ -743,7 +743,8 @@ dentro de um JSON de workflow, fora do alcance de teste — e este projeto já
 perdeu produção por escapamento errado em nó de workflow. Agora muda por migração
 com rollback, e `tests/migracao-vendas.mjs` exercita cada ramo.
 
-**Pergunta aberta continua em aberto.** `termo = ''` devolve os primeiros por
+**Pergunta aberta continua em aberto** — registrada em
+[`PENDENCIA-CATEGORIA-PRODUTO.md`](PENDENCIA-CATEGORIA-PRODUTO.md). `termo = ''` devolve os primeiros por
 ordem alfabética, e no `emporio` os nomes começam com número (`1 -`, `10 -`,
 `11 -`), então a amostra sai `1, 10, 11, 12, 13`: não é só arbitrária, parece
 defeito. A resposta boa depende de **categoria de produto**, que é a próxima

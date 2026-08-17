@@ -32,6 +32,10 @@ documentação e material de referência.
 - [`SIMULACAO-MIGRACAO-V2.md`](SIMULACAO-MIGRACAO-V2.md) — **planejamento, não executado.**
   Migração para um schema v2 (documentos normalizados, CHECK de modelo, HNSW parcial):
   queries afetadas, plano expand/contract e estimativa de 29–45 h.
+- [`PENDENCIA-CATEGORIA-PRODUTO.md`](PENDENCIA-CATEGORIA-PRODUTO.md) — **próxima fatia
+  de vendas.** A pergunta aberta ("o que vocês têm?") ainda é respondida por
+  `order by nome`, e no Empório sai `1, 10, 11, 12, 13`: não parece amostra, parece
+  defeito. Ordem de amostragem precisa de critério.
 - [`PENDENCIA-GUARDA-STORAGE.md`](PENDENCIA-GUARDA-STORAGE.md) — **a fazer, com gatilho.**
   A guarda de dado alheio cobre 14 tabelas e **não** o Storage. Risco baixo hoje porque
   os caminhos já são escopados por tenant; o gatilho é o primeiro cliente além do
