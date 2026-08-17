@@ -31,7 +31,23 @@ const lim = (f) =>
 const M31 = lim('20260812183730_31_catalogo_tools_tipo.sql');
 const R31 = lim('20260812183730_31_catalogo_tools_tipo_rollback.sql');
 const M32 = lim('20260812183756_32_mensagens_log_audio_segundos.sql');
+/*
+ * A 37 acrescentou `p_execucao_id` a api_n8n_registrar_mensagem e dropou a
+ * assinatura de 8 argumentos. Reaplicar a 32 SOZINHA recria aquela assinatura,
+ * e as duas vivas tornam AMBÍGUA a chamada de 7 argumentos — que é a que o n8n
+ * faz. O replay que vale é o da CADEIA, não de um elo: 32 e depois 37, na
+ * ordem em que produção as viu.
+ *
+ * Foi o que deixou este teste vermelho desde 14/08. Não era defeito de
+ * produção: lá existe UMA assinatura só, a de 9 argumentos.
+ */
+const M37 = lim('20260814150100_37_mensagens_log_execucao.sql');
 const R32 = lim('20260812183756_32_mensagens_log_audio_segundos_rollback.sql');
+// Desfazer também é cadeia, na ordem INVERSA: a 37 veio depois da 32, então
+// sai primeiro. Rodar R32 com a 37 ainda aplicada deixa a assinatura de 9
+// argumentos viva ao lado da de 7 que o rollback recria — duas vivas, chamada
+// ambígua, exatamente o que a 32 existe para evitar.
+const R37 = lim('20260814150100_37_mensagens_log_execucao_rollback.sql');
 
 const c = new pg.Client({ connectionString: process.env.SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } });
 
@@ -105,12 +121,25 @@ try {
   ).rows.map((r) => r.column_name);
   chk('coluna audio_segundos existe', cols.includes('audio_segundos'));
 
-  const assinaturas = (await c.query(`
+  // Fecha a cadeia: a 32 sozinha ressuscita a assinatura que a 37 dropou.
+  await c.query(M37);
+
+  const assinaturasDe = async () => (await c.query(`
     select pg_get_function_identity_arguments(p.oid) a from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname='public' and p.proname='api_n8n_registrar_mensagem'`)).rows;
-  chk('UMA assinatura só — sem overload ambíguo', assinaturas.length === 1,
+
+  const assinaturas = await assinaturasDe();
+  chk('UMA assinatura só depois de 32+37 — sem overload ambíguo', assinaturas.length === 1,
     JSON.stringify(assinaturas.map((x) => x.a)));
+
+  // A PROPRIEDADE, e não o número: reaplicar a cadeia inteira de novo continua
+  // deixando uma. É o que torna a migração reexecutável de verdade.
+  await c.query(M32);
+  await c.query(M37);
+  const reaplicada = await assinaturasDe();
+  chk('reaplicar 32+37 mantém UMA assinatura', reaplicada.length === 1,
+    JSON.stringify(reaplicada.map((x) => x.a)));
 
   const t = (await c.query("select id from public.tenants where slug='restaurante-teste'")).rows[0];
 
@@ -142,6 +171,7 @@ try {
   // CERTO. Para exercitar o caminho limpo e preciso um mundo sem audio, e a
   // transacao abortada e o unico lugar onde da para ter isso sem perder nada.
   await c.query('delete from public.mensagens_log where audio_segundos is not null');
+  await c.query(R37);
   await c.query(R32);
   const colsDepois = (await c.query(
     "select column_name from information_schema.columns where table_schema='public' and table_name='mensagens_log'")

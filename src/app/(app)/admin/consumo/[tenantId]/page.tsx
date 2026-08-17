@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/table';
 import { exigirSuperAdmin } from '@/lib/auth';
 import {
+  formatarUsd,
   historicoDoTenant,
   mesCorrente,
   rotuloMes,
@@ -37,12 +38,6 @@ import { criarClienteServidor } from '@/lib/supabase/server';
  * assinatura antiga. Não vale por uma tela de leitura.
  */
 
-const usd = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 4,
-});
 const num = new Intl.NumberFormat('pt-BR');
 
 /** Coluna `uuid`: um id malformado vira erro 22P02 do Postgres, não 404. */
@@ -89,14 +84,24 @@ export default async function PaginaConsumoDoTenant({
               Histórico de consumo mês a mês. {tenant.slug}
             </p>
           </div>
+          {/*
+            O link só existe para cliente VIVO. `/admin/tenants/[id]` filtra
+            `deletado_em` e chama `notFound()`, então em cliente excluído este
+            link era um 404 garantido — e só aparecia clicando, porque nenhum
+            teste navega. Excluído mostra o badge e nada mais: não há tela de
+            configuração para quem não está mais lá.
+          */}
           <div className="flex flex-wrap items-center gap-2">
-            {tenant.deletado_em ? <Badge variant="secondary">cliente excluído</Badge> : null}
-            <Link
-              href={`/admin/tenants/${tenantId}`}
-              className="text-sm text-primary underline-offset-4 hover:underline"
-            >
-              Configurações do cliente
-            </Link>
+            {tenant.deletado_em ? (
+              <Badge variant="secondary">cliente excluído</Badge>
+            ) : (
+              <Link
+                href={`/admin/tenants/${tenantId}`}
+                className="text-sm text-primary underline-offset-4 hover:underline"
+              >
+                Configurações do cliente
+              </Link>
+            )}
           </div>
         </div>
       </header>
@@ -108,7 +113,7 @@ export default async function PaginaConsumoDoTenant({
       <Card>
         <CardContent className="p-6">
           <p className="text-sm text-muted-foreground">Acumulado desde o primeiro consumo</p>
-          <p className="mt-1 text-3xl font-semibold tabular-nums">{usd.format(totalAcumulado)}</p>
+          <p className="mt-1 text-3xl font-semibold tabular-nums">{formatarUsd(totalAcumulado)}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {historico.length} {historico.length === 1 ? 'mês' : 'meses'} de histórico. O mês
             corrente ({rotuloMes(mesCorrente(new Date()))}) ainda está em curso.
@@ -152,7 +157,7 @@ export default async function PaginaConsumoDoTenant({
                         {num.format(m.embedding)}
                       </TableCell>
                       <TableCell className="text-right font-medium tabular-nums">
-                        {usd.format(m.custo)}
+                        {formatarUsd(m.custo)}
                       </TableCell>
                     </TableRow>
                   );

@@ -38,6 +38,8 @@ export type LinhaConsumo = {
 export type TenantConsumo = {
   id: string;
   nome: string;
+  /** Desambigua nomes repetidos na tela. `null` só se o tenant não existir mais. */
+  slug: string | null;
   /** Soft delete: continua no histórico de custo, mas sinalizado. */
   deletado: boolean;
 };
@@ -93,6 +95,43 @@ export function mesDe(valor: string): string {
   return String(valor).slice(0, 7);
 }
 
+const USD_CENTAVOS = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
+});
+const USD_DOLARES = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+/**
+ * Dinheiro com casas FIXAS dentro da escala.
+ *
+ * O formatador anterior era `min 2 / max 4`, e o resultado na tela foi uma
+ * coluna que se compara com precisões diferentes: `$0.0436`, `$0.0012`,
+ * `$0.0002` e então `$0.00` — o último parecia medido em outra régua, quando era
+ * só o zero à direita sendo cortado. Aqui, abaixo de um dólar são sempre quatro
+ * casas (`$0.0000`), de um dólar para cima sempre duas (`$12.34`), e nunca há
+ * duas precisões diferentes na mesma ordem de grandeza.
+ */
+export function formatarUsd(valor: number): string {
+  return Math.abs(valor) >= 1 ? USD_DOLARES.format(valor) : USD_CENTAVOS.format(valor);
+}
+
+/**
+ * Acima de que percentual o número deixa de informar e vira multiplicador.
+ *
+ * `▲ 14.433%` foi o que apareceu na tela — em pt-BR o ponto é separador de
+ * milhar, então lê-se "quatorze mil por cento", e ao lado de valores com vírgula
+ * decimal a leitura fica ambígua. `×145` diz a mesma coisa e cabe na cabeça.
+ * Só alta cruza isso: custo não é negativo, então queda não passa de -100%.
+ */
+export const PCT_VIRA_MULTIPLICADOR = 1000;
+
 /** Mês corrente em UTC — o mesmo fuso em que a RPC agrupa. */
 export function mesCorrente(agora: Date): string {
   return agora.toISOString().slice(0, 7);
@@ -126,35 +165,67 @@ export function fracaoDoMes(agora: Date): number {
 }
 
 export type Variacao =
-  /** Sem consumo neste mês nem no anterior. Não há o que comparar. */
+  /** Nenhum token nos dois meses. Não há o que comparar. */
   | { tipo: 'sem-consumo' }
-  /** Consumiu agora e não tinha nada antes — a divisão por zero, nomeada. */
+  /** Usou agora e não tinha usado antes — a divisão por zero, nomeada. */
   | { tipo: 'primeiro-mes' }
-  /** Consumia e parou. Também é informação. */
+  /** Usava e parou. Também é informação. */
   | { tipo: 'parou'; anterior: number; destacar: boolean }
+  /**
+   * Usou nos dois meses, mas o mês anterior custou MENOS que a menor casa
+   * exibível — percentual contra isso não significa nada.
+   */
+  | { tipo: 'base-zero'; anterior: number }
   | { tipo: 'variou'; pct: number; delta: number; destacar: boolean };
 
 /**
- * Compara o custo do mês corrente com o do anterior.
+ * Compara o mês corrente com o anterior.
  *
- * Os dois primeiros casos existem para que `(atual - 0) / 0` nunca aconteça:
- * em JS isso é `Infinity` (ou `NaN`, se ambos forem zero), e `+Infinity%` na
- * tela é o tipo de coisa que só aparece em produção, no mês em que entra
- * cliente novo — que é esta semana.
+ * QUEM DECIDE "USOU" É O TOKEN, NÃO O CUSTO. A primeira versão classificava por
+ * custo e produziu um card que se contradizia na tela: o Empório aparecia com
+ * `embedding 50` e, três linhas abaixo, "sem consumo neste mês". Os 50 tokens
+ * custam US$ 0,000001, arredondam para zero, e o custo passou a dizer "não usou"
+ * enquanto o token dizia "usou". Custo arredonda; token não mente — então
+ * presença é token, e o custo entra só como magnitude.
+ *
+ * `base-zero` é a consequência de ter separado os dois: com presença por token,
+ * dá para ter `tokensAnterior > 0` e `custoAnterior == 0`, que é a divisão por
+ * zero voltando por outra porta. É o caso do próprio Empório no mês que vem.
  */
-export function classificarVariacao(
-  atual: number,
-  anterior: number,
-  fracao: number,
-): Variacao {
-  if (anterior <= 0 && atual <= 0) return { tipo: 'sem-consumo' };
-  if (anterior <= 0) return { tipo: 'primeiro-mes' };
-  if (atual <= 0) {
-    return { tipo: 'parou', anterior, destacar: fracao >= FRACAO_MES_PARA_QUEDA };
-  }
+export function classificarVariacao({
+  custoAtual,
+  custoAnterior,
+  tokensAtual,
+  tokensAnterior,
+  fracao,
+}: {
+  custoAtual: number;
+  custoAnterior: number;
+  tokensAtual: number;
+  tokensAnterior: number;
+  fracao: number;
+}): Variacao {
+  const usouAgora = tokensAtual > 0;
+  const usouAntes = tokensAnterior > 0;
 
-  const delta = atual - anterior;
-  const pct = (delta / anterior) * 100;
+  if (!usouAgora && !usouAntes) return { tipo: 'sem-consumo' };
+  if (!usouAntes) return { tipo: 'primeiro-mes' };
+  if (!usouAgora) {
+    return {
+      tipo: 'parou',
+      anterior: custoAnterior,
+      // MESMO PISO DO `variou`, e pelo mesmo motivo. Sem ele, o sandbox que
+      // fechou julho em US$ 0,0002 e parou virava o ÚNICO elemento colorido da
+      // tela — atenção gasta em dois centésimos de centavo, enquanto a variação
+      // de verdade ficava em cinza. Piso ausente aqui contradizia o argumento
+      // escrito em LIMIAR_VARIACAO_USD.
+      destacar: custoAnterior >= LIMIAR_VARIACAO_USD && fracao >= FRACAO_MES_PARA_QUEDA,
+    };
+  }
+  if (custoAnterior <= 0) return { tipo: 'base-zero', anterior: custoAnterior };
+
+  const delta = custoAtual - custoAnterior;
+  const pct = (delta / custoAnterior) * 100;
   const relevante =
     Math.abs(pct) >= LIMIAR_VARIACAO_PCT && Math.abs(delta) >= LIMIAR_VARIACAO_USD;
 
@@ -170,12 +241,20 @@ export function classificarVariacao(
 export type CardConsumo = {
   tenantId: string;
   nome: string;
+  /**
+   * Desambiguador na tela. Havia TRÊS cards com nome parecido e DOIS com nome
+   * idêntico ("Sandbox de Testes"), distinguíveis só pelo badge de excluído —
+   * numa tela cuja pergunta é "qual cliente está gastando".
+   */
+  slug: string | null;
   deletado: boolean;
   entrada: number;
   saida: number;
   embedding: number;
   custo: number;
-  /** Nenhum token e nenhum custo no mês — vai para o fim da lista, apagado. */
+  /** Soma dos três — é o que decide "usou", em vez do custo arredondado. */
+  tokens: number;
+  /** Nenhum token no mês: vai para o fim da lista, apagado. */
   semConsumo: boolean;
   variacao: Variacao;
 };
@@ -200,13 +279,17 @@ function somar(linha: LinhaConsumo) {
  * Monta a tela do mês corrente: total, e um card por cliente ordenado do mais
  * caro para o mais barato.
  *
- * A lista de cards é a UNIÃO de `tenants` (os clientes vivos, que o chamador lê
- * de `tenants`) com quem tiver linha no mês. A união importa nas duas pontas:
- * sem `tenants`, cliente que não consumiu simplesmente não existiria na tela —
- * e "esse cliente parou de usar" é a informação mais barata que esta tela dá;
- * sem os `tenant_id` das linhas, um cliente excluído que ainda consumiu no mês
- * sairia dos cards mas continuaria no total, e a soma dos cards não fecharia
- * com o número em destaque no topo.
+ * QUEM ENTRA NA LISTA. Todo cliente vivo, mais todo cliente EXCLUÍDO que tenha
+ * linha neste mês ou no anterior. As duas pontas importam: sem os vivos, o
+ * cliente que não consumiu não existiria na tela — e "esse cliente parou de
+ * usar" é a informação mais barata que esta tela dá; sem os excluídos com linha,
+ * um deles sairia dos cards e continuaria no total, e a soma dos cards não
+ * fecharia com o número em destaque no topo.
+ *
+ * `tenants` recebe TODOS os clientes, inclusive os excluídos — é daí que sai o
+ * `slug` de quem está excluído. Antes o chamador filtrava `deletado_em` e o
+ * excluído entrava só pelo `tenant_nome` da linha, sem slug: dois cards com o
+ * nome "Sandbox de Testes" e nada para diferenciar.
  */
 export function montarVisaoMensal({
   linhas,
@@ -225,31 +308,55 @@ export function montarVisaoMensal({
   const doAnterior = linhas.filter((l) => mesDe(l.mes) === anterior);
 
   const porTenant = new Map(doMes.map((l) => [l.tenant_id, l]));
-  const custoAnterior = new Map(doAnterior.map((l) => [l.tenant_id, Number(l.custo_usd)]));
+  const antes = new Map(
+    doAnterior.map((l) => {
+      const v = somar(l);
+      return [l.tenant_id, { custo: v.custo, tokens: v.entrada + v.saida + v.embedding }];
+    }),
+  );
 
-  const conhecidos = new Map(tenants.map((t) => [t.id, t]));
-  // Quem tem linha no mês (ou no anterior) e não está na lista de vivos: entrou
-  // excluído, e ainda assim conta.
-  for (const l of [...doMes, ...doAnterior]) {
-    if (!conhecidos.has(l.tenant_id)) {
-      conhecidos.set(l.tenant_id, { id: l.tenant_id, nome: l.tenant_nome, deletado: true });
+  const catalogo = new Map(tenants.map((t) => [t.id, t]));
+  const comLinha = new Set([...doMes, ...doAnterior].map((l) => l.tenant_id));
+
+  // Vivo entra sempre; excluído entra só se tiver linha no mês ou no anterior —
+  // senão a tela acumularia todo cliente já excluído, para sempre.
+  const aExibir = tenants.filter((t) => !t.deletado || comLinha.has(t.id));
+
+  // Rede: linha cujo tenant_id não está nem no catálogo (hard delete, que não
+  // deveria existir). Entra pelo nome da própria linha, sem slug, em vez de
+  // desaparecer e desencontrar a soma.
+  for (const id of comLinha) {
+    if (!catalogo.has(id)) {
+      const l = [...doMes, ...doAnterior].find((x) => x.tenant_id === id);
+      aExibir.push({ id, nome: l?.tenant_nome ?? id, slug: null, deletado: true });
     }
   }
 
-  const cards: CardConsumo[] = [...conhecidos.values()].map((t) => {
+  const cards: CardConsumo[] = aExibir.map((t) => {
     const linha = porTenant.get(t.id);
     const v = linha ? somar(linha) : { entrada: 0, saida: 0, embedding: 0, custo: 0 };
     const tokens = v.entrada + v.saida + v.embedding;
+    const anteriores = antes.get(t.id) ?? { custo: 0, tokens: 0 };
 
     return {
       tenantId: t.id,
       nome: t.nome,
+      slug: t.slug,
       deletado: t.deletado,
       ...v,
-      // Custo zero NÃO é o mesmo que sem consumo: 50 tokens de embedding custam
-      // US$ 0,000001 e arredondam para zero. Quem gastou token usou o sistema.
-      semConsumo: tokens === 0 && v.custo === 0,
-      variacao: classificarVariacao(v.custo, custoAnterior.get(t.id) ?? 0, fracao),
+      tokens,
+      // TOKEN, não custo: 50 tokens de embedding custam US$ 0,000001 e
+      // arredondam para zero. Quem gastou token usou o sistema. (Custo é sempre
+      // derivado de token, então token zero implica custo zero — a condição
+      // dupla de antes era redundante e, pior, sugeria que podiam divergir.)
+      semConsumo: tokens === 0,
+      variacao: classificarVariacao({
+        custoAtual: v.custo,
+        custoAnterior: anteriores.custo,
+        tokensAtual: tokens,
+        tokensAnterior: anteriores.tokens,
+        fracao,
+      }),
     };
   });
 
@@ -258,9 +365,7 @@ export function montarVisaoMensal({
     if (b.custo !== a.custo) return b.custo - a.custo;
     // Empate em custo (dois zeros arredondados) desempata por token: quem usou
     // mais aparece antes de quem usou menos.
-    const ta = a.entrada + a.saida + a.embedding;
-    const tb = b.entrada + b.saida + b.embedding;
-    if (tb !== ta) return tb - ta;
+    if (b.tokens !== a.tokens) return b.tokens - a.tokens;
     return a.nome.localeCompare(b.nome, 'pt-BR');
   });
 

@@ -6,6 +6,8 @@ import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { exigirSuperAdmin } from '@/lib/auth';
 import {
+  PCT_VIRA_MULTIPLICADOR,
+  formatarUsd,
   montarVisaoMensal,
   rotuloMes,
   type CardConsumo,
@@ -33,14 +35,9 @@ import { cn } from '@/lib/utils';
  * que precisa aparecer no fim da lista.
  */
 
-const usd = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 4,
-});
 const num = new Intl.NumberFormat('pt-BR');
 const pct = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
+const mult = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
 
 export default async function PaginaConsumoAdmin() {
   await exigirSuperAdmin();
@@ -49,14 +46,18 @@ export default async function PaginaConsumoAdmin() {
   const [{ data: consumoRaw, error }, { data: tenantsRaw, error: erroTenants }] =
     await Promise.all([
       supabase.rpc('billing_consumo_mensal'),
-      supabase.from('tenants').select('id, nome, deletado_em').is('deletado_em', null).order('nome'),
+      // SEM filtro de `deletado_em`: os excluídos vêm para que quem consumiu no
+      // mês (ou no anterior) apareça com nome e SLUG de verdade. Quem escolhe
+      // exibir é `montarVisaoMensal` — excluído sem linha não entra.
+      supabase.from('tenants').select('id, nome, slug, deletado_em').order('nome'),
     ]);
 
   const linhas = (consumoRaw ?? []) as LinhaConsumo[];
   const tenants: TenantConsumo[] = (tenantsRaw ?? []).map((t) => ({
     id: t.id as string,
     nome: t.nome as string,
-    deletado: false,
+    slug: t.slug as string,
+    deletado: t.deletado_em !== null,
   }));
 
   const { mes, mesAnterior, total, cards } = montarVisaoMensal({
@@ -97,7 +98,7 @@ export default async function PaginaConsumoAdmin() {
         <CardContent className="flex flex-wrap items-end justify-between gap-4 p-6">
           <div>
             <p className="text-sm text-muted-foreground">Total em {rotuloMes(mes)}</p>
-            <p className="mt-1 text-4xl font-semibold tabular-nums">{usd.format(total)}</p>
+            <p className="mt-1 text-4xl font-semibold tabular-nums">{formatarUsd(total)}</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {comConsumo.length} {comConsumo.length === 1 ? 'cliente ativo' : 'clientes ativos'} no
               mês
@@ -151,17 +152,21 @@ function CardCliente({ card, mesAnterior }: { card: CardConsumo; mesAnterior: st
         card.semConsumo && 'opacity-60',
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate font-medium">{card.nome}</p>
-          {card.deletado ? (
-            <Badge variant="secondary" className="mt-1">
-              cliente excluído
-            </Badge>
-          ) : null}
-        </div>
-        <span className="shrink-0 text-lg font-semibold tabular-nums">{usd.format(card.custo)}</span>
+      {/*
+        Nome em LINHA PRÓPRIA, e o custo abaixo.
+        Antes os dois dividiam a linha e o nome era truncado pelo preço — o card
+        mais caro, "Sandbox de Testes (restau…", era justamente o único cortado,
+        e é o que mais se precisa identificar. O slug fecha a conta: havia dois
+        cards com o nome idêntico "Sandbox de Testes".
+      */}
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-medium leading-snug">{card.nome}</p>
+        {card.deletado ? <Badge variant="secondary">cliente excluído</Badge> : null}
       </div>
+      {card.slug ? (
+        <p className="mt-0.5 font-mono text-xs text-muted-foreground">{card.slug}</p>
+      ) : null}
+      <p className="mt-2 text-2xl font-semibold tabular-nums">{formatarUsd(card.custo)}</p>
 
       <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <div className="flex gap-1">
@@ -206,16 +211,33 @@ function LinhaVariacao({ card, mesAnterior }: { card: CardConsumo; mesAnterior: 
   if (v.tipo === 'parou') {
     return (
       <p className={cn('text-xs', v.destacar ? 'font-medium text-warning' : 'text-muted-foreground')}>
-        Sem consumo neste mês — {rotulo} fechou em {usd.format(v.anterior)}.
+        Sem consumo neste mês — {rotulo} fechou em {formatarUsd(v.anterior)}.
+      </p>
+    );
+  }
+
+  // Usou nos dois meses, mas o mês anterior custou menos que a menor casa
+  // exibível. Percentual contra ~zero seria o +Infinity% voltando disfarçado.
+  if (v.tipo === 'base-zero') {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Usou nos dois meses, mas {rotulo} custou menos de {formatarUsd(0.0001)} — sem base para
+        percentual.
       </p>
     );
   }
 
   const subiu = v.delta > 0;
+  const anterior = card.custo - v.delta;
+  // Acima de mil por cento o percentual não informa; o multiplicador informa.
+  const grandeza =
+    Math.abs(v.pct) >= PCT_VIRA_MULTIPLICADOR
+      ? `×${mult.format(card.custo / anterior)}`
+      : `${pct.format(Math.abs(v.pct))}%`;
+
   return (
     <p className={cn('text-xs', v.destacar ? 'font-medium text-warning' : 'text-muted-foreground')}>
-      {subiu ? '▲' : '▼'} {pct.format(Math.abs(v.pct))}% vs {rotulo} (
-      {usd.format(card.custo - v.delta)})
+      {subiu ? '▲' : '▼'} {grandeza} vs {rotulo} ({formatarUsd(anterior)})
     </p>
   );
 }

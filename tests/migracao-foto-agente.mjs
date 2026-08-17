@@ -62,6 +62,17 @@ const CONV = 990001n;
 await c.connect();
 await c.query('begin');
 
+/*
+ * `contratado` em tenant_tools é operação DA AGÊNCIA: o trigger
+ * `tenant_tools_guard_colunas` recusa qualquer outro papel, e esta conexão chega
+ * sem JWT. Assumir o papel é o que faz o teste arranjar o estado que vai medir,
+ * em vez de depender de como o banco por acaso está hoje.
+ *
+ * `set local` morre no rollback junto com o resto — e NÃO desligamos trigger
+ * nenhum: se houvesse cascade indesejado, o teste precisa vê-lo.
+ */
+await c.query(`set local request.jwt.claims = '{"app_metadata":{"papel":"super_admin"}}'`);
+
 try {
   console.log('\n== Migração 35: trava do envio de foto ==\n');
   await c.query(M35);
@@ -89,6 +100,33 @@ try {
   const prodDeB = (await c.query(
     `select id from public.produtos where tenant_id=$1 and deletado_em is null limit 1`, [B.id])).rows[0];
 
+  /*
+   * ARRANJA o estado, não o afirma.
+   *
+   * Este bloco dizia "sem contratar" e simplesmente CONFIAVA que ninguém tinha
+   * contratado `foto_produto` para o restaurante-teste. Era verdade no dia em
+   * que foi escrito e virou falsa quando alguém contratou pelo painel — que é
+   * operação normal. O teste então via a foto ser PERMITIDA, reprovava a recusa,
+   * e o `insert` do bloco seguinte batia em duplicate key.
+   *
+   * Ironia registrada: isto veio no commit chamado "varredura de testes que
+   * afirmavam estado do mundo". Ler a própria regra não basta.
+   *
+   * Tudo aqui roda em transação revertida, então descontratar de propósito é
+   * grátis e não toca produção.
+   */
+  await c.query(
+    `insert into public.tenant_tools (tenant_id, tool_nome, contratado, ativo, config)
+     values ($1,'foto_produto',false,true,'{}'::jsonb)
+     on conflict (tenant_id, tool_nome) do update set contratado = false`,
+    [A.id]);
+  // Confirma que o arranjo ENTROU. Arranjo que não aplicou faz o teste medir
+  // outra coisa e passar — a mesma classe do falso verde que a sabotagem pega.
+  chk('arranjo: foto_produto está DEScontratada',
+    (await c.query(
+      "select contratado from public.tenant_tools where tenant_id=$1 and tool_nome='foto_produto'",
+      [A.id])).rows[0].contratado === false);
+
   console.log('  -- sem contratar --');
   let r = await enviar(A.id, prodComFoto.id);
   chk('recusa quem não contratou', r.permitido === false && r.motivo === 'nao_contratado', JSON.stringify(r.motivo));
@@ -97,9 +135,17 @@ try {
   chk('a recusa foi REGISTRADA', (await registros(A.id)).length === 1);
 
   console.log('\n  -- contratado --');
+  // Upsert, não insert: a linha pode já existir (contratada ou não), e o
+  // `insert` cru estourava `tenant_tools_tenant_id_tool_nome_key`.
   await c.query(
-    "insert into public.tenant_tools (tenant_id, tool_nome, contratado, ativo, config) values ($1,'foto_produto',true,true,'{}'::jsonb)",
+    `insert into public.tenant_tools (tenant_id, tool_nome, contratado, ativo, config)
+     values ($1,'foto_produto',true,true,'{}'::jsonb)
+     on conflict (tenant_id, tool_nome) do update set contratado = true, ativo = true`,
     [A.id]);
+  chk('arranjo: foto_produto está contratada',
+    (await c.query(
+      "select contratado from public.tenant_tools where tenant_id=$1 and tool_nome='foto_produto'",
+      [A.id])).rows[0].contratado === true);
 
   r = await enviar(A.id, prodSemFoto.id);
   chk('recusa produto sem foto', r.permitido === false && r.motivo === 'sem_foto', String(r.motivo));
@@ -175,7 +221,21 @@ try {
   const erroR = await esperaErro(R35);
   chk('rollback RECUSA com o módulo contratado', erroR === '55000', String(erroR));
 
-  await c.query("delete from public.tenant_tools where tenant_id=$1 and tool_nome='foto_produto'", [A.id]);
+  /*
+   * Descontrata de TODOS, não só de A.
+   *
+   * A versão anterior apagava a contratação de um tenant e assumia que ninguém
+   * mais tinha `foto_produto` — verdade quando foi escrita, falsa a partir do dia
+   * em que a agência vendeu o módulo. O guard do rollback conta os tenants, então
+   * o teste morria com "3 tenant(s) com foto_produto contratada" e nem chegava a
+   * exercitar o caminho limpo. Não se afirma quantos são: zera-se, e confere-se
+   * que zerou. Transação revertida, produção intacta.
+   */
+  await c.query("delete from public.tenant_tools where tool_nome='foto_produto'");
+  chk('arranjo: nenhum tenant com foto_produto contratada',
+    (await c.query(
+      "select count(*)::int n from public.tenant_tools where tool_nome='foto_produto' and contratado")
+    ).rows[0].n === 0);
   await c.query(R35);
   const sobrou = (await c.query(
     "select count(*)::int n from information_schema.tables where table_schema='public' and table_name='fotos_enviadas'")).rows[0];

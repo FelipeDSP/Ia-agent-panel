@@ -39,7 +39,9 @@ const {
   FRACAO_MES_PARA_QUEDA,
   LIMIAR_VARIACAO_PCT,
   LIMIAR_VARIACAO_USD,
+  PCT_VIRA_MULTIPLICADOR,
   classificarVariacao,
+  formatarUsd,
   fracaoDoMes,
   historicoDoTenant,
   mesAnteriorDe,
@@ -47,6 +49,21 @@ const {
   montarVisaoMensal,
   rotuloMes,
 } = mod;
+
+/**
+ * Atalho para os casos em que só o CUSTO importa: presença é inferida do próprio
+ * custo (>0 = usou). Os casos em que token e custo DIVERGEM — que é o defeito
+ * que a tela mostrou — são escritos com o objeto completo, à mão.
+ */
+function variacao(custoAtual, custoAnterior, fracao) {
+  return classificarVariacao({
+    custoAtual,
+    custoAnterior,
+    tokensAtual: custoAtual > 0 ? 1 : 0,
+    tokensAnterior: custoAnterior > 0 ? 1 : 0,
+    fracao,
+  });
+}
 
 let passou = 0;
 let falhou = 0;
@@ -86,12 +103,18 @@ const B = 'bbbbbbbb-0000-4000-8000-000000000002';
 const C = 'cccccccc-0000-4000-8000-000000000003';
 const D = 'dddddddd-0000-4000-8000-000000000004';
 const E = 'eeeeeeee-0000-4000-8000-000000000005';
+const Z = 'ffffffff-0000-4000-8000-000000000006';
 
+// Catálogo COMPLETO de tenants, inclusive os excluídos — é o que a página passa
+// agora, porque é de onde sai o `slug` de quem está excluído. Delta está
+// excluído E tem linha (entra); Zeta está excluído e NÃO tem linha (não entra).
 const TENANTS = [
-  { id: A, nome: 'Alfa', deletado: false },
-  { id: B, nome: 'Beta', deletado: false },
-  { id: C, nome: 'Gama', deletado: false },
-  { id: E, nome: 'Épsilon', deletado: false },
+  { id: A, nome: 'Alfa', slug: 'alfa', deletado: false },
+  { id: B, nome: 'Beta', slug: 'beta', deletado: false },
+  { id: C, nome: 'Gama', slug: 'gama', deletado: false },
+  { id: E, nome: 'Épsilon', slug: 'epsilon', deletado: false },
+  { id: D, nome: 'Delta', slug: 'delta', deletado: true },
+  { id: Z, nome: 'Zeta', slug: 'zeta', deletado: true },
 ];
 
 // 15/08 = mês pela metade (15/31 = 0,48 — ainda ABAIXO do limiar de queda).
@@ -123,13 +146,13 @@ console.log('\n=== 2. Variação: os casos que viram Infinity se ninguém olhar 
 
 // O caso que motivou nomear os tipos. (x - 0) / 0 é Infinity em JS, e
 // "+Infinity%" na tela aconteceria no mês em que entra cliente novo.
-eq(classificarVariacao(5, 0, 0.5).tipo, 'primeiro-mes', 'mês anterior zerado não divide por zero');
-eq(classificarVariacao(0, 0, 0.5).tipo, 'sem-consumo', 'zero nos dois meses não é 0/0 = NaN');
-eq(classificarVariacao(0, 3, 0.9).tipo, 'parou', 'consumia e parou tem tipo próprio');
+eq(variacao(5, 0, 0.5).tipo, 'primeiro-mes', 'mês anterior zerado não divide por zero');
+eq(variacao(0, 0, 0.5).tipo, 'sem-consumo', 'zero nos dois meses não é 0/0 = NaN');
+eq(variacao(0, 3, 0.9).tipo, 'parou', 'consumia e parou tem tipo próprio');
 
 // A propriedade, e não um valor: nenhum caminho devolve número não finito.
 for (const [atual, anterior] of [[0, 0], [1, 0], [0, 1], [1, 1], [0.0001, 0.0002]]) {
-  const v = classificarVariacao(atual, anterior, 0.5);
+  const v = variacao(atual, anterior, 0.5);
   ok(
     v.tipo !== 'variou' || (Number.isFinite(v.pct) && Number.isFinite(v.delta)),
     `variação(${atual}, ${anterior}) não produz Infinity/NaN`,
@@ -139,17 +162,17 @@ for (const [atual, anterior] of [[0, 0], [1, 0], [0, 1], [1, 1], [0.0001, 0.0002
 console.log('\n=== 3. Limiar de destaque: as DUAS condições ===\n');
 
 // Percentual grande e centavos de diferença: é o ruído da escala de hoje.
-const ruido = classificarVariacao(0.04, 0.02, 1);
+const ruido = variacao(0.04, 0.02, 1);
 eq(ruido.tipo, 'variou', 'dobrou de 0,02 para 0,04');
 ok(Math.abs(ruido.pct) >= LIMIAR_VARIACAO_PCT, `  ...e passa do limiar percentual (${ruido.pct}%)`);
 eq(ruido.destacar, false, 'não destaca: 2 centavos não passam do piso absoluto');
 
 // Diferença absoluta grande e percentual pequeno: crescimento proporcional.
-const proporcional = classificarVariacao(11, 10, 1);
+const proporcional = variacao(11, 10, 1);
 eq(proporcional.destacar, false, 'não destaca: +US$ 1,00 mas só +10%');
 
 // As duas juntas.
-const anomalia = classificarVariacao(0.6, 0.2, 1);
+const anomalia = variacao(0.6, 0.2, 1);
 eq(anomalia.destacar, true, 'destaca: +200% E +40 centavos');
 ok(
   Math.abs(anomalia.pct) >= LIMIAR_VARIACAO_PCT && Math.abs(anomalia.delta) >= LIMIAR_VARIACAO_USD,
@@ -157,15 +180,15 @@ ok(
 );
 
 // A regra do mês parcial. Mesma queda, dois momentos do mês.
-const quedaCedo = classificarVariacao(0.2, 2, 0.1);
-const quedaTarde = classificarVariacao(0.2, 2, 0.9);
+const quedaCedo = variacao(0.2, 2, 0.1);
+const quedaTarde = variacao(0.2, 2, 0.9);
 eq(quedaCedo.destacar, false, 'queda no começo do mês não destaca (o mês é parcial)');
 eq(quedaTarde.destacar, true, 'a MESMA queda destaca com o mês adiantado');
-eq(classificarVariacao(0, 2, 0.1).destacar, false, '"parou" também respeita o mês parcial');
-eq(classificarVariacao(0, 2, 0.9).destacar, true, '"parou" destaca com o mês adiantado');
+eq(variacao(0, 2, 0.1).destacar, false, '"parou" também respeita o mês parcial');
+eq(variacao(0, 2, 0.9).destacar, true, '"parou" destaca com o mês adiantado');
 
 // Alta não espera o mês passar: subir já com o mês incompleto é sinal mais forte.
-eq(classificarVariacao(4, 1, 0.05).destacar, true, 'alta destaca desde o dia 1');
+eq(variacao(4, 1, 0.05).destacar, true, 'alta destaca desde o dia 1');
 
 ok(FRACAO_MES_PARA_QUEDA > 0 && FRACAO_MES_PARA_QUEDA < 1, 'a fração de corte é uma fração');
 
@@ -175,9 +198,9 @@ const LINHAS = [
   linha(A, 'Alfa', '2026-08', 100_000, 3_000, 0, '0.0500'),
   linha(B, 'Beta', '2026-08', 0, 0, 50, '0.0000'), // gastou token, custo arredonda a zero
   linha(E, 'Épsilon', '2026-08', 0, 0, 10, '0.0000'), // idem, com MENOS token que Beta
-  linha(D, 'Delta', '2026-08', 10_000, 500, 0, '0.0100'), // excluído: não está em TENANTS
+  linha(D, 'Delta', '2026-08', 10_000, 500, 0, '0.0100'), // excluído, MAS com linha no mês
   linha(A, 'Alfa', '2026-07', 40_000, 1_000, 0, '0.0200'),
-  linha(C, 'Gama', '2026-07', 5_000, 100, 0, '0.0030'),
+  linha(C, 'Gama', '2026-07', 900_000, 20_000, 0, '0.5000'), // material: acima do piso
   linha(A, 'Alfa', '2026-06', 1_000, 10, 0, '0.0005'), // mês antigo: fora da tela
 ];
 
@@ -196,7 +219,8 @@ eq(
 );
 
 const nomes = visao.cards.map((c) => c.nome);
-eq(nomes.length, 5, 'cinco cards: os 4 clientes vivos + o excluído que consumiu');
+eq(nomes.length, 5, 'cinco cards: os 4 vivos + o excluído COM linha');
+ok(!nomes.includes('Zeta'), 'excluído SEM linha não entra — senão a tela vira cemitério');
 ok(nomes.includes('Gama'), 'cliente sem NENHUMA linha no mês ainda aparece na lista');
 ok(nomes.includes('Delta'), 'cliente excluído que consumiu no mês não some do card');
 
@@ -220,8 +244,21 @@ const gamaTarde = montarVisaoMensal({ linhas: LINHAS, tenants: TENANTS, agora: T
 );
 eq(gamaTarde.variacao.destacar, true, 'a MESMA parada destaca no fim do mês');
 
+// O outro lado, e é o conserto (b): parada de valor irrelevante NÃO destaca nem
+// com o mês inteiro passado. Sem esta asserção, subir o valor do Gama acima
+// teria escondido a regressão em vez de a testar.
+const IRRELEVANTE = [linha(C, 'Gama', '2026-07', 300, 20, 0, '0.0002')];
+const gamaTrivial = montarVisaoMensal({
+  linhas: IRRELEVANTE,
+  tenants: TENANTS,
+  agora: TARDE,
+}).cards.find((c) => c.nome === 'Gama');
+eq(gamaTrivial.variacao.tipo, 'parou', 'parada trivial ainda é "parou"');
+eq(gamaTrivial.variacao.destacar, false, '  ...mas não destaca: o piso vale para o "parou"');
+
 const delta = visao.cards.find((c) => c.nome === 'Delta');
-eq(delta.deletado, true, 'quem entrou só pelas linhas é marcado como excluído');
+eq(delta.deletado, true, 'o excluído com linha vem marcado');
+eq(delta.slug, 'delta', '  ...e com SLUG, que é o que separa dois nomes iguais na tela');
 eq(delta.variacao.tipo, 'primeiro-mes', '  ...e sem julho, é primeiro mês (não Infinity)');
 
 const alfa = visao.cards.find((c) => c.nome === 'Alfa');
@@ -232,6 +269,80 @@ eq(alfa.variacao.destacar, false, '  ...sem destaque: 3 centavos não passam do 
 
 // Nenhum card do mês corrente carrega número do mês retrasado.
 eq(alfa.entrada, 100_000, 'o card usa a linha de AGOSTO, não a de julho nem a de junho');
+
+console.log('\n=== 4b. Os quatro defeitos que só a tela mostrou ===\n');
+
+/*
+ * Nenhuma das 79 asserções anteriores pegou nada disto, e não por descuido: elas
+ * olhavam uma função por vez, e três dos quatro defeitos são de ACORDO entre
+ * duas funções que, isoladas, estavam certas. Por isso viram casos nomeados.
+ */
+
+// (a) PRESENÇA É TOKEN, NÃO CUSTO. O card do Empório mostrava "embedding 50" e,
+// três linhas abaixo, "sem consumo neste mês". 50 tokens custam US$ 0,000001.
+const soToken = classificarVariacao({
+  custoAtual: 0, custoAnterior: 0, tokensAtual: 50, tokensAnterior: 0, fracao: 0.5,
+});
+eq(soToken.tipo, 'primeiro-mes', 'token sem custo mensurável é USO, não ausência');
+
+const EMPORIO = [linha(B, 'Beta', '2026-08', 0, 0, 50, '0.0000')];
+const cardEmporio = montarVisaoMensal({ linhas: EMPORIO, tenants: TENANTS, agora: MEIO })
+  .cards.find((c) => c.nome === 'Beta');
+eq(cardEmporio.semConsumo, false, 'quem gastou token não é "sem consumo"');
+eq(cardEmporio.tokens, 50, '  ...e o card carrega a contagem que a tela mostra');
+ok(
+  cardEmporio.variacao.tipo !== 'sem-consumo',
+  'o card NÃO pode exibir token e dizer "sem consumo" ao mesmo tempo',
+);
+
+// (b) O PISO DO `parou` É O MESMO DO `variou`. O sandbox fechou julho em
+// US$ 0,0002 e parou; era o único elemento colorido da tela.
+eq(variacao(0, 0.0002, 1).destacar, false, 'parar depois de 2 centésimos de centavo NÃO destaca');
+eq(variacao(0, 2, 1).destacar, true, 'parar depois de US$ 2,00 destaca');
+eq(
+  variacao(0, LIMIAR_VARIACAO_USD, 1).destacar,
+  true,
+  'exatamente no piso destaca (inclusivo, como no `variou`)',
+);
+
+// A PROPRIEDADE, e não dois valores: `parou` usa o MESMO piso do `variou`.
+for (const anterior of [0.0001, 0.001, 0.05, 0.09, 0.1, 0.5, 5]) {
+  const parou = variacao(0, anterior, 1);
+  ok(
+    parou.destacar === (anterior >= LIMIAR_VARIACAO_USD),
+    `parou(${anterior}) segue o piso absoluto de US$ ${LIMIAR_VARIACAO_USD}`,
+  );
+}
+
+// O caso que a separação token/custo CRIOU: usou nos dois meses, mas o mês
+// anterior custou menos que a menor casa exibível. Percentual contra ~zero é o
+// +Infinity% voltando por outra porta. É o Empório no mês que vem.
+const baseZero = classificarVariacao({
+  custoAtual: 0.02, custoAnterior: 0, tokensAtual: 9000, tokensAnterior: 50, fracao: 0.5,
+});
+eq(baseZero.tipo, 'base-zero', 'custo anterior zerado COM token anterior não vira percentual');
+ok(!('pct' in baseZero), '  ...e não carrega pct nenhum para a tela imprimir');
+
+// (c) Acima de mil por cento o percentual vira multiplicador. O limiar é
+// exportado para a página não escolher outro por conta própria.
+ok(PCT_VIRA_MULTIPLICADOR >= 100, 'o corte de multiplicador é um percentual alto');
+const explosao = variacao(0.0436, 0.0003, 1);
+ok(
+  Math.abs(explosao.pct) >= PCT_VIRA_MULTIPLICADOR,
+  `o caso real (0,0003 -> 0,0436) cruza o corte (${Math.round(explosao.pct)}%)`,
+);
+
+// (d) Dinheiro com casas FIXAS dentro da escala. A tela mostrava $0.0436,
+// $0.0012, $0.0002 e então $0.00 — a última parecia outra régua.
+eq(formatarUsd(0), '$0.0000', 'zero tem as mesmas 4 casas dos vizinhos');
+eq(formatarUsd(0.045), '$0.0450', 'e o total não perde o zero à direita');
+eq(formatarUsd(0.0436), '$0.0436', 'centavos com 4 casas');
+eq(formatarUsd(12.3), '$12.30', 'de um dólar para cima, 2 casas');
+eq(formatarUsd(1), '$1.00', 'a fronteira é inclusiva em 1');
+const casas = (x) => (formatarUsd(x).split('.')[1] ?? '').length;
+for (const [x, y] of [[0, 0.0436], [0.0002, 0.045], [12.3, 999.99]]) {
+  eq(casas(x), casas(y), `${x} e ${y} saem com o mesmo número de casas`);
+}
 
 console.log('\n=== 5. Histórico de um tenant: buraco vira zero, não sumiço ===\n');
 
@@ -248,7 +359,7 @@ const histGama = historicoDoTenant(LINHAS, C, '2026-08');
 eq(histGama.length, 2, 'julho (com consumo) e agosto (parado)');
 eq(histGama[0].mes, '2026-08', 'o mês corrente aparece mesmo sem linha');
 eq(histGama[0].custo, 0, '  ...com custo zero');
-eq(histGama[1].custo, 0.003, '  ...e julho com o custo real');
+eq(histGama[1].custo, 0.5, '  ...e julho com o custo real');
 
 // Buraco NO MEIO do histórico: se junho e agosto têm linha e julho não, julho
 // não pode simplesmente não estar lá — a leitura seria "julho não existiu".
@@ -288,21 +399,21 @@ const SABOTAGENS = [
   {
     nome: 'divisão por zero destravada (o +Infinity%)',
     // Tira o curto-circuito de "anterior <= 0": volta a cair no cálculo de pct.
-    quebrar: (s) => s.replace('if (anterior <= 0) return { tipo: \'primeiro-mes\' };', ''),
+    quebrar: (s) => s.replace("if (!usouAntes) return { tipo: 'primeiro-mes' };", ''),
     conferir: (m) => {
-      const v = m.classificarVariacao(5, 0, 0.5);
+      const v = variacaoDe(m)(5, 0, 0.5);
       return v.tipo === 'primeiro-mes' || Number.isFinite(v.pct);
     },
   },
   {
     nome: 'limiar só percentual (o piso absoluto some)',
     quebrar: (s) => s.replace('export const LIMIAR_VARIACAO_USD = 0.1;', 'export const LIMIAR_VARIACAO_USD = 0;'),
-    conferir: (m) => m.classificarVariacao(0.04, 0.02, 1).destacar === false,
+    conferir: (m) => variacaoDe(m)(0.04, 0.02, 1).destacar === false,
   },
   {
     nome: 'queda destaca desde o dia 1 (o vermelho que aparece sempre)',
     quebrar: (s) => s.replace('export const FRACAO_MES_PARA_QUEDA = 0.5;', 'export const FRACAO_MES_PARA_QUEDA = 0;'),
-    conferir: (m) => m.classificarVariacao(0.2, 2, 0.1).destacar === false,
+    conferir: (m) => variacaoDe(m)(0.2, 2, 0.1).destacar === false,
   },
   {
     nome: 'ordem crescente em vez de decrescente',
@@ -320,7 +431,11 @@ const SABOTAGENS = [
     // seria um caso que passa verde sem provar nada — que é exatamente o que
     // esta seção existe para não deixar acontecer.
     nome: 'desempate por token invertido',
-    quebrar: (s) => s.replace('if (tb !== ta) return tb - ta;', 'if (tb !== ta) return ta - tb;'),
+    quebrar: (s) =>
+      s.replace(
+        'if (b.tokens !== a.tokens) return b.tokens - a.tokens;',
+        'if (b.tokens !== a.tokens) return a.tokens - b.tokens;',
+      ),
     conferir: (m) => {
       const c = m.montarVisaoMensal({ linhas: LINHAS, tenants: TENANTS, agora: MEIO }).cards;
       return c[2].nome === 'Beta' && c[3].nome === 'Épsilon';
@@ -328,7 +443,7 @@ const SABOTAGENS = [
   },
   {
     nome: 'custo zero passa a contar como sem consumo',
-    quebrar: (s) => s.replace('semConsumo: tokens === 0 && v.custo === 0,', 'semConsumo: v.custo === 0,'),
+    quebrar: (s) => s.replace('semConsumo: tokens === 0,', 'semConsumo: v.custo === 0,'),
     conferir: (m) =>
       m
         .montarVisaoMensal({ linhas: LINHAS, tenants: TENANTS, agora: MEIO })
@@ -336,7 +451,11 @@ const SABOTAGENS = [
   },
   {
     nome: 'tenant excluído sai dos cards (total deixa de fechar)',
-    quebrar: (s) => s.replace('if (!conhecidos.has(l.tenant_id)) {', 'if (false) {'),
+    quebrar: (s) =>
+      s.replace(
+        'const aExibir = tenants.filter((t) => !t.deletado || comLinha.has(t.id));',
+        'const aExibir = tenants.filter((t) => !t.deletado);',
+      ),
     conferir: (m) => {
       const v = m.montarVisaoMensal({ linhas: LINHAS, tenants: TENANTS, agora: MEIO });
       const soma = v.cards.reduce((s2, c) => s2 + c.custo, 0);
@@ -369,7 +488,80 @@ const SABOTAGENS = [
     conferir: (m) => m.mesCorrente(new Date('2026-08-31T23:30:00Z')) === '2026-08',
     tz: 'Asia/Tokyo',
   },
+  {
+    // (a) O defeito real: presença voltando a ser custo em vez de token.
+    nome: 'presença por custo em vez de token (o card que se contradiz)',
+    quebrar: (s) => s.replace('const usouAgora = tokensAtual > 0;', 'const usouAgora = custoAtual > 0;'),
+    conferir: (m) =>
+      m.classificarVariacao({
+        custoAtual: 0, custoAnterior: 0, tokensAtual: 50, tokensAnterior: 0, fracao: 0.5,
+      }).tipo === 'primeiro-mes',
+  },
+  {
+    nome: 'semConsumo volta a olhar custo (Empório apagado por engano)',
+    quebrar: (s) => s.replace('semConsumo: tokens === 0,', 'semConsumo: v.custo === 0,'),
+    conferir: (m) =>
+      m
+        .montarVisaoMensal({ linhas: EMPORIO, tenants: TENANTS, agora: MEIO })
+        .cards.find((c) => c.nome === 'Beta').semConsumo === false,
+  },
+  {
+    // (b) O piso do `parou` desaparecendo de novo.
+    nome: 'parou sem piso absoluto (US$ 0,0002 pintado de laranja)',
+    quebrar: (s) => s.replace('custoAnterior >= LIMIAR_VARIACAO_USD && fracao', 'fracao'),
+    conferir: (m) => variacaoDe(m)(0, 0.0002, 1).destacar === false,
+  },
+  {
+    nome: 'base-zero removido (o +Infinity% pela porta do token)',
+    quebrar: (s) =>
+      s.replace("if (custoAnterior <= 0) return { tipo: 'base-zero', anterior: custoAnterior };", ''),
+    conferir: (m) => {
+      const v = m.classificarVariacao({
+        custoAtual: 0.02, custoAnterior: 0, tokensAtual: 9000, tokensAnterior: 50, fracao: 0.5,
+      });
+      return v.tipo === 'base-zero' || Number.isFinite(v.pct);
+    },
+  },
+  {
+    // (d) A precisão que fazia $0.00 parecer outra régua.
+    nome: 'dinheiro volta a cortar zero à direita',
+    quebrar: (s) => s.replace('  minimumFractionDigits: 4,', '  minimumFractionDigits: 2,'),
+    conferir: (m) => m.formatarUsd(0) === '$0.0000',
+  },
+  {
+    // (e) O slug que separa dois cards de nome idêntico.
+    nome: 'slug some do card (dois "Sandbox de Testes" indistinguíveis)',
+    quebrar: (s) => s.replace('      slug: t.slug,', '      slug: null,'),
+    conferir: (m) =>
+      m
+        .montarVisaoMensal({ linhas: LINHAS, tenants: TENANTS, agora: MEIO })
+        .cards.find((c) => c.nome === 'Delta').slug === 'delta',
+  },
+  {
+    nome: 'excluído sem linha volta a entrar (tela vira cemitério)',
+    quebrar: (s) =>
+      s.replace(
+        'const aExibir = tenants.filter((t) => !t.deletado || comLinha.has(t.id));',
+        'const aExibir = tenants.filter(() => true);',
+      ),
+    conferir: (m) =>
+      !m
+        .montarVisaoMensal({ linhas: LINHAS, tenants: TENANTS, agora: MEIO })
+        .cards.some((c) => c.nome === 'Zeta'),
+  },
 ];
+
+/** `variacao()` contra o módulo SABOTADO — o bom não serve para nada aqui. */
+function variacaoDe(m) {
+  return (custoAtual, custoAnterior, fracao) =>
+    m.classificarVariacao({
+      custoAtual,
+      custoAnterior,
+      tokensAtual: custoAtual > 0 ? 1 : 0,
+      tokensAnterior: custoAnterior > 0 ? 1 : 0,
+      fracao,
+    });
+}
 
 let semEfeito = 0;
 let versao = 0;

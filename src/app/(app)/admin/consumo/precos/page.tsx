@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/table';
 import { exigirSuperAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
-import { formatarData } from '@/lib/utils';
+import { formatarDataUTC } from '@/lib/utils';
 
 /**
  * Tabela de preços — configuração, não painel.
@@ -24,6 +24,14 @@ import { formatarData } from '@/lib/utils';
  * botão de editar: o modelo é de VIGÊNCIA, não de valor corrente.
  */
 
+/*
+ * Formatador PRÓPRIO, e não o `formatarUsd` do consumo.
+ *
+ * Aqui a grandeza é preço por 1M de tokens (US$ 2,00; US$ 0,40; US$ 0,02), não
+ * custo mensal em centavos. `formatarUsd` fixa quatro casas abaixo de um dólar
+ * para alinhar a coluna de custo, e aplicado nesta tabela produziria "$0.4000" e
+ * "$0.0200" — mais ruído, não menos. Escalas diferentes, formatadores diferentes.
+ */
 const usd = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
@@ -162,7 +170,7 @@ export default async function PaginaPrecos() {
                         ) : null}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {formatarData(p.vigente_desde)}
+                        {formatarDataUTC(p.vigente_desde)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {p.usd_entrada_por_1m != null ? usd.format(Number(p.usd_entrada_por_1m)) : '—'}

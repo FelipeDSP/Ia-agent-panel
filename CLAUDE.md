@@ -225,6 +225,28 @@ trocar o tamanho do chunk sem medir: quebra calado.
   escrita, pela mesma pessoa. Ler o próprio teste não basta, e escrever a regra
   também não.
 
+  **Em 2026-08-17 a contagem chegou a oito, e os dois novos fecham o argumento.**
+  O sétimo: `tests/migracao-audio.mjs` reaplicava a migração 32 sozinha para
+  provar idempotência, mas a 37 já havia substituído a assinatura — o replay de
+  um elo ressuscitava a assinatura de 8 argumentos e tornava **ambígua** a chamada
+  de 7 que o n8n faz. Vermelho por três dias sem defeito nenhum em produção. Se
+  o teste replaya migração, replaye a **cadeia**, na ordem em que produção a viu
+  (e o rollback na ordem inversa).
+
+  O oitavo é o que vale escrever: `tests/migracao-foto-agente.mjs` afirmava que
+  ninguém tinha `foto_produto` contratada, e quebrou quando a agência vendeu o
+  módulo — **e veio no commit chamado "varredura de testes que afirmavam estado
+  do mundo"**. A regra estava escrita, o commit era literalmente sobre ela, e o
+  mesmo trabalho introduziu uma violação nova. Não é descuido de quem não leu: é
+  a evidência de que **nota não protege nem quem a escreve**. O que protege é o
+  teste ARRANJAR o estado que vai medir — os dois consertos de hoje setam
+  `contratado` e descontratam dentro da transação revertida, em vez de confiar em
+  como o banco por acaso está.
+
+  Corolário para quando esta contagem crescer de novo: se a asserção depende de
+  algo que uma pessoa pode mudar pela interface, ela não é sobre propriedade —
+  ou o teste arranja aquele algo, ou está contando com sorte.
+
   Duas exigências práticas que saíram desses casos:
 
   - **Confirme que a mutação entrou** antes de acreditar no resultado. Imprima
