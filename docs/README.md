@@ -32,6 +32,10 @@ documentação e material de referência.
 - [`SIMULACAO-MIGRACAO-V2.md`](SIMULACAO-MIGRACAO-V2.md) — **planejamento, não executado.**
   Migração para um schema v2 (documentos normalizados, CHECK de modelo, HNSW parcial):
   queries afetadas, plano expand/contract e estimativa de 29–45 h.
+- [`PENDENCIA-GUARDA-STORAGE.md`](PENDENCIA-GUARDA-STORAGE.md) — **a fazer, com gatilho.**
+  A guarda de dado alheio cobre 14 tabelas e **não** o Storage. Risco baixo hoje porque
+  os caminhos já são escopados por tenant; o gatilho é o primeiro cliente além do
+  restaurante-teste com foto no catálogo.
 - [`PENDENCIA-SEED-DOS-TESTES.md`](PENDENCIA-SEED-DOS-TESTES.md) — **a fazer, com prazo.**
   Os testes de isolamento dependem de tenants de seed que qualquer pessoa apaga pelo
   painel; ficaram 4 dias cegos em 13–17/08. Inventário dos 6 testes acoplados, por que

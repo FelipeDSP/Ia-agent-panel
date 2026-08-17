@@ -25,6 +25,12 @@ import { createClient } from '@supabase/supabase-js';
 
 import { carregarEnv } from '../scripts/lib/env.mjs';
 import {
+  contarConteudo,
+  criarTenantsEfemeros,
+  removerTenantsEfemeros,
+  semearConteudo,
+} from './lib/tenants-efemeros.mjs';
+import {
   acharPorEmail,
   criarUsuario,
   ehEmailDuplicado,
@@ -50,8 +56,26 @@ if (!URL_SUPABASE || !CHAVE_PUBLICA || !CHAVE_SECRETA) {
 const REF_PROJETO = new URL(URL_SUPABASE).hostname.split('.')[0];
 const SENHA = 'TesteIsolamento#2026';
 
-/** Os três tenants de teste. A Acqua fica de fora: é cliente real. */
-const TENANTS_TESTE = ['restaurante-teste', 'sandbox-de-testes', 'clinica-teste'];
+/*
+ * SEM SLUG DE SEED, e sem a Acqua.
+ *
+ * Este teste resolvia três tenants de seed por slug e usava a `acqua-lavanderia`
+ * — cliente REAL em produção — como alvo do "não alcanço a base do outro". Duas
+ * consequências, e as duas doeram:
+ *
+ * 1. Quando dois seeds foram soft-deletados em 13/08, o teste morreu na
+ *    pré-condição e ficou quatro dias sem rodar.
+ * 2. Mirar a Acqua tornava as asserções fortes POR ACIDENTE: elas só significam
+ *    alguma coisa porque ela tem 12 documentos de verdade, e nada no teste
+ *    conferia isso. No dia em que a base dela fosse limpa, "devolve 0 linhas"
+ *    passaria a ser verdade por vacuidade, com a RLS ligada ou desligada.
+ *
+ * Agora são QUATRO tenants efêmeros: três participantes (um esconde todo bug de
+ * isolamento, dois escondem vazamento unidirecional) e uma VÍTIMA, que faz o
+ * papel do cliente real. Todos nascem com conteúdo, e o conteúdo é CONFERIDO —
+ * é o que separa "a RLS barrou" de "não havia nada para ver".
+ */
+const MARCA_TENANT = 'fase2';
 
 const admin = createClient(URL_SUPABASE, CHAVE_SECRETA, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -84,26 +108,42 @@ function pular(nome, motivo) {
 // Preparação
 // ---------------------------------------------------------------------------
 
-async function buscarTenants() {
-  const { data, error } = await admin
-    .from('tenants')
-    .select('id, slug, nome')
-    .is('deletado_em', null);
+/**
+ * Cria os quatro tenants e lhes dá conteúdo.
+ *
+ * A conferência no fim não é zelo: um `insert` que falhasse em silêncio deixaria
+ * TODAS as asserções de isolamento verdes por vacuidade. É a diferença entre
+ * "não vi nada porque a policy barrou" e "não vi nada porque não havia nada".
+ */
+async function prepararTenants() {
+  const efemeros = await criarTenantsEfemeros(admin, { marca: MARCA_TENANT, quantidade: 4 });
+  const participantes = efemeros.slice(0, 3);
+  const vitima = efemeros[3];
 
-  if (error) throw new Error(`nao foi possivel ler tenants: ${error.message}`);
+  for (const t of participantes) {
+    await semearConteudo(admin, t.id, { docs: 2, conversas: 1, tools: ['transferir_humano'] });
+  }
+  // A vítima faz o papel do cliente real: base maior e credencial de Chatwoot,
+  // que é o segredo que nenhum tenant pode alcançar.
+  await semearConteudo(admin, vitima.id, {
+    docs: 3,
+    conversas: 2,
+    credencial: true,
+    tools: ['transferir_humano', 'busca_conhecimento'],
+  });
 
-  const porSlug = new Map(data.map((t) => [t.slug, t]));
-
-  for (const slug of TENANTS_TESTE) {
-    if (!porSlug.has(slug)) {
-      throw new Error(`tenant de teste ausente no banco: ${slug}`);
+  for (const t of efemeros) {
+    const c = await contarConteudo(admin, t.id);
+    if (c.docs < 1 || c.conversas < 1 || c.tools < 1) {
+      throw new Error(`tenant ${t.slug} ficou sem conteúdo (${JSON.stringify(c)}) — as asserções seriam vácuas`);
     }
   }
-  if (!porSlug.has('acqua-lavanderia')) {
-    throw new Error('tenant acqua-lavanderia ausente');
+  const cv = await contarConteudo(admin, vitima.id);
+  if (cv.credenciais !== 1) {
+    throw new Error(`a vítima ficou sem credencial (${JSON.stringify(cv)}) — o teste do token não testaria nada`);
   }
 
-  return porSlug;
+  return { efemeros, participantes, vitima };
 }
 
 /**
@@ -160,8 +200,7 @@ async function autenticar(email) {
 // Camadas 1 e 2 — API e parâmetro forjado
 // ---------------------------------------------------------------------------
 
-async function testarBanco(usuarios, tenants) {
-  const acqua = tenants.get('acqua-lavanderia');
+async function testarBanco(usuarios, vitima) {
 
   for (const usuario of usuarios) {
     const { cliente } = await autenticar(usuario.email);
@@ -209,26 +248,50 @@ async function testarBanco(usuarios, tenants) {
       );
     }
 
-    // O caso que mais importa: o cliente real em produção.
+    // O caso que mais importa: a vítima faz o papel do cliente real, e tem
+    // conteúdo conferido em prepararTenants() — senão isto passaria vazio.
     const { data: docsAcqua } = await cliente
       .from('kb_documentos')
       .select('id')
-      .eq('tenant_id', acqua.id);
+      .eq('tenant_id', vitima.id);
 
     checar(
-      `${usuario.slug}: não alcança a base da Acqua (cliente real)`,
+      `${usuario.slug}: não alcança a base da vítima (papel do cliente real)`,
       (docsAcqua ?? []).length === 0,
       `${(docsAcqua ?? []).length} linhas`,
     );
 
-    const { data: tenantAcqua } = await cliente
-      .from('tenants')
-      .select('id, chatwoot_token')
-      .eq('id', acqua.id);
+    /*
+     * O TOKEN MORA EM `tenant_credenciais`, NÃO EM `tenants`.
+     *
+     * Esta asserção era `select('id, chatwoot_token').from('tenants')`, e a
+     * coluna deixou de existir na migração 21 (11/08). O select passou a
+     * ERRAR, `data` virou `null`, e `(null ?? []).length === 0` é `true` —
+     * então a asserção de isolamento do segredo mais sensível do sistema estava
+     * verde por não executar nada. Só apareceu ao trocar a Acqua por uma vítima
+     * que o teste controla, porque aí foi preciso perguntar onde o token estava.
+     */
+    const credAlheia = await cliente
+      .from('tenant_credenciais')
+      .select('tenant_id, chatwoot_token')
+      .eq('tenant_id', vitima.id);
 
     checar(
-      `${usuario.slug}: não lê o token do Chatwoot da Acqua`,
-      (tenantAcqua ?? []).length === 0,
+      `${usuario.slug}: não lê a credencial de Chatwoot do outro tenant`,
+      !credAlheia.error && (credAlheia.data ?? []).length === 0,
+      credAlheia.error ? `a query ERROU (${credAlheia.error.message})` : `${(credAlheia.data ?? []).length} linhas`,
+    );
+
+    // Contraprova: a linha EXISTE. Sem isto, "0 linhas" seria verdade mesmo com
+    // a policy desligada — foi exatamente assim que a versão anterior passou.
+    const { count: credDaVitima } = await admin
+      .from('tenant_credenciais')
+      .select('tenant_id', { count: 'exact', head: true })
+      .eq('tenant_id', vitima.id);
+    checar(
+      `${usuario.slug}: (contraprova) a credencial da vítima existe de verdade`,
+      credDaVitima === 1,
+      `${credDaVitima} linhas no banco`,
     );
 
     // -- Escrita cruzada ------------------------------------------------------
@@ -283,11 +346,11 @@ async function testarBanco(usuarios, tenants) {
     const { data: buscaForjada } = await cliente.rpc('match_kb_documentos', {
       query_embedding: `[${Array(1536).fill(0.01).join(',')}]`,
       match_count: 50,
-      filter: { tenant_id: acqua.id },
+      filter: { tenant_id: vitima.id },
     });
 
     checar(
-      `${usuario.slug}: filtro de metadata com id da Acqua devolve vazio`,
+      `${usuario.slug}: filtro de metadata com id da vítima devolve vazio`,
       (buscaForjada ?? []).length === 0,
       `${(buscaForjada ?? []).length} linhas`,
     );
@@ -295,7 +358,7 @@ async function testarBanco(usuarios, tenants) {
     // -- API do n8n não é alcançável pelo painel ------------------------------
 
     const { error: erroN8n } = await cliente.rpc('api_n8n_buscar_kb', {
-      p_tenant_id: acqua.id,
+      p_tenant_id: vitima.id,
       p_embedding: `[${Array(1536).fill(0.01).join(',')}]`,
       p_limite: 5,
     });
@@ -350,9 +413,9 @@ async function testarBanco(usuarios, tenants) {
     const { data: toolsAcqua } = await cliente
       .from('tenant_tools')
       .select('id, config')
-      .eq('tenant_id', acqua.id);
+      .eq('tenant_id', vitima.id);
     checar(
-      `${usuario.slug}: não lê a config de tools da Acqua (sessão WAHA, etc.)`,
+      `${usuario.slug}: não lê a config de tools da vítima`,
       (toolsAcqua ?? []).length === 0,
       `${(toolsAcqua ?? []).length} linhas`,
     );
@@ -497,17 +560,19 @@ async function testarHttp(usuarios) {
 async function main() {
   console.log('\n== Isolamento entre tenants — Fase 2 ==\n');
 
-  const tenants = await buscarTenants();
+  const { efemeros, participantes, vitima } = await prepararTenants();
+  console.log(`  tenants efêmeros: ${efemeros.map((t) => t.slug).join(', ')}`);
+  console.log(`  vítima (papel do cliente real): ${vitima.slug}`);
 
   console.log('  Criando usuários de teste...');
   const usuarios = [];
-  for (const slug of TENANTS_TESTE) {
-    usuarios.push(await criarUsuarioTeste(slug, tenants.get(slug).id));
+  for (const t of participantes) {
+    usuarios.push(await criarUsuarioTeste(t.slug, t.id));
   }
   console.log(`  ${usuarios.length} usuários criados.`);
 
   try {
-    await testarBanco(usuarios, tenants);
+    await testarBanco(usuarios, vitima);
     await testarHttp(usuarios);
   } finally {
     /*
@@ -527,6 +592,16 @@ async function main() {
         ? `  AVISO: sobraram ${restou.join(', ')} — remova manualmente`
         : '  Nenhum usuário de teste restante.',
     );
+
+    // Tenants por último: as 13 FKs são CASCADE, e apagá-los antes levaria junto
+    // as linhas que a remoção de usuário ainda precisa encontrar.
+    const sobraram = await removerTenantsEfemeros(admin, efemeros);
+    if (sobraram.length) {
+      falhas.push(`sobrou tenant efêmero: ${sobraram.join(', ')}`);
+      console.log(`  ATENÇÃO: tenants efêmeros não removidos: ${sobraram.join(', ')}`);
+    } else {
+      console.log('  Tenants efêmeros removidos.');
+    }
   }
 
   console.log(`\n${'-'.repeat(60)}`);

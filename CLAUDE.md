@@ -193,8 +193,23 @@ trocar o tamanho do chunk sem medir: quebra calado.
 
 ## Testes
 
-- Seed com **três** tenants, não um. Um tenant esconde todo bug de isolamento; dois
+- **Três** tenants, não um. Um tenant esconde todo bug de isolamento; dois
   escondem vazamento unidirecional.
+- **O teste cria os próprios tenants; não resolve seed por slug.** Até 17/08 os
+  cinco de isolamento resolviam `restaurante-teste`, `sandbox-de-testes` e
+  `clinica-teste` por slug — e quando dois foram soft-deletados pelo painel em
+  13/08 a suíte ficou quatro dias cega. Use `tests/lib/tenants-efemeros.mjs`;
+  `npm run teste:seed-independente` reprova quem voltar a citar slug de seed.
+  Transação abortada (o padrão de `descontratar-preserva-dado`) é mais forte
+  quando tudo passa por UMA conexão, e **não serve** quando o teste autentica por
+  HTTP: outra conexão não enxerga transação não comitada.
+- **Asserção negativa precisa de contraprova.** "O tenant A não vê o dado de B" é
+  verdadeira por vacuidade quando B não tem dado — passa com a RLS ligada e com
+  ela desligada. Semeie o conteúdo, confira que entrou, e só então afirme que o
+  outro não o alcança. Duas asserções vácuas foram encontradas assim em 17/08,
+  uma delas guardando o token de Chatwoot: mirava uma coluna que a migração 21
+  havia removido, o select ERRAVA, `data` vinha `null`, e `(null ?? []).length
+  === 0` é `true`. Seis dias verde sem executar nada.
 - Todo recurso novo precisa de um teste que confirme que o tenant B não acessa o
   dado do tenant A — inclusive por URL direta e por chamada de API.
 - **Afirme PROPRIEDADE, não estado do mundo.** `nenhum tenant tem áudio

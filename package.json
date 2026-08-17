@@ -41,6 +41,7 @@
     "teste:guarda": "node tests/guarda-logica.mjs",
     "teste:guarda-e2e": "node tests/guarda-sabotagem.mjs",
     "teste:deletes": "node tests/deletes-escopados.mjs",
+    "teste:seed-independente": "node tests/seed-independente.mjs",
     "guarda": "node tests/lib/com-guarda.mjs"
   },
   "dependencies": {

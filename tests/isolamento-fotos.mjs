@@ -30,6 +30,7 @@ import { createClient } from '@supabase/supabase-js';
 
 import { carregarEnv } from '../scripts/lib/env.mjs';
 import { criarUsuario, ehEmailDuplicado, removerPorEmail, removerPorId } from '../scripts/lib/usuarios.mjs';
+import { criarTenantsEfemeros, removerTenantsEfemeros } from './lib/tenants-efemeros.mjs';
 
 carregarEnv();
 
@@ -44,7 +45,18 @@ if (!URL_SB || !PUBLICA || !SECRETA) {
 
 const SENHA = 'IsolamentoFotos#2026';
 const BUCKET = 'produto-fotos';
-const SLUGS = ['clinica-teste', 'restaurante-teste', 'sandbox-de-testes'];
+/*
+ * SEM SLUG DE SEED. Os três tenants são criados por este teste e destruídos por
+ * ele. Antes eram `clinica-teste`, `restaurante-teste` e `sandbox-de-testes`
+ * resolvidos por slug — e quando dois deles foram soft-deletados pelo painel em
+ * 13/08 a suíte de isolamento ficou quatro dias cega. O critério agora é o de
+ * `docs/PENDENCIA-SEED-DOS-TESTES.md`: apagar seed nenhum consegue deixar este
+ * teste verde, porque ele não olha para seed nenhum.
+ *
+ * Continuam TRÊS: um esconde todo bug de isolamento, dois escondem vazamento
+ * unidirecional.
+ */
+const MARCA_TENANT = 'fotos';
 const MARCA_PRODUTO = '__teste_iso_foto__';
 
 const admin = createClient(URL_SB, SECRETA, { auth: { autoRefreshToken: false, persistSession: false } });
@@ -67,23 +79,13 @@ async function autenticar(email) {
 const jpegMinimo = () => new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9])], { type: 'image/jpeg' });
 
 async function main() {
+  /** Preenchido logo abaixo; declarado aqui para o `finally` alcançar. */
+  let efemeros = [];
   console.log('\n== Isolamento das fotos de produto ==\n');
 
-  // .is('deletado_em', null) NAO e detalhe: sem ele esta query enxerga tenant
-  // SOFT-DELETADO e o teste segue verde "testando" isolamento entre clientes que
-  // a aplicacao considera excluidos. Foi o que aconteceu entre 13 e 17/08 — dos
-  // seis testes acoplados a estes slugs, so o que filtrava reprovou, e os outros
-  // compraram confianca. Com o filtro, apagar seed vira FALHA ALTA na
-  // pre-condicao. Ver docs/PENDENCIA-SEED-DOS-TESTES.md.
-  const { data: tenants, error: erroT } = await admin.from('tenants').select('id, slug').in('slug', SLUGS).is('deletado_em', null);
-  if (erroT) throw new Error(`carregar tenants: ${erroT.message}`);
-  if ((tenants ?? []).length !== 3) {
-    throw new Error(`esperava 3 tenants (${SLUGS.join(', ')}), achei ${tenants?.length ?? 0}`);
-  }
-  const porSlug = Object.fromEntries(tenants.map((t) => [t.slug, t]));
-  const A = porSlug['clinica-teste'];
-  const B = porSlug['restaurante-teste'];
-  const C = porSlug['sandbox-de-testes'];
+  efemeros = await criarTenantsEfemeros(admin, { marca: MARCA_TENANT });
+  const [A, B, C] = efemeros;
+  console.log(`  tenants efêmeros: ${efemeros.map((t) => t.slug).join(', ')}\n`);
 
   const emails = {
     A: 'teste-fotos-a@exemplo.invalido',
@@ -234,6 +236,14 @@ async function main() {
     await limparObjetos();
     for (const p of ['grande.jpg', 'doc.pdf']) await admin.storage.from(BUCKET).remove([`${A.id}/${p}`]);
     for (const k of ['A', 'B', 'C']) if (ids[k]) await removerPorId(admin, ids[k]);
+    // Os tenants saem por ULTIMO: as 13 FKs sao CASCADE, e apaga-los antes
+    // levaria junto as linhas que as limpezas acima precisam encontrar para
+    // provar que fizeram o proprio trabalho.
+    const sobraram = await removerTenantsEfemeros(admin, efemeros);
+    if (sobraram.length) {
+      console.log(`  ATENCAO: tenants efemeros nao removidos: ${sobraram.join(', ')}`);
+      falhas.push(`sobrou tenant efemero: ${sobraram.join(', ')}`);
+    }
   }
 }
 

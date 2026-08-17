@@ -25,6 +25,7 @@ import { createClient } from '@supabase/supabase-js';
 
 import { carregarEnv } from '../scripts/lib/env.mjs';
 import { criarUsuario, ehEmailDuplicado, removerPorEmail, removerPorId } from '../scripts/lib/usuarios.mjs';
+import { criarTenantsEfemeros, removerTenantsEfemeros } from './lib/tenants-efemeros.mjs';
 
 carregarEnv();
 
@@ -38,7 +39,18 @@ if (!URL || !PUBLICA || !SECRETA) {
 }
 
 const SENHA = 'IsolamentoPedidos#2026';
-const SLUGS = ['restaurante-teste', 'sandbox-de-testes', 'clinica-teste'];
+/*
+ * SEM SLUG DE SEED. Os três tenants são criados por este teste e destruídos por
+ * ele. Antes eram `clinica-teste`, `restaurante-teste` e `sandbox-de-testes`
+ * resolvidos por slug — e quando dois deles foram soft-deletados pelo painel em
+ * 13/08 a suíte de isolamento ficou quatro dias cega. O critério agora é o de
+ * `docs/PENDENCIA-SEED-DOS-TESTES.md`: apagar seed nenhum consegue deixar este
+ * teste verde, porque ele não olha para seed nenhum.
+ *
+ * Continuam TRÊS: um esconde todo bug de isolamento, dois escondem vazamento
+ * unidirecional.
+ */
+const MARCA_TENANT = 'pedidos';
 // Faixa de conversation_id reservada ao teste: não colide com conversa real.
 const CONV_A = 990001;
 const CONV_B = 990002;
@@ -60,21 +72,13 @@ async function autenticar(email) {
 }
 
 async function main() {
+  /** Preenchido logo abaixo; declarado aqui para o `finally` alcançar. */
+  let efemeros = [];
   console.log('\n== Isolamento de pedidos — JWT real, 3 tenants ==\n');
 
-  // .is('deletado_em', null) NAO e detalhe: sem ele esta query enxerga tenant
-  // SOFT-DELETADO e o teste segue verde "testando" isolamento entre clientes que
-  // a aplicacao considera excluidos. Foi o que aconteceu entre 13 e 17/08 — dos
-  // seis testes acoplados a estes slugs, so o que filtrava reprovou, e os outros
-  // compraram confianca. Com o filtro, apagar seed vira FALHA ALTA na
-  // pre-condicao. Ver docs/PENDENCIA-SEED-DOS-TESTES.md.
-  const { data: tenants, error: erroT } = await admin.from('tenants').select('id, slug').in('slug', SLUGS).is('deletado_em', null);
-  if (erroT) throw new Error(`carregar tenants: ${erroT.message}`);
-  if ((tenants ?? []).length !== 3) throw new Error(`esperava 3 tenants, achei ${tenants?.length ?? 0}`);
-  const porSlug = Object.fromEntries(tenants.map((t) => [t.slug, t]));
-  const A = porSlug['restaurante-teste'];   // tem catálogo
-  const B = porSlug['sandbox-de-testes'];   // tem catálogo
-  const C = porSlug['clinica-teste'];       // terceiro, sem pedido
+  efemeros = await criarTenantsEfemeros(admin, { marca: MARCA_TENANT });
+  const [A, B, C] = efemeros;   // A e B ganham catálogo abaixo; C fica sem pedido
+  console.log(`  tenants efêmeros: ${efemeros.map((t) => t.slug).join(', ')}\n`);
 
   const emails = { A: 'teste-pedidos-a@exemplo.invalido', B: 'teste-pedidos-b@exemplo.invalido' };
   const ids = { A: null, B: null };
@@ -113,15 +117,33 @@ async function main() {
 
     await limparTudo();
 
-    // Um produto visível de cada tenant, pelas mesmas regras das funções.
+    /*
+     * O CATÁLOGO É DESTE TESTE.
+     *
+     * Antes ele procurava um produto que já existisse no tenant de seed e, se
+     * não achasse, mandava "rode a fatia 1 antes" — dependência de ORDEM entre
+     * testes, em cima de dado que ninguém garantia. Com tenant efêmero não há o
+     * que procurar: o produto é criado aqui, com preço conhecido, o que também
+     * torna a asserção de total exata em vez de relativa ao catálogo do dia.
+     */
     const prod = {};
+    for (const [rot, t, preco] of [['A', A, 1500], ['B', B, 2500]]) {
+      const { data, error } = await admin.from('produtos')
+        .insert({ tenant_id: t.id, nome: `produto de ${rot}`, preco_centavos: preco })
+        .select('id, nome, preco_centavos')
+        .single();
+      if (error) throw new Error(`criar produto de ${t.slug}: ${error.message}`);
+      prod[rot] = data;
+    }
+
+    // Confere que o produto entrou pelas mesmas regras que as funções aplicam —
+    // se `disponivel` ou `deletado_em` mudarem de default, isto avisa aqui em vez
+    // de a falha aparecer como "pedido não criado" três asserções adiante.
     for (const [rot, t] of [['A', A], ['B', B]]) {
       const { data } = await admin.from('produtos')
-        .select('id, nome, preco_centavos')
-        .eq('tenant_id', t.id).is('deletado_em', null).eq('disponivel', true)
+        .select('id').eq('tenant_id', t.id).is('deletado_em', null).eq('disponivel', true)
         .or('estoque.is.null,estoque.gt.0').limit(1);
-      if (!data?.[0]) throw new Error(`tenant ${t.slug} sem produto visível — rode a fatia 1 antes`);
-      prod[rot] = data[0];
+      if (!data?.[0]) throw new Error(`produto de ${rot} não ficou visível para as funções de venda`);
     }
 
     // Pedidos criados pelas próprias funções: é o caminho real do agente.
@@ -246,6 +268,14 @@ async function main() {
     if (ids.A) await removerPorId(admin, ids.A);
     if (ids.B) await removerPorId(admin, ids.B);
     console.log('  Usuários e pedidos de teste removidos.');
+    // Os tenants saem por ULTIMO: as 13 FKs sao CASCADE, e apaga-los antes
+    // levaria junto as linhas que as limpezas acima precisam encontrar para
+    // provar que fizeram o proprio trabalho.
+    const sobraram = await removerTenantsEfemeros(admin, efemeros);
+    if (sobraram.length) {
+      console.log(`  ATENCAO: tenants efemeros nao removidos: ${sobraram.join(', ')}`);
+      falhas.push(`sobrou tenant efemero: ${sobraram.join(', ')}`);
+    }
   }
 
   console.log(`\n${'-'.repeat(56)}`);

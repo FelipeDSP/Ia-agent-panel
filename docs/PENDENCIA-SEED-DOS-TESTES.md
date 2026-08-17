@@ -1,8 +1,13 @@
-# Pendência — os testes de isolamento dependem de seed que alguém pode apagar
+# ~~Pendência~~ FEITO — os testes de isolamento não dependem mais de seed
 
-> Registrada em **2026-08-17**, depois de a suíte de isolamento passar quatro dias
-> cega. **Não implementada de propósito** — o conserto rápido já foi aplicado
-> (seeds restaurados). Este arquivo é a reescrita, que fica para depois.
+> **Concluída em 2026-08-17.** Os cinco criam e destroem os próprios tenants. O
+> critério foi verificado das duas formas: `npm run teste:seed-independente`
+> (estático, permanente) e uma execução com os TRÊS seeds soft-deletados, em que
+> os cinco passaram — 130 asserções, zero vermelhas. O histórico abaixo fica
+> porque explica por que a regra existe.
+
+> Registrada e concluída no mesmo dia, **2026-08-17**, depois de a suíte de
+> isolamento passar quatro dias cega.
 
 ## O que aconteceu
 
@@ -70,17 +75,32 @@ Uma frase, e ela é verificável:
 
 > **Apagar seed nenhum consegue deixá-los verdes.**
 
-Ou seja: não basta o teste reprovar quando o seed falta (isso já vale). O alvo é
-o teste **não ter seed para faltar** — ele cria o tenant que usa e remove no
-fim. A prova é a mesma sabotagem acima, com o resultado invertido: apagar
-`clinica-teste`, `sandbox-de-testes` e `restaurante-teste` e a suíte continuar
-verde, porque nenhum dos cinco olha para eles.
+**Atingido em 17/08.** Os três seeds foram soft-deletados de verdade e os cinco
+rodaram: fase2 56, modulos 15, produtos 21, pedidos 21, fotos 17 — todos zero
+vermelhas. Seeds restaurados no `finally` do mesmo processo.
 
-Enquanto o critério não for atingido, registro é lembrete. O que segura é
-constraint, trigger e teste que falha alto — e dos três, aqui só cabe o
-terceiro.
+A verificação que fica é `tests/seed-independente.mjs`: estático, roda em
+milissegundos e não toca em nada. A comportamental não pode virar suíte — um
+teste que apaga tenant de produção para se provar é pior que o defeito que
+evita.
 
-## O alvo
+O que a reescrita trouxe além do critério:
+
+- **`tests/lib/tenants-efemeros.mjs`**, com o cuidado que a experiência desta
+  semana pediu: remoção com DUAS condições (id capturado E prefixo de slug),
+  porque as 13 FKs são CASCADE; e slug único por execução, para duas rodadas
+  simultâneas não colidirem.
+- **Conteúdo semeado e CONFERIDO.** "O tenant A não vê os documentos de B" é
+  verdade por vacuidade quando B não tem documento. Antes o teste escapava
+  disso por acidente — mirava a Acqua, que tem 12 documentos, e nunca conferia
+  que tinha. Agora a vítima nasce com conteúdo e o teste reprova se o `insert`
+  falhar em silêncio.
+- **Duas asserções vácuas encontradas e consertadas** — ver abaixo.
+
+Registro é lembrete; o que segura é constraint, trigger e teste que falha alto.
+Dos três, aqui coube o terceiro — e é ele que está no ar.
+
+## O alvo — o raciocínio que guiou a reescrita
 
 **Cada teste cria e limpa o próprio tenant.** Nenhuma asserção depende de linha
 que existia antes dele começar.
@@ -98,9 +118,9 @@ de quantas conexões o teste usa:
   comitada**. Foi por isso que `isolamento-fase2` não pode virar transação
   abortada — ele existe justamente para exercitar JWT real.
 
-Ou seja: para os cinco testes de isolamento o alvo é **estender ao tenant o que
-eles já fazem com o usuário**. O `finally` de limpeza já está escrito; falta o
-tenant entrar nele.
+Ou seja: para os cinco testes de isolamento o caminho foi **estender ao tenant o
+que eles já faziam com o usuário** — o `finally` de limpeza já existia; o tenant
+entrou nele. Foi o que se fez.
 
 Cuidado ao fazer: criar tenant exige o papel da agência
 (`trg_tenants_guard_colunas` recusa `slug`/`nome`/status para qualquer outro), e
@@ -122,15 +142,42 @@ nunca desligando o trigger, que valeria para a sessão inteira.
    `supabase/migrations/20260817000000_40_ver_pedido_volatile.sql`). Destruturar
    `{ data, error }` e imprimir o erro no `checar` paga sozinho.
 
-## Gatilho para retomar
+## O prazo, cumprido
 
-Não tem gatilho de evento — tem prazo. **Antes do próximo cliente entrar.** A
-suíte de isolamento é a única prova de que multi-tenancy funciona, e o custo de
-ela estar cega cresce com o número de clientes, que é justamente o que está
-subindo.
+Era "antes do próximo cliente entrar". Feito em 17/08, com `emporio`,
+`estudyou-sendbox` e `fortalize` já conectados e o quarto (`CEEJAAR`) recém-criado
+— dentro do prazo, por pouco.
 
-Enquanto não for feito, o paliativo é operacional e frágil: **não excluir**
-`clinica-teste`, `sandbox-de-testes` e `restaurante-teste` pelo painel.
-Escrito aqui porque paliativo que só existe na cabeça de alguém não é paliativo —
-e mesmo escrito não impediu nada em 13/08, porque a nota já existia. A diferença
-agora é que a suíte reclama; o paliativo deixou de ser a única linha de defesa.
+Os cinco não dependem mais dos seeds, mas **`restaurante-teste`,
+`sandbox-de-testes` e `clinica-teste` continuam vivos e ainda sustentam outros
+testes** (`trava-vendas`, `migracao-*`, `restricao-coluna-fase3`,
+`descontratar-preserva-dado`). Não excluí-los pelo painel segue valendo — só
+deixou de ser a única linha de defesa da suíte de isolamento.
+
+
+## As duas asserções vácuas que a reescrita desenterrou
+
+Nenhuma das duas foi encontrada por leitura: apareceram porque trocar a Acqua
+por uma vítima controlada obriga a perguntar *o que exatamente estou afirmando*.
+
+**1. O token do Chatwoot — a mais séria.** A asserção era:
+
+```js
+const { data } = await cliente.from('tenants').select('id, chatwoot_token').eq('id', acqua.id);
+checar('não lê o token do Chatwoot da Acqua', (data ?? []).length === 0);
+```
+
+A coluna `chatwoot_token` saiu de `tenants` na **migração 21** (11/08) e foi para
+`tenant_credenciais`. Desde então o select ERRA, `data` vem `null`, e
+`(null ?? []).length === 0` é `true`. **A asserção de isolamento do segredo mais
+sensível do sistema passou seis dias verde sem executar nada.** Agora mira
+`tenant_credenciais`, exige que a query **não** tenha erro, e tem contraprova de
+que a linha existe.
+
+**2. `UPDATE em tenant_tools de outro tenant não afeta linha.`** Só significa
+alguma coisa se o outro tenant TIVER a linha. Passava porque os três seeds tinham
+`transferir_humano` contratado — estado do mundo, de novo. Os tenants efêmeros
+agora nascem com a tool explicitamente.
+
+Os dois casos têm a mesma forma: **uma asserção negativa sem contraprova de que
+havia algo para encontrar.** É a próxima classe a varrer quando sobrar tempo.
