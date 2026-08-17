@@ -146,13 +146,23 @@ const gravar = (arq, obj) => {
     {
       parameters: {
         operation: 'executeQuery',
-        // Devolve UM texto ja formatado: o agente precisa do id para chamar
-        // gerenciar_pedido, e uma linha por produto e mais barato em token que
-        // JSON estruturado.
-        query:
-          "SELECT coalesce(string_agg(format('%s — %s por %s (id: %s)', nome, preco, unidade, produto_id), E'\\n'),\n" +
-          "                'Nenhum produto encontrado com esse termo.') AS resultado\n" +
-          'FROM public.api_n8n_buscar_produtos($1::uuid, $2::text);',
+        /*
+         * A QUERY FICOU BURRA DE PROPOSITO (migracao 41).
+         *
+         * Antes ela montava o texto aqui: `string_agg` + `format` + o fallback
+         * 'Nenhum produto encontrado com esse termo.'. Duas consequencias ruins:
+         *
+         *  - o texto que o agente le vivia numa string dentro de um JSON de
+         *    workflow, fora do alcance de qualquer teste — e este projeto ja
+         *    perdeu producao por escapamento errado em no de workflow;
+         *  - o fallback dizia "nenhum produto encontrado" sem saber se o
+         *    catalogo tem 40 itens ou zero, que sao situacoes diferentes.
+         *
+         * Agora a funcao devolve SEMPRE uma linha, com os totais e com o texto
+         * pronto. Mudar a frase passa a ser migracao com rollback, e nao
+         * reimportacao manual de workflow.
+         */
+        query: 'SELECT texto AS resultado\nFROM public.api_n8n_buscar_produtos($1::uuid, $2::text);',
         options: { queryReplacement: '={{ [ $(\'When Executed by Another Workflow\').item.json.tenant_id, $(\'When Executed by Another Workflow\').item.json.termo ] }}' },
       },
       type: 'n8n-nodes-base.postgres',

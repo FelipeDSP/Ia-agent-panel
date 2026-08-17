@@ -33,6 +33,9 @@ const c = new pg.Client({ connectionString: conn, ssl: { rejectUnauthorized: fal
 const mig = (f) => fs.readFileSync(RAIZ+'supabase/migrations/' + f, 'utf8').replace(/^\s*(begin|commit)\s*;\s*$/gim, '');
 const M25 = mig('20260811185334_25_pedidos.sql');
 const M26 = mig('20260811185432_26_api_n8n_vendas.sql');
+// A 41 e aplicada em seguida a 26 porque REDEFINE buscar_produtos. Replay de
+// um elo so ressuscitaria a assinatura antiga -- a armadilha da 32/37.
+const M41 = mig('20260817120000_41_buscar_produtos_total.sql');
 const R25 = mig('20260811185334_25_pedidos_rollback.sql');
 const R26 = mig('20260811185432_26_api_n8n_vendas_rollback.sql');
 
@@ -51,7 +54,7 @@ const um = async (sql, p = []) => { const r = await c.query(sql, p); return r.ro
 await c.connect();
 await c.query('begin');
 try {
-  await c.query(M25); await c.query(M26);
+  await c.query(M25); await c.query(M26); await c.query(M41);
   console.log('migracoes 25 e 26 aplicadas\n');
 
   // produtos reais do catalogo cadastrado na fatia 1
@@ -108,9 +111,75 @@ try {
   await c.query(`update public.produtos set disponivel=false where id=$1`, [pA2.id]);
   r = await um('select public.api_n8n_adicionar_item($1,$2,$3,$4) v', [A, CONV_A, pA2.id, 1]);
   chk('recusa produto pausado', r.v.includes('nao esta disponivel'));
-  const busca = await c.query(`select * from public.api_n8n_buscar_produtos($1,$2)`, [A, pA2.nome]);
-  chk('buscar_produtos tambem nao oferece', !busca.rows.some(x => x.produto_id === pA2.id), `${busca.rowCount} resultado(s)`);
+  const busca = (await c.query(`select * from public.api_n8n_buscar_produtos($1,$2)`, [A, pA2.nome])).rows[0];
+  chk('buscar_produtos tambem nao oferece', !busca.texto.includes(pA2.id), busca.texto.slice(0, 70));
   await c.query(`update public.produtos set disponivel=true where id=$1`, [pA2.id]);
+
+  // -------------------------------------------------------------------------
+  // Migracao 41: a busca informa QUANTOS existem, nao so a amostra
+  // -------------------------------------------------------------------------
+  // O DEFEITO que motivou: o agente do emporio (40 produtos) listou tres queijos
+  // como se fosse o catalogo inteiro. `limit 10` sem contagem -- o agente recebia
+  // N e apresentava N.
+  console.log('\n--- 41: total no retorno ---');
+  {
+    const bp = async (termo) =>
+      (await c.query('select * from public.api_n8n_buscar_produtos($1,$2)', [A, termo])).rows;
+
+    // Catalogo grande o bastante para haver corte: 5 e o teto da amostra.
+    for (let i = 0; i < 9; i++) {
+      await c.query(
+        `insert into public.produtos (tenant_id, nome, preco_centavos) values ($1,$2,$3)`,
+        [A, `Item de teste 41 numero ${i}`, 1000 + i]);
+    }
+
+    const semTermo = await bp('');
+    chk('devolve UMA linha, nao N', semTermo.length === 1, `${semTermo.length} linha(s)`);
+    const t0 = semTermo[0];
+    chk('sem termo: houve_busca = false', t0.houve_busca === false);
+    chk('sem termo: total_catalogo conta tudo', t0.total_catalogo >= 10, `catalogo=${t0.total_catalogo}`);
+    chk('amostra limitada a 5', t0.mostrando === 5, `mostrando=${t0.mostrando}`);
+    chk('o texto diz o total do catalogo', t0.texto.includes(String(t0.total_catalogo)), t0.texto.split('\n')[0]);
+    chk('o texto avisa que NAO houve busca', /sem busca/i.test(t0.texto), t0.texto.split('\n')[0]);
+    chk('o texto tem no maximo 5 linhas de item',
+      t0.texto.split('\n').length - 1 === 5, `${t0.texto.split('\n').length - 1} linhas`);
+
+    const comCorte = await bp('Item de teste 41');
+    const c0 = comCorte[0];
+    chk('com termo: houve_busca = true', c0.houve_busca === true);
+    chk('encontrado maior que mostrando', c0.total_encontrado > c0.mostrando,
+      `${c0.total_encontrado} > ${c0.mostrando}`);
+    chk('o texto diz encontrados E mostrando',
+      c0.texto.includes(`${c0.total_encontrado} encontrados`) && c0.texto.includes(`mostrando ${c0.mostrando}`),
+      c0.texto.split('\n')[0]);
+
+    // O CASO QUE A FORMA ANTIGA NAO CONSEGUIA COMUNICAR: zero resultados COM
+    // catalogo cheio. Antes vinham zero linhas, e zero linhas tambem e o que
+    // vem de um tenant sem catalogo nenhum -- o agente nao distinguia.
+    const zero = await bp('zzzz-termo-que-nao-existe');
+    chk('busca sem resultado ainda devolve UMA linha', zero.length === 1, `${zero.length}`);
+    const z0 = zero[0];
+    chk('busca sem resultado: encontrado = 0', z0.total_encontrado === 0);
+    chk('busca sem resultado: catalogo continua cheio', z0.total_catalogo >= 10, `catalogo=${z0.total_catalogo}`);
+    chk('o texto distingue termo-sem-resultado de catalogo-vazio',
+      z0.texto.includes('0 encontrados') && z0.texto.includes(String(z0.total_catalogo))
+        && !/vazio/i.test(z0.texto),
+      z0.texto);
+
+    // E o outro lado da distincao: catalogo REALMENTE vazio.
+    const vazio = (await c.query('select * from public.api_n8n_buscar_produtos($1,$2)', [B, 'x'])).rows[0];
+    await c.query('update public.produtos set disponivel=false where tenant_id=$1', [B]);
+    const vazioDeVerdade = (await c.query('select * from public.api_n8n_buscar_produtos($1,$2)', [B, ''])).rows[0];
+    chk('catalogo vazio tem texto PROPRIO', /vazio/i.test(vazioDeVerdade.texto), vazioDeVerdade.texto);
+    chk('e o de termo-sem-resultado NAO usa esse texto',
+      vazioDeVerdade.texto !== z0.texto, 'os dois casos dizem a mesma coisa');
+    void vazio;
+
+    // O id tem de continuar no texto: sem ele o agente nao chama gerenciar_pedido.
+    chk('cada linha da amostra carrega o id do produto',
+      (t0.texto.match(/\(id: [0-9a-f-]{36}\)/g) ?? []).length === 5,
+      `${(t0.texto.match(/\(id: [0-9a-f-]{36}\)/g) ?? []).length} ids`);
+  }
 
   console.log('\n--- um pedido aberto por conversa ---');
   let erroUnico = null;

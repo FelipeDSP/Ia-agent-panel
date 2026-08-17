@@ -119,8 +119,12 @@ for (const t of semVendas) {
 // sub-workflow falhasse, o catálogo vazio dela seria a segunda barreira.
 console.log();
 for (const t of semVendas) {
-  const { data } = await admin.rpc('api_n8n_buscar_produtos', { p_tenant_id: t.id, p_termo: '' });
-  const n = (data ?? []).length;
+  // A funcao devolve UMA linha sempre (migracao 41), com os totais dentro. Contar
+  // linhas daria 1 mesmo para catalogo vazio -- que e exatamente o defeito que a
+  // 41 existe para eliminar do lado do agente, e que aqui viraria falso negativo.
+  const { data, error } = await admin.rpc('api_n8n_buscar_produtos', { p_tenant_id: t.id, p_termo: '' });
+  if (error) throw new Error(`buscar_produtos(${t.slug}): ${error.message}`);
+  const n = data?.[0]?.total_catalogo ?? 0;
   if (t.slug === 'acqua-lavanderia') {
     // Defesa em profundidade, não invariante do produto: a Acqua PODE cadastrar
     // catálogo um dia sem contratar vendas — a tela existe para todo tenant. Se

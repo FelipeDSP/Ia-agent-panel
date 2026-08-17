@@ -714,6 +714,42 @@ Enquanto a proposta não chega e o sandbox não é respondido, **não vale escre
 integração**. O que vale é o que não depende do Asaas: exercitar os três ramos
 da foto, e decidir o preço do módulo com o Anexo I na mesa.
 
+## Catálogo: a busca informa o total (migração 41, 17/08)
+
+**O defeito.** O agente do `emporio` (40 produtos) respondeu *"o que vocês teriam
+para me oferecer?"* listando **três queijos**, como se fosse o catálogo inteiro.
+`api_n8n_buscar_produtos` tinha `limit 10` e devolvia só as linhas: o agente
+recebia N e apresentava N, sem saber que houve corte. O cliente final também não.
+
+**A forma escolhida: uma linha sempre**, com `total_encontrado`,
+`total_catalogo`, `mostrando`, `houve_busca` e `texto`. A alternativa óbvia —
+uma coluna de total repetida em cada linha — quebra no caso que mais importa:
+busca sem resultado não tem linha, e portanto não tem onde pendurar o total.
+
+Isso é o que permite distinguir duas situações que antes chegavam iguais (zero
+linhas) e pedem respostas opostas:
+
+| situação | o que o agente lê |
+|---|---|
+| termo não casou, catálogo cheio | `Busca "queijo azul": 0 encontrados. O catálogo tem 40 itens disponíveis.` |
+| catálogo não cadastrado | `Catálogo vazio: nenhum item disponível.` |
+
+**Amostra de 10 para 5.** Com o total no retorno o agente para de precisar da
+lista para responder bem — "tenho 23 opções, procura para petisco ou para
+cozinhar?" conversa melhor que dez linhas que ninguém rola no WhatsApp.
+
+**O texto saiu da query do n8n e entrou na função.** Antes ele vivia numa string
+dentro de um JSON de workflow, fora do alcance de teste — e este projeto já
+perdeu produção por escapamento errado em nó de workflow. Agora muda por migração
+com rollback, e `tests/migracao-vendas.mjs` exercita cada ramo.
+
+**Pergunta aberta continua em aberto.** `termo = ''` devolve os primeiros por
+ordem alfabética, e no `emporio` os nomes começam com número (`1 -`, `10 -`,
+`11 -`), então a amostra sai `1, 10, 11, 12, 13`: não é só arbitrária, parece
+defeito. A resposta boa depende de **categoria de produto**, que é a próxima
+fatia. O que a 41 fez foi tornar o corte visível e dizer ao agente que não houve
+busca — o suficiente para ele perguntar em vez de fingir que listou tudo.
+
 ## Ordem de construção
 
 Os passos 1 a 5 estão **feitos e em produção**:
