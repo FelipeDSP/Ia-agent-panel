@@ -119,6 +119,19 @@ perde trabalho de cadastro que ninguém consegue devolver.
   ordem descrita em `docs/especificacao/ESPECIFICACAO.md` seção 5.2 — adicionar coluna nova, popular,
   trocar constraints, renomear. Teste em branch do Supabase antes de produção.
 - Toda migração precisa de caminho de rollback.
+- **Ao dropar ou renomear coluna, varra `tests/` junto com o schema.** A migração
+  21 tirou `chatwoot_token` de `tenants` e a varredura de impacto cobriu funções,
+  views, policies e índices — foi exemplar no schema e **não olhou os testes**.
+  Uma asserção de isolamento continuou apontando para a coluna morta; o select
+  passou a errar, `data` virou `null`, e `(null ?? []).length === 0` é `true`.
+  Seis dias verde sem executar nada, guardando justamente o token do Chatwoot, e
+  nos mesmos seis dias em que quatro clientes foram conectados.
+
+  O erro não foi de execução: a varredura estava certa e o **escopo** estava
+  errado. Teste é consumidor do schema como o n8n é — só que não reclama quando
+  a coluna some, porque o cliente PostgREST devolve erro em vez de lançar. Então:
+  `grep -rn "<coluna>" tests/ src/ supabase/ n8n/` antes de dropar, e confira
+  cada resultado, não só os de código de produção.
 - **O nome do arquivo tem que bater com a versão em
   `supabase_migrations.schema_migrations`.** Até 2026-08-05 nenhum batia: as
   migrações vinham sendo aplicadas por SQL avulso (editor/MCP), que grava o
