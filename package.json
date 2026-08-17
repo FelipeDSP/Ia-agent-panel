@@ -36,7 +36,8 @@
     "teste:assinaturas": "node --env-file=.env.local tests/assinatura-unica.mjs",
     "teste:log-idempotente": "node --env-file=.env.local tests/migracao-log-idempotente.mjs",
     "teste:expirar-pedido": "node --env-file=.env.local tests/migracao-expirar-pedido.mjs",
-    "teste:jobs-mortos": "node --env-file=.env.local --import ./tests/lib/ts.mjs tests/jobs-mortos.mjs"
+    "teste:jobs-mortos": "node --env-file=.env.local --import ./tests/lib/ts.mjs tests/jobs-mortos.mjs",
+    "teste:consumo": "node --import ./tests/lib/ts.mjs tests/consumo-mes.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

@@ -4,6 +4,10 @@
 > guard de autenticação de cada uma, verificado arquivo por arquivo. Complementa
 > [`API-PUBLICA.md`](API-PUBLICA.md), que cobre as Server Actions (o outro caminho de
 > entrada da aplicação). Nada foi alterado.
+>
+> **Adendo de 2026-08-17.** A reorganização de `/admin/consumo` acrescentou duas rotas
+> (`/admin/consumo/[tenantId]` e `/admin/consumo/precos`), já na tabela abaixo. O resto do
+> levantamento continua sendo o retrato de 06/08 — a contagem de "16 rotas" é daquele dia.
 
 ## Panorama
 
@@ -44,6 +48,8 @@ coisa que costuma ter uma exceção esquecida.
 | `/admin/tenants/[id]` | `admin/tenants/[id]/page.tsx` | **`id`** (rota) | `exigirSuperAdmin` | exige sessão |
 | `/admin/catalogo` | `admin/catalogo/page.tsx` | — | `exigirSuperAdmin` | exige sessão |
 | `/admin/consumo` | `admin/consumo/page.tsx` | — | `exigirSuperAdmin` | exige sessão |
+| `/admin/consumo/[tenantId]` | `admin/consumo/[tenantId]/page.tsx` | **`tenantId`** (rota, validado como UUID) | `exigirSuperAdmin` | exige sessão |
+| `/admin/consumo/precos` | `admin/consumo/precos/page.tsx` | — | `exigirSuperAdmin` | exige sessão |
 
 **Layouts** — o guard também vive neles, e é o que garante cobertura mesmo se uma página
 nova esquecer o seu:

@@ -59,6 +59,10 @@ export async function adicionarPreco(
     return { erro: `Não foi possível salvar: ${error.message}` };
   }
 
+  revalidatePath('/admin/consumo/precos');
+  // O custo do histórico é recalculado com a tabela de preços a cada render.
+  // Preço novo muda os números da tela do mês; sem isto ela ficaria no cache
+  // mostrando o custo pela tabela antiga.
   revalidatePath('/admin/consumo');
   return { sucesso: `Preço de ${modelo} registrado a partir de ${vigenteDesde}.` };
 }

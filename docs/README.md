@@ -32,6 +32,9 @@ documentação e material de referência.
 - [`SIMULACAO-MIGRACAO-V2.md`](SIMULACAO-MIGRACAO-V2.md) — **planejamento, não executado.**
   Migração para um schema v2 (documentos normalizados, CHECK de modelo, HNSW parcial):
   queries afetadas, plano expand/contract e estimativa de 29–45 h.
+- [`PENDENCIA-MARGEM.md`](PENDENCIA-MARGEM.md) — **decidido não fazer, com gatilho.**
+  Margem por cliente em `/admin/consumo`: por que não agora (não há valor de plano no
+  schema, provedor de pagamento em aberto, custo de centavos) e o que a retoma.
 - [`ESTIMATIVAS-FEATURES.md`](ESTIMATIVAS-FEATURES.md) — 10 features hipotéticas com
   breakdown de tarefas e horas, mais o **imposto fixo** que a arquitetura cobra de
   qualquer mudança.

@@ -57,7 +57,7 @@ verificam o papel **antes** de qualquer leitura ou escrita — o que satisfaz a 
 regra 1 do `CLAUDE.md` (rota de super_admin pode receber `tenant_id` do request, desde
 que confira o papel no servidor).
 
-### `src/app/(app)/admin/consumo/acoes.ts`
+### `src/app/(app)/admin/consumo/precos/acoes.ts`
 
 | Linha | Assinatura | Gate |
 |---|---|---|

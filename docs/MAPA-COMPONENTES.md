@@ -101,7 +101,7 @@ Ordenados por quantidade de hooks — na prática, por complexidade.
 | **ModuloRow** * | `admin/tenants/[id]/componentes.tsx:522` | `useActionState` | `{ tenantId, modulo: ModuloAdmin }` |
 | **FormNovaTool** | `admin/catalogo/componentes.tsx:103` | `useActionState` | — |
 | **FormularioNovoTenant** | `admin/tenants/novo/formulario.tsx:19` | `useActionState` | — |
-| **FormularioPreco** | `admin/consumo/formulario-preco.tsx:14` | `useActionState` | — |
+| **FormularioPreco** | `admin/consumo/precos/formulario-preco.tsx:14` | `useActionState` | — |
 | **FormularioConfig** | `painel/configuracoes/formulario.tsx:17` | `useActionState` | `{ agenteAtivo, debounce, msgMidia, msgForaEscopo }` |
 | **FormularioLogin** | `(auth)/login/formulario.tsx` | `useActionState` | — |
 | **PaginaRecuperarSenha** | `(auth)/recuperar-senha/page.tsx:29` | `useActionState` | — |
