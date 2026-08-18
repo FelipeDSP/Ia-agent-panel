@@ -4,10 +4,12 @@
 > execuções de UM tenant (`n8n/estima-tokens.js`). Isso não sustenta uma conta
 > que alguém vai contestar. Onde está o número que a OpenAI cobra?
 
-> **Estado em 18/08/2026.** Caminho 1 instrumentado, aguardando uma execução
-> real. Caminho 2 é o recomendado e está desenhado abaixo — a chave de junção já
-> existe no banco. Caminho 3 é o único que é literalmente a fatura, e o bloqueio
-> dele não é o painel: é o n8n.
+> **Estado em 18/08/2026 — decidido.** Nenhum dos três caminhos entrega medição
+> exata: o 3 entregaria e está bloqueado pela credencial fixa do nó; o 1 e o 2
+> entregam o que o n8n mede, e o que o n8n mede é **estimativa dele** (ver
+> "RESOLVIDO" abaixo). O desenho final é **fatura da OpenAI como âncora, n8n só
+> para a proporção**. Caminho 1 segue instrumentado porque a decisão passou a ser
+> entre estimativas, e a pergunta virou qual delas erra menos.
 
 ## O que já foi descartado, e não vale retestar
 
@@ -28,6 +30,14 @@ O que se espera encontrar: cada passo traz `action.messageLog[]` com as
 `AIMessage` do round-trip, e uma `AIMessage` serializada costuma carregar
 `response_metadata.tokenUsage` e/ou `usage_metadata` — que são o campo `usage`
 da resposta da API, não estimativa.
+
+**Mas o achado do `tokenUsageEstimate` (abaixo) prevê o contrário, e a previsão
+vale escrita antes do teste.** Se a chamada não devolve `usage` — que é o que a
+chave de fallback indica —, a `AIMessage` também não carrega `usage_metadata`, e
+a sonda B deve achar **zero**. Isso não torna a execução inútil: `usos > 0`
+refuta a explicação inteira e reabre o caminho 1 como o melhor de todos, e
+`usos == 0` fecha a pergunta que estava aberta desde 11/08 sem custar nada além
+de uma mensagem que ia acontecer de qualquer jeito.
 
 **Instrumentado em 18/08 (sonda B).** Em vez de procurar o caminho que eu suponho
 existir, ela **varre o objeto inteiro** atrás de qualquer par
@@ -84,14 +94,37 @@ turno, com o `tenant_id` já preenchido.
    onde veio cada linha. Sem ela, reconciliado e estimado ficam
    indistinguíveis — e é a primeira pergunta de quem contesta.
 
-**Três coisas para conferir antes de construir:**
+### RESOLVIDO em 18/08: é `tokenUsageEstimate`, e não há botão para mudar
 
-- **`tokenUsage` ou `tokenUsageEstimate`?** O nome que aparece hoje é
-  `tokenUsageEstimate`, e o sufixo não é decorativo: quando o modelo faz
-  streaming a API não devolve `usage`, e o n8n **estima**. Se for esse o caso, o
-  caminho 2 entrega uma estimativa MELHOR, não a fatura — e a diferença importa
-  exatamente na conversa que motivou tudo isto. Uma execução responde: ver qual
-  das duas chaves está presente.
+Conferido no JSON versionado, sem esperar execução:
+
+- **nenhuma chave com `stream` nos 56 nós** — nada de streaming configurado;
+- o gatilho é `n8n-nodes-base.webhook` (POST), **não** um Chat Trigger. Não há
+  consumidor de resposta em streaming;
+- o nó `OpenAI Chat Model` (v1.3) define **só** `model` e `temperature`.
+
+E, apesar disso, o campo que aparece em execução real é `tokenUsageEstimate`.
+Isso não é suposição: o `RUNBOOK-VENDAS-N8N.md` manda abrir o sub-nó e anotar
+`tokenUsageEstimate.promptTokens`, e é **dessa leitura** que saíram os números
+1554 / 2016 / 3828 / 10481 que o `estima-tokens.js` chama de "real".
+
+No tracing de LLM do n8n essa chave é o CAMINHO DE FALLBACK: ela aparece quando
+a resposta do modelo **não** traz `usage`, e aí o n8n estima a partir do texto.
+Se `usage` viesse, a chave seria `tokenUsage`. Como o workflow não liga
+streaming em lugar nenhum, a causa é interna ao agent (o AgentExecutor do
+LangChain roda o modelo em streaming por padrão, e chamada em streaming não
+devolve `usage` a menos que se peça `stream_options.include_usage`). **Não é
+configuração deste workflow — não existe o botão.**
+
+**A consequência é maior que o caminho 2.** A coluna "real" da calibração de
+11/08 **também era estimativa** — do n8n, não da OpenAI. Ou seja: nada em toda
+a cadeia jamais tocou um número que a OpenAI cobra; a heurística de hoje
+(caracteres ÷ 3,112) foi calibrada contra outra estimativa. Isso não invalida a
+calibração para o que ela serve — ordenar clientes entre si —, mas encerra a
+ideia de que existe medição exata escondida em algum lugar do n8n.
+
+**Duas coisas ainda a conferir antes de construir:**
+
 - **Chave de API do n8n.** Não existe no `.env.local` hoje (só Supabase e
   Chatwoot). Precisa ser criada e guardada como as outras.
 - **Poda de execuções.** O n8n apaga execução antiga por idade
@@ -132,13 +165,21 @@ Cobrando `total_da_fatura × proporção_do_tenant`, a soma das contas **fecha c
 que foi efetivamente pago**, sempre — e é isso que sustenta a conversa com quem
 contesta, mesmo que a medida por turno tenha erro.
 
+**E, decidido em 18/08: nenhum dos três caminhos é medição exata.** O caminho 3
+seria, e está bloqueado pela credencial fixa do nó. Os caminhos 1 e 2 entregam o
+que o n8n mede, e o que o n8n mede é estimativa dele. A decisão está tomada **por
+medição, não por falta de tentativa** — que é a diferença entre uma escolha e uma
+desistência.
+
 Ordem prática:
 
-1. ler `_sonda_b` na primeira execução real (custo zero, já está no ar);
-2. conferir `tokenUsage` vs `tokenUsageEstimate` na mesma execução;
-3. construir o job diário do caminho 2, com `fonte_tokens`;
+1. ler `_sonda_b` na primeira execução real (custo zero, já está no ar). Mesmo
+   sendo estimativa, uso por passo é melhor que caractere ÷ 3,112 — e a decisão
+   é entre estimativas, então a pergunta vira "qual erra menos";
+2. ~~conferir `tokenUsage` vs `tokenUsageEstimate`~~ — **feito, é estimate**;
+3. construir o job diário do caminho 2, com `fonte_tokens` (aqui o valor passa a
+   ser `n8n` e não `api`, para a fatura não prometer o que não tem);
 4. caminho 3 só quando um cliente contestar em valor que pague a reescrita.
 
-O que **não** dá é seguir cobrando pela estimativa e chamá-la de medição: ela foi
-calibrada contra quatro execuções de um tenant só, e o próprio arquivo registra
-que antes da calibração errava de 1,5× a 10×.
+O que **não** dá é seguir chamando qualquer um desses números de medição. O único
+número indiscutível é a fatura — por isso ela é a âncora, e o resto é proporção.
