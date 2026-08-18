@@ -232,13 +232,38 @@ function DesconectarChatwoot({ tenantId, accountId }: { tenantId: string; accoun
                 pedidos ficam como estão.
               </span>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <SubmitButton pendingLabel="Desconectando…">
-                Desconectar a conta {accountId}
-              </SubmitButton>
-              <Button type="button" variant="ghost" onClick={() => setConfirmando(false)}>
-                Cancelar
-              </Button>
+            {/*
+              DUAS SAÍDAS, porque são dois casos diferentes — e a diferença não
+              é de grau: guardar o token só ajuda enquanto ele VALE. Se o Agent
+              Bot mudou ou o token foi regenerado no Chatwoot, o guardado virou
+              lixo, e lixo aqui não dá erro ao reconectar: o agente processa o
+              turno e falha no envio, calado.
+
+              A linha entre os botões existe para a escolha ser feita pelo CASO
+              ("troquei de conta" x "o bot mudou") e não pelo grau de medo.
+            */}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <SubmitButton pendingLabel="Desconectando…">
+                  Desconectar a conta {accountId}
+                </SubmitButton>
+                <SubmitButton
+                  name="apagar_credencial"
+                  value="1"
+                  variant="outline"
+                  pendingLabel="Desconectando…"
+                >
+                  Desconectar e apagar a credencial
+                </SubmitButton>
+                <Button type="button" variant="ghost" onClick={() => setConfirmando(false)}>
+                  Cancelar
+                </Button>
+              </div>
+              <p className="text-xs">
+                A primeira é para <strong>trocar a conta de cliente</strong> — o token continua
+                valendo. A segunda é para quando <strong>o bot mudou ou o token foi
+                regenerado</strong>: aí o guardado só atrapalha, e reconectar vai pedir um novo.
+              </p>
             </div>
           </div>
         </Alert>

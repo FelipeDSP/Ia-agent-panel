@@ -440,9 +440,20 @@ export async function conectarChatwoot(
  *    precisa para a conta ficar livre;
  *  - **`chatwoot_url` FICA.** É a instância (`app.chatyou.chat`), não a conta.
  *    Trocar de conta não muda de instância, e apagar obrigaria a redigitar;
- *  - **o token FICA em `tenant_credenciais`.** Reconectar o mesmo tenant não
- *    exige gerar token novo no Chatwoot. Foi o que se fez no SQL de ontem e
- *    funcionou; o `restaurante-teste` está exatamente nesse estado.
+ *  - **o token FICA em `tenant_credenciais`** — no caminho padrão. Reconectar o
+ *    mesmo tenant não exige gerar token novo no Chatwoot. Foi o que se fez no
+ *    SQL de ontem e funcionou; o `restaurante-teste` está nesse estado.
+ *
+ * A EXCEÇÃO EXPLÍCITA (`apagar_credencial`), e por que ela existe: guardar o
+ * token só ajuda quando ele CONTINUA VÁLIDO. Se o Agent Bot mudou ou o token foi
+ * regenerado no Chatwoot, o guardado virou lixo — e lixo aqui não dá erro na
+ * hora de reconectar: o agente processa o turno inteiro e falha no ENVIO, sem
+ * erro visível para quem escreveu. Guardar credencial morta é pior que não
+ * guardar nada, porque parece que está tudo certo.
+ *
+ * Os dois casos são mesmo diferentes: trocar a conta de tenant (token válido,
+ * guardar poupa trabalho) e trocar o bot ou perder o token (o antigo atrapalha).
+ * O padrão continua sendo preservar.
  *
  * O guard `trg_tenants_guard_colunas` dispara neste UPDATE porque
  * `chatwoot_account_id` é coluna de agência. Roda com a sessão do usuário, e
@@ -476,12 +487,42 @@ export async function desconectarChatwoot(
     return { erro: 'Este cliente já está sem conta do Chatwoot conectada.' };
   }
 
+  const apagarCredencial = fd.get('apagar_credencial') === '1';
+
   const { error } = await supabase
     .from('tenants')
     .update({ chatwoot_account_id: null })
     .eq('id', tenantId);
 
   if (error) return { erro: `Não foi possível desconectar: ${error.message}` };
+
+  if (apagarCredencial) {
+    // DELETE físico: `tenant_credenciais` não tem `deletado_em`, e para um
+    // segredo isso é o certo — soft delete de credencial é credencial viva com
+    // rótulo de morta. Escopado por tenant, como toda escrita crua.
+    const { error: erroCred } = await supabase
+      .from('tenant_credenciais')
+      .delete()
+      .eq('tenant_id', tenantId);
+
+    if (erroCred) {
+      // A conta JÁ foi liberada — dizer só o erro esconderia isso e levaria a
+      // repetir a operação achando que nada aconteceu.
+      return {
+        erro:
+          `Conta ${antes.chatwoot_account_id} liberada, mas a credencial NÃO foi apagada: ` +
+          `${erroCred.message}. O token antigo continua guardado.`,
+      };
+    }
+
+    revalidatePath(`/admin/tenants/${tenantId}`);
+    return {
+      sucesso:
+        `Conta ${antes.chatwoot_account_id} liberada e credencial apagada. Reconectar este ` +
+        'cliente vai exigir um token novo. Atenção: apagar aqui não revoga nada no Chatwoot — ' +
+        'se o token antigo ainda existir lá, ele continua valendo até ser regenerado.',
+    };
+  }
 
   revalidatePath(`/admin/tenants/${tenantId}`);
   return {

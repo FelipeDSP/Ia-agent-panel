@@ -131,7 +131,41 @@ try {
   chk('desconectar NÃO apaga conversa', depoisConv === antesConv, `${antesConv} -> ${depoisConv}`);
 
   // -------------------------------------------------------------------------
-  console.log('\n-- 5. Sem claim de super_admin, o guard recusa --\n');
+  console.log('\n-- 5. A excecao: desconectar E apagar a credencial --\n');
+
+  // O caminho padrao preserva o token; este apaga. Existe porque token guardado
+  // so ajuda enquanto VALE: com o bot trocado, o guardado nao da erro ao
+  // reconectar — o agente processa o turno e falha no ENVIO, calado.
+  const credAntes = (await c.query(
+    `select count(*)::int n from public.tenant_credenciais where tenant_id = $1`, [a])).rows[0].n;
+  chk('a credencial de A existe antes (contraprova)', credAntes === 1, String(credAntes));
+
+  // B ganha credencial ANTES, para o delete de A ter em quem errar. Sem isso,
+  // "so a de A sumiu" seria verdade por vacuidade.
+  await c.query(
+    `insert into public.tenant_credenciais (tenant_id, chatwoot_token) values ($1, $2)`,
+    [b, 'token-do-B-nao-tocar-24']);
+
+  const apagou = await tentar(`delete from public.tenant_credenciais where tenant_id = $1`, [a]);
+  chk('apagar a credencial de A funciona', apagou.erro === null, `veio ${apagou.codigo} ${apagou.erro}`);
+
+  const credDepois = (await c.query(
+    `select count(*)::int n from public.tenant_credenciais where tenant_id = $1`, [a])).rows[0].n;
+  chk('a credencial de A sumiu', credDepois === 0, String(credDepois));
+
+  const credB = (await c.query(
+    `select chatwoot_token from public.tenant_credenciais where tenant_id = $1`, [b])).rows[0];
+  chk('a credencial de B sobrevive ao delete escopado em A',
+    credB?.chatwoot_token === 'token-do-B-nao-tocar-24', credB ? 'outro valor' : '(sumiu)');
+
+  const convDepoisApagar = (await c.query(
+    `select count(*)::int n from public.conversas where tenant_id = $1`, [a])).rows[0].n;
+  chk('apagar credencial NAO apaga conversa', convDepoisApagar === antesConv,
+    `${antesConv} -> ${convDepoisApagar}`);
+
+  // -------------------------------------------------------------------------
+
+  console.log('\n-- 6. Sem claim de super_admin, o guard recusa --\n');
 
   // Contraprova do primeiro item: se passasse com qualquer contexto, a asserção
   // "o guard deixa com super_admin" não estaria medindo o guard.
