@@ -124,11 +124,18 @@ export function compararWorkflow(wfRepo, wfInstancia) {
     const pb = normalizarNo(b);
     for (const chave of new Set([...Object.keys(pa), ...Object.keys(pb)])) {
       if (JSON.stringify(pa[chave]) === JSON.stringify(pb[chave])) continue;
+      // Guarda o valor INTEIRO para classificar e o truncado para exibir. A
+      // primeira versao classificava no truncado: expressao longa tinha o
+      // `.item` cortado fora dos 90 chars e caia em "valor diferente" — 5 das
+      // 67 na primeira rodada. Agrupamento que erra o grupo e pior que nenhum,
+      // porque muda a decisao de quem le o resumo.
       difs.push({
         no: nomeNo,
         campo: chave,
         repo: pa[chave] === undefined ? '(ausente)' : String(pa[chave]).slice(0, 90),
         instancia: pb[chave] === undefined ? '(ausente)' : String(pb[chave]).slice(0, 90),
+        _repoInteiro: pa[chave] === undefined ? '(ausente)' : String(pa[chave]),
+        _instInteiro: pb[chave] === undefined ? '(ausente)' : String(pb[chave]),
       });
     }
   }
@@ -137,6 +144,27 @@ export function compararWorkflow(wfRepo, wfInstancia) {
     difs.push({ no: '(conexões)', campo: 'connections', repo: 'ver arquivo', instancia: 'diverge' });
   }
   return difs;
+}
+
+/**
+ * Classifica a divergência num TIPO, para o relatório sair agrupado.
+ *
+ * Setenta e duas linhas soltas ninguém lê; setenta e duas linhas com "70 são a
+ * mesma coisa e 2 são outra" alguém decide. Foi o que aconteceu na primeira
+ * rodada real: a esmagadora maioria era a troca `.item` -> `.first()` que o
+ * repositório fez em 12/08 e a instância nunca recebeu, e o que importava era
+ * justamente o punhado que NÃO era isso.
+ */
+export function classificar(d) {
+  if (d.tipo) return d.tipo;                       // nó só de um lado
+  const r = String(d._repoInteiro ?? d.repo ?? '');
+  const i = String(d._instInteiro ?? d.instancia ?? '');
+  const temFirst = /\)\.first\(\)/.test(r);
+  const temItem = /\)\.item\b/.test(i);
+  if (temFirst && temItem) return 'repo .first() × instância .item';
+  if (r === '(ausente)') return 'campo só na INSTÂNCIA';
+  if (i === '(ausente)') return 'campo só no REPO';
+  return 'valor diferente';
 }
 
 /**
@@ -162,6 +190,7 @@ if (EH_PROGRAMA) {
   const soJson = process.argv.includes('--json');
   const iDir = process.argv.indexOf('--dir');
   const completo = process.argv.includes('--completo');
+  const soResumo = process.argv.includes('--resumo');
   const DIR_EXPORT = iDir >= 0 ? process.argv[iDir + 1] : null;
   const URL_BASE = (process.env.N8N_URL || '').replace(/\/+$/, '');
   const CHAVE = process.env.N8N_API_KEY;
@@ -263,11 +292,30 @@ if (EH_PROGRAMA) {
   } else {
     console.log(`\n== Instancia x repositorio — ${doRepo.size} no repo, ${daInstancia.size} da instancia ` +
       `(fonte: ${DIR_EXPORT ? 'exportados de ' + DIR_EXPORT : 'API'}) ==\n`);
-    for (const { nome, arquivo, difs } of relatorio.divergentes) {
+    // RESUMO POR TIPO primeiro. O detalhe continua abaixo, mas quem abre o
+    // relatorio precisa saber em 3 linhas se sao 70 de uma coisa ou 70 coisas.
+    const porTipo = new Map();
+    for (const { difs } of relatorio.divergentes) {
+      for (const d of difs) {
+        const t = classificar(d);
+        if (!porTipo.has(t)) porTipo.set(t, []);
+        porTipo.get(t).push(d);
+      }
+    }
+    if (porTipo.size) {
+      const totalDifs = [...porTipo.values()].reduce((a, v) => a + v.length, 0);
+      console.log(`  RESUMO — ${totalDifs} divergência(s) em ${relatorio.divergentes.length} workflow(s):\n`);
+      for (const [t, v] of [...porTipo.entries()].sort((a, b) => b[1].length - a[1].length)) {
+        console.log(`     ${String(v.length).padStart(4)}  ${t}`);
+      }
+      console.log('');
+    }
+
+    for (const { nome, arquivo, difs } of (soResumo ? [] : relatorio.divergentes)) {
       console.log(`  ${nome}  (${arquivo}) — ${difs.length} divergência(s)`);
       for (const d of difs) {
         if (d.tipo) console.log(`     ${d.no}: ${d.tipo}`);
-        else console.log(`     ${d.no} · ${d.campo}\n        repo:      ${d.repo}\n        instância: ${d.instancia}`);
+        else console.log(`     [${classificar(d)}] ${d.no} · ${d.campo}\n        repo:      ${d.repo}\n        instância: ${d.instancia}`);
       }
       console.log('');
     }

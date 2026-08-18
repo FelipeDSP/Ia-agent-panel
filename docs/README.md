@@ -97,10 +97,19 @@ documentação e material de referência.
 > chave mora no SERVIDOR (workflow agendado do próprio n8n, ou job no Coolify com
 > env var), nunca numa pessoa.
 >
-> A lógica de comparação tem prova offline em `npm run teste:diff-n8n` (18
+> A lógica de comparação tem prova offline em `npm run teste:diff-n8n` (23
 > asserções, sabotagem inclusa), e o script recusa `--dir` apontando para o
 > próprio `n8n/workflows` — compararia os arquivos com eles mesmos e diria "sem
-> divergência" sem ter verificado nada.
+> divergência" sem ter verificado nada. O relatório sai **agrupado por tipo**
+> (`--resumo` para só o agrupamento): 70 linhas soltas ninguém lê, "70 são a
+> mesma coisa e 2 são outra" alguém decide.
+>
+> **Lição de método, de 18/08 e cara:** eu demonstrei o script com uma simulação
+> — copiei os arquivos do próprio repositório, plantei divergências e mostrei
+> "1 divergência". A execução real com o export da instância deu **72**.
+> Simulação prova que o script FUNCIONA; ela não diz nada sobre o que EXISTE.
+> Apresentar as duas coisas com a mesma cara é o erro; a simulação não devia ter
+> saído sem a etiqueta de simulação.
 - [`n8n-cutover.md`](n8n/n8n-cutover.md) — cutover do agente para este banco.
 - [`n8n-limpar-memoria.md`](n8n/n8n-limpar-memoria.md) — limpeza da memória do agente.
 

@@ -17,7 +17,7 @@
  * Uso: npm run teste:diff-n8n
  */
 
-import { achatar, compararWorkflow, mesmaPasta, normalizarNo, CAMPOS_NO_VOLATEIS }
+import { achatar, classificar, compararWorkflow, mesmaPasta, normalizarNo, CAMPOS_NO_VOLATEIS }
   from '../scripts/diff-n8n-instancia.mjs';
 
 let ok = 0;
@@ -124,6 +124,44 @@ chk('mesma pasta e detectada, com separador diferente',
 chk('pasta diferente NAO e barrada', !mesmaPasta('n8n/workflows', '../exportados'));
 chk('caminho relativo x absoluto resolve para o mesmo',
   mesmaPasta('./n8n/workflows', process.cwd() + '/n8n/workflows'));
+
+// -------------------------------------------------------------------------
+console.log('\n-- 6. O agrupamento por tipo --\n');
+
+// 72 linhas soltas ninguem le; "70 sao a mesma coisa e 2 sao outra" alguem
+// decide. E agrupamento que erra o grupo e pior que nenhum.
+const expr = (acessor) =>
+  "=Perfil de tools nao resolvido para o tenant {{ $('Resolve Tenant')." + acessor +
+  ".json.tenant_id }}. Verifique o cadastro do cliente antes de seguir com o atendimento.";
+
+const dItem = compararWorkflow(
+  wf([noBase({ parameters: { texto: expr('first()') } })]),
+  wf([noBase({ parameters: { texto: expr('item') } })]),
+);
+chk('.first() no repo x .item na instancia vira UM tipo so',
+  dItem.length === 1 && classificar(dItem[0]) === 'repo .first() × instância .item',
+  JSON.stringify(dItem.map(classificar)));
+
+// A ARMADILHA QUE JA MORDEU: a exibicao trunca em 90 chars, e a primeira versao
+// classificava no truncado. Nesta expressao o `.item` cai DEPOIS do corte.
+chk('classifica pelo valor INTEIRO, nao pelo truncado de 90 chars',
+  expr('item').indexOf('.item') < 90 || classificar(dItem[0]) === 'repo .first() × instância .item',
+  'se classificasse no truncado, cairia em "valor diferente"');
+
+const exprLonga = (a) => 'x'.repeat(120) + " {{ $('N')." + a + ".json.v }}";
+const dLonga = compararWorkflow(
+  wf([noBase({ parameters: { t: exprLonga('first()') } })]),
+  wf([noBase({ parameters: { t: exprLonga('item') } })]),
+);
+chk('mesmo com o acessor alem do caractere 90, o tipo sai certo',
+  classificar(dLonga[0]) === 'repo .first() × instância .item',
+  classificar(dLonga[0]));
+
+chk('campo so na instancia tem tipo proprio',
+  classificar({ repo: '(ausente)', instancia: 'true', _repoInteiro: '(ausente)', _instInteiro: 'true' })
+    === 'campo só na INSTÂNCIA');
+chk('no de um lado so mantem o tipo original',
+  classificar({ no: 'X', tipo: 'nó só no REPO' }) === 'nó só no REPO');
 
 console.log('\n' + '-'.repeat(58));
 console.log(`  ${ok} passaram, ${falhas.length} falharam`);
