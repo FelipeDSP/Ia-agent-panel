@@ -427,6 +427,70 @@ export async function conectarChatwoot(
   };
 }
 
+/**
+ * Desconecta o Chatwoot: libera a conta para outro tenant.
+ *
+ * POR QUE EXISTE. O painel conectava e não desconectava. Mover a conta 1 do
+ * `restaurante-teste` para o `emporio` exigiu SQL na mão. Trocar conta entre
+ * tenants é operação normal em teste, e com clientes entrando vai se repetir.
+ *
+ * O QUE SAI E O QUE FICA — as três decisões, e nenhuma é acidente:
+ *
+ *  - **zera `chatwoot_account_id`**, e é só isso que o `UNIQUE` da coluna
+ *    precisa para a conta ficar livre;
+ *  - **`chatwoot_url` FICA.** É a instância (`app.chatyou.chat`), não a conta.
+ *    Trocar de conta não muda de instância, e apagar obrigaria a redigitar;
+ *  - **o token FICA em `tenant_credenciais`.** Reconectar o mesmo tenant não
+ *    exige gerar token novo no Chatwoot. Foi o que se fez no SQL de ontem e
+ *    funcionou; o `restaurante-teste` está exatamente nesse estado.
+ *
+ * O guard `trg_tenants_guard_colunas` dispara neste UPDATE porque
+ * `chatwoot_account_id` é coluna de agência. Roda com a sessão do usuário, e
+ * `exigirSuperAdmin` garante o papel — é o mesmo caminho que `conectarChatwoot`
+ * já usa para gravar a MESMA coluna, então o contexto que o guard exige já está
+ * provado em produção.
+ */
+export async function desconectarChatwoot(
+  _estado: EstadoAcao,
+  fd: FormData,
+): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  if (!tenantId) return { erro: 'Tenant não informado.' };
+
+  const supabase = await criarClienteServidor();
+
+  // Lê antes para (a) dizer QUAL conta foi liberada e (b) não devolver
+  // "desconectado" para quem já estava — sucesso que não mudou nada ensina a
+  // confiar na mensagem errada.
+  const { data: antes, error: erroLeitura } = await supabase
+    .from('tenants')
+    .select('chatwoot_account_id')
+    .eq('id', tenantId)
+    .maybeSingle();
+
+  if (erroLeitura) return { erro: `Não foi possível ler o cliente: ${erroLeitura.message}` };
+  if (!antes) return { erro: 'Cliente não encontrado.' };
+  if (antes.chatwoot_account_id == null) {
+    return { erro: 'Este cliente já está sem conta do Chatwoot conectada.' };
+  }
+
+  const { error } = await supabase
+    .from('tenants')
+    .update({ chatwoot_account_id: null })
+    .eq('id', tenantId);
+
+  if (error) return { erro: `Não foi possível desconectar: ${error.message}` };
+
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  return {
+    sucesso:
+      `Conta ${antes.chatwoot_account_id} do Chatwoot liberada — já pode ser ligada a outro ` +
+      'cliente. O token continua guardado, então reconectar este aqui não exige gerar outro.',
+  };
+}
+
 /** Suspende ou reativa o tenant. Só super admin. `ativo=false` para o agente. */
 export async function alternarSuspensaoTenant(
   _estado: EstadoAcao,

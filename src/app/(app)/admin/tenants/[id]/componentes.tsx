@@ -7,6 +7,7 @@ import {
   conectarChatwoot,
   convidarAdminTenant,
   definirContratacao,
+  desconectarChatwoot,
   editarNomeAdmin,
   editarTenantSuper,
   excluirTenant,
@@ -121,65 +122,136 @@ export function FormChatwoot({
   const [estado, acao] = useActionState<EstadoAcao, FormData>(conectarChatwoot, {});
 
   return (
-    <form action={acao} className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
+      <form action={acao} className="flex flex-col gap-4">
+        <input type="hidden" name="tenant_id" value={tenantId} />
+
+        {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+        {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="chatwoot_account_id">account_id</Label>
+            <Input
+              id="chatwoot_account_id"
+              name="chatwoot_account_id"
+              type="number"
+              min="1"
+              defaultValue={accountId ?? ''}
+            />
+            <ErroCampo msg={estado.errosCampo?.['chatwoot_account_id']} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="chatwoot_url">URL</Label>
+            <Input id="chatwoot_url" name="chatwoot_url" defaultValue={url} />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="chatwoot_token">Token (api_access_token)</Label>
+          <Input
+            id="chatwoot_token"
+            name="chatwoot_token"
+            type="password"
+            autoComplete="off"
+            placeholder={accountId ? '•••••• (deixe para revalidar)' : ''}
+          />
+          <ErroCampo msg={estado.errosCampo?.['chatwoot_token']} />
+          <p className="text-xs text-muted-foreground">
+            O token é validado com uma chamada real ao Chatwoot antes de salvar.
+          </p>
+        </div>
+
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="token_bot"
+            className="mt-0.5 h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          />
+          <span>
+            É um token de Agent Bot (o robô responde por ele)
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Marque se o token veio de um Agent Bot. Esse tipo não é validado pela API de conta
+              (daria 401) — o painel salva sem validar e você confirma com uma mensagem de teste.
+            </span>
+          </span>
+        </label>
+
+        <div>
+          <SubmitButton pendingLabel="Validando…">
+            {accountId ? 'Revalidar e salvar' : 'Conectar'}
+          </SubmitButton>
+        </div>
+      </form>
+
+      {/* Irmao, nao filho: form aninhado e HTML invalido, e o React
+          desmonta em silencio. */}
+      {accountId ? <DesconectarChatwoot tenantId={tenantId} accountId={accountId} /> : null}
+    </div>
+  );
+}
+
+/**
+ * Desconectar: libera a conta do Chatwoot para outro cliente.
+ *
+ * Só aparece quando HÁ conta conectada — botão que não tem o que fazer é ruído,
+ * e a Server Action recusa esse caso de qualquer forma.
+ *
+ * A confirmação não é cerimônia. "Desconectar" soa destrutivo, e o que a pessoa
+ * precisa saber divide-se em três, nesta ordem: o que PARA (o atendimento), o
+ * que FICA (o token) e o que NÃO é tocado (o dado do cliente). Sem a terceira,
+ * quem precisa trocar a conta hesita — e hesitar aqui significa voltar a fazer
+ * por SQL, que é o que motivou este botão.
+ */
+function DesconectarChatwoot({ tenantId, accountId }: { tenantId: string; accountId: number }) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(desconectarChatwoot, {});
+  const [confirmando, setConfirmando] = useState(false);
+
+  return (
+    <form action={acao} className="flex flex-col gap-3 border-t border-border pt-4">
       <input type="hidden" name="tenant_id" value={tenantId} />
 
       {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="chatwoot_account_id">account_id</Label>
-          <Input
-            id="chatwoot_account_id"
-            name="chatwoot_account_id"
-            type="number"
-            min="1"
-            defaultValue={accountId ?? ''}
-          />
-          <ErroCampo msg={estado.errosCampo?.['chatwoot_account_id']} />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="chatwoot_url">URL</Label>
-          <Input id="chatwoot_url" name="chatwoot_url" defaultValue={url} />
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="chatwoot_token">Token (api_access_token)</Label>
-        <Input
-          id="chatwoot_token"
-          name="chatwoot_token"
-          type="password"
-          autoComplete="off"
-          placeholder={accountId ? '•••••• (deixe para revalidar)' : ''}
-        />
-        <ErroCampo msg={estado.errosCampo?.['chatwoot_token']} />
-        <p className="text-xs text-muted-foreground">
-          O token é validado com uma chamada real ao Chatwoot antes de salvar.
-        </p>
-      </div>
-
-      <label className="flex items-start gap-2 text-sm">
-        <input
-          type="checkbox"
-          name="token_bot"
-          className="mt-0.5 h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-        />
-        <span>
-          É um token de Agent Bot (o robô responde por ele)
-          <span className="mt-0.5 block text-xs text-muted-foreground">
-            Marque se o token veio de um Agent Bot. Esse tipo não é validado pela API de conta
-            (daria 401) — o painel salva sem validar e você confirma com uma mensagem de teste.
+      {confirmando ? (
+        <Alert variant="warning">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <span>
+                <strong>O agente deste cliente para de responder.</strong> A mensagem continua
+                chegando do Chatwoot, mas morre na checagem de tenant — sem erro visível para
+                quem escreveu.
+              </span>
+              <span>
+                <strong>O token continua guardado.</strong> Reconectar este mesmo cliente não
+                exige gerar token novo no Chatwoot.
+              </span>
+              <span>
+                <strong>Nada é apagado.</strong> Conversas, produtos, base de conhecimento e
+                pedidos ficam como estão.
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <SubmitButton pendingLabel="Desconectando…">
+                Desconectar a conta {accountId}
+              </SubmitButton>
+              <Button type="button" variant="ghost" onClick={() => setConfirmando(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </Alert>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" onClick={() => setConfirmando(true)}>
+            Desconectar Chatwoot
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Libera a conta {accountId} para outro cliente. O token fica guardado.
           </span>
-        </span>
-      </label>
-
-      <div>
-        <SubmitButton pendingLabel="Validando…">
-          {accountId ? 'Revalidar e salvar' : 'Conectar'}
-        </SubmitButton>
-      </div>
+        </div>
+      )}
     </form>
   );
 }
