@@ -99,6 +99,14 @@ try {
   console.log('\n== Migração 38: pedido não pago expira na leitura ==\n');
 
   const tenant = (await c.query(`select id from public.tenants where slug='restaurante-teste'`)).rows[0]?.id;
+  // Precondicao checada AQUI, antes de o valor virar parametro. Com `tenant`
+  // undefined a query de produto ia ao banco com null, voltava vazia, e a
+  // mensagem culpava o CATALOGO por um seed apagado -- duas causas distintas,
+  // dois consertos distintos (restaurar o tenant vs cadastrar item). O slug vai
+  // escrito porque este teste AINDA resolve seed por slug: ver
+  // docs/PENDENCIA-SEED-DOS-TESTES.md, cujo escopo concluido sao apenas os
+  // cinco de isolamento.
+  if (!tenant) throw new Error("seed 'restaurante-teste' ausente ou soft-deletado -- ver docs/PENDENCIA-SEED-DOS-TESTES.md");
   // As MESMAS condições que `api_n8n_adicionar_item` aplica, `estoque` inclusive.
   // A primeira versão só filtrava `disponivel` e pegou um produto sem estoque: a
   // função respondeu "item nao esta disponivel" e a asserção do aviso reprovou.
@@ -110,7 +118,7 @@ try {
         and (estoque is null or estoque > 0)
       limit 1`, [tenant],
   )).rows[0]?.id;
-  if (!tenant || !prod) throw new Error('tenant/produto de teste nao encontrado');
+  if (!prod) throw new Error('restaurante-teste sem produto disponivel com estoque -- insumo do teste, nao defeito da migracao 38');
 
   // -------------------------------------------------------------------------
   console.log('\n-- 1. Aplicar não mexe no que já existe --\n');
@@ -263,9 +271,19 @@ try {
     await c.query(`select count(*)::int n from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
                     where ns.nspname='public' and p.proname='expirar_pedidos_vencidos'`)
   ).rows[0].n === 0);
+} catch (e) {
+  // REJEICAO VIRA FALHA, NAO CRASH. Antes, qualquer excecao -- precondicao, erro
+  // de SQL, tipo errado -- subia crua: o processo morria com stack trace e o
+  // bloco de resumo nunca imprimia. Voce ficava sem saber quantas propriedades
+  // tinham passado ate ali, nem qual quebrou. Agora entra na lista de falhas
+  // como qualquer outra, o resumo sai, e o exit code segue 1.
+  falhas.push(`execucao interrompida: ${e.message}`);
+  console.log(`  FALHA execucao interrompida -- ${e.message}`);
 } finally {
-  await c.query('rollback');
-  await c.end();
+  // O rollback tambem e protegido: com a conexao perdida, `c.query` estouraria
+  // AQUI e reintroduziria o crash que o catch acima acabou de eliminar.
+  try { await c.query('rollback'); } catch { /* conexao ja perdida */ }
+  await c.end().catch(() => {});
 }
 
 console.log('\n' + '-'.repeat(60));

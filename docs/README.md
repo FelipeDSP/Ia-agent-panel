@@ -40,10 +40,16 @@ documentação e material de referência.
   A guarda de dado alheio cobre 14 tabelas e **não** o Storage. Risco baixo hoje porque
   os caminhos já são escopados por tenant; o gatilho é o primeiro cliente além do
   restaurante-teste com foto no catálogo.
-- [`PENDENCIA-SEED-DOS-TESTES.md`](PENDENCIA-SEED-DOS-TESTES.md) — **a fazer, com prazo.**
-  Os testes de isolamento dependem de tenants de seed que qualquer pessoa apaga pelo
-  painel; ficaram 4 dias cegos em 13–17/08. Inventário dos 6 testes acoplados, por que
-  5 passaram por acaso, e o padrão-alvo (criar/limpar o próprio tenant).
+- [`PENDENCIA-SEED-DOS-TESTES.md`](PENDENCIA-SEED-DOS-TESTES.md) — **PARCIAL.** Os cinco
+  testes de isolamento criam os próprios tenants desde 17/08; **outros nove seguem
+  resolvendo seed por slug** e caem se alguém apagar o tenant pelo painel, como
+  aconteceu em 13–17/08. Tabela dos nove com o modo de falha de cada um, e por que o
+  guard estático (lista fixa de 5) não os enxerga.
+- [`TOKENS-REAIS-PARA-COBRANCA.md`](TOKENS-REAIS-PARA-COBRANCA.md) — **decisao em aberto,
+  com instrumentacao no ar.** Os tres caminhos para trocar a estimativa de tokens pelo
+  numero que a OpenAI cobra: `intermediateSteps` (sonda B ja instrumentada), API de
+  execucoes do n8n (recomendado — o `execucao_id` da migracao 37 ja e a chave de juncao)
+  e chave por tenant (bloqueada por credencial de no nao aceitar expressao).
 - [`PENDENCIA-MARGEM.md`](PENDENCIA-MARGEM.md) — **decidido não fazer, com gatilho.**
   Margem por cliente em `/admin/consumo`: por que não agora (não há valor de plano no
   schema, provedor de pagamento em aberto, custo de centavos) e o que a retoma.

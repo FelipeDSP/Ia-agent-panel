@@ -190,6 +190,74 @@ try {
 const passos = Array.isArray(agent?.intermediateSteps) ? agent.intermediateSteps.length : 0;
 const chamadas = 1 + passos;
 
+// ----------------------------------------------------------------------------
+// 1b. SONDA B — o numero exato veio JUNTO com a saida do agent?
+// ----------------------------------------------------------------------------
+// A sonda A acima pergunta se da para ALCANCAR o sub-no a partir daqui, e o
+// veredicto foi nao. Esta pergunta e outra: com `returnIntermediateSteps`
+// ligado (esta ligado nos dois agents), o objeto que chega em $input carrega
+// `messageLog` com as AIMessage de cada round-trip de tool -- e uma AIMessage
+// serializada pode trazer `response_metadata.tokenUsage` e `usage_metadata`,
+// que sao o campo `usage` da resposta da API, nao estimativa.
+//
+// Ninguem tinha olhado: este arquivo le `output` e `intermediateSteps` e mais
+// nada. Entao a sonda nao procura um caminho que eu ache que existe -- ela
+// VARRE o objeto inteiro atras de qualquer par (promptTokens|input_tokens) e
+// (completionTokens|output_tokens), e reporta os caminhos que achou. Uma
+// execucao real responde de vez, e o resultado nao depende de eu ter acertado
+// o formato de serializacao da versao do n8n que roda aqui.
+//
+// LIMITE ESTRUTURAL, e por isso o resultado NAO entra no total automaticamente:
+// `intermediateSteps` cobre os passos que chamaram ferramenta, e a chamada FINAL
+// -- a que produziu `output` -- nao vira passo. Somar so o que ela achar
+// subcobra, calado, que e exatamente a falha que este arquivo existe para
+// impedir. Se a sonda achar N usos com N = `chamadas` - 1, o caminho e somar o
+// real dos passos e estimar apenas a ultima chamada.
+const acharUsos = (raiz) => {
+  const achados = [];
+  const vistos = new Set();
+  const fila = [[raiz, 'json']];
+  let visitados = 0;
+  // Tetos: o objeto pode conter a conversa inteira, e um no Code que estoura
+  // memoria derruba a mensagem do cliente. Diagnostico nunca vale isso.
+  while (fila.length > 0 && visitados < 5000 && achados.length < 40) {
+    const [v, caminho] = fila.shift();
+    visitados++;
+    if (!v || typeof v !== 'object') continue;
+    if (vistos.has(v)) continue; // messageLog costuma reapontar para o mesmo objeto
+    vistos.add(v);
+    if (caminho.split('.').length > 16) continue;
+    const entrada = v.promptTokens ?? v.input_tokens ?? v.prompt_tokens;
+    const saida = v.completionTokens ?? v.output_tokens ?? v.completion_tokens;
+    if (typeof entrada === 'number' || typeof saida === 'number') {
+      achados.push({ caminho, entrada: Number(entrada) || 0, saida: Number(saida) || 0 });
+      continue; // achou o uso; descer dentro dele so duplicaria
+    }
+    for (const k of Object.keys(v)) fila.push([v[k], caminho + '.' + k]);
+  }
+  return { achados, visitados, truncou: fila.length > 0 };
+};
+
+let sonda_b;
+try {
+  const r = acharUsos(agent);
+  sonda_b = {
+    // Responde "alguem inspecionou o objeto inteiro?" sem precisar de ninguem.
+    chaves_topo: Object.keys(agent || {}),
+    usos: r.achados.length,
+    // Se isto bater com `chamadas`, acabou: o exato esta aqui e cobre tudo.
+    // Se for `chamadas` - 1, falta so a chamada final, que se estima.
+    chamadas_estimadas: chamadas,
+    entrada: r.achados.reduce((a, u) => a + u.entrada, 0),
+    saida: r.achados.reduce((a, u) => a + u.saida, 0),
+    caminhos: r.achados.map((u) => u.caminho).slice(0, 8),
+    visitados: r.visitados,
+    truncou: r.truncou,
+  };
+} catch (e) {
+  sonda_b = { erro: String(e && e.message).slice(0, 120) };
+}
+
 
 // Tamanho da janela de memoria que o modelo recebe, vindo da migracao 29 pelo
 // no que ja existia (Sync Conversa) — sem query nova num caminho que ja tem
@@ -220,6 +288,7 @@ return [{
     // Diagnostico: some daqui quando a sonda tiver dado veredicto e o caminho
     // estiver decidido. Ate la, e o que responde se da para parar de estimar.
     _sonda: sonda,
+    _sonda_b: sonda_b,
     _chamadas: real ? real.chamadas : chamadas,
     _estimado_entrada: estimado_entrada,
     _historico_chars: historicoChars,

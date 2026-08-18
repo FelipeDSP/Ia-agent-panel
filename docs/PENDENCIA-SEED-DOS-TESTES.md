@@ -1,13 +1,24 @@
-# ~~Pendência~~ FEITO — os testes de isolamento não dependem mais de seed
+# Pendência PARCIAL — fecharam os cinco de isolamento, não a suíte
 
-> **Concluída em 2026-08-17.** Os cinco criam e destroem os próprios tenants. O
-> critério foi verificado das duas formas: `npm run teste:seed-independente`
-> (estático, permanente) e uma execução com os TRÊS seeds soft-deletados, em que
-> os cinco passaram — 130 asserções, zero vermelhas. O histórico abaixo fica
-> porque explica por que a regra existe.
+> **Escopo concluído em 2026-08-17: `tests/isolamento-*.mjs`, cinco arquivos.**
+> Eles criam e destroem os próprios tenants, e o critério foi verificado das duas
+> formas (varredura estática permanente + uma execução com os TRÊS seeds
+> soft-deletados, 130 asserções verdes).
+>
+> **Escopo em aberto: outros nove testes continuam acoplados aos seeds.**
+> Contado por seed: apagar `restaurante-teste` derruba quatro (mais
+> `trava-vendas`, que degrada calado); `clinica-teste`, três; `sandbox-de-testes`,
+> dois. Ver
+> [Escopo — o que fechou e o que não fechou](#escopo--o-que-fechou-e-o-que-não-fechou).
 
-> Registrada e concluída no mesmo dia, **2026-08-17**, depois de a suíte de
-> isolamento passar quatro dias cega.
+> **Por que este título deixou de dizer FEITO (18/08).** Dizia, por um dia. O
+> critério de aceitação abaixo — *"apagar seed nenhum consegue deixá-los
+> verdes"* — foi cumprido para **eles**, os cinco, e o título omitia o
+> antecedente. Quem lesse daqui a um mês concluiria que a CLASSE de defeito
+> fechou e pararia de procurar; foi a mesma armadilha de um "Provedor definido:
+> Asaas" escrito quando só a comparação tinha terminado. Pendência de escopo
+> parcial se marca parcial, com o resto listado por nome — a lista é o que
+> impede o esquecimento de virar conclusão.
 
 ## O que aconteceu
 
@@ -69,13 +80,61 @@ de verdade, `teste:modulos` reprovou com
 se algo estourasse no meio — que é o estado que esta semana foi gasta
 consertando.
 
+## Escopo — o que fechou e o que não fechou
+
+Levantado em 18/08 com `grep -rn "slug\s*=\s*'<seed>'\|eq('slug', '<seed>')" tests/`,
+e **cada modo de falha foi conferido, não presumido** (a primeira leitura desta
+lista errou justamente aí: chamou de "passa verde" um teste que estoura).
+
+**Fechados — não tocam mais em seed:** `isolamento-fase2`, `isolamento-modulos`,
+`isolamento-produtos`, `isolamento-pedidos`, `isolamento-fotos`.
+
+**Abertos — resolvem seed por slug:**
+
+| Arquivo | Seed | Se o seed sumir |
+|---|---|---|
+| `tests/migracao-expirar-pedido.mjs:101` | restaurante-teste | **FALHA nomeada** (consertado em 18/08 — era crash sem resumo) |
+| `tests/migracao-audio.mjs:144` | restaurante-teste | crash opaco: `t.id` de `undefined`, `TypeError` sem citar o seed |
+| `tests/migracao-foto-agente.mjs:80-81` | restaurante-teste, sandbox-de-testes | crash opaco: idem, em `A.id` |
+| `tests/migracao-log-idempotente.mjs:115` | restaurante-teste | throw nomeado |
+| `tests/restricao-coluna-fase3.mjs:59` | clinica-teste | throw nomeado, já com ponteiro para este doc |
+| `tests/seguranca-tenant-tools.mjs:67` | clinica-teste | throw nomeado |
+| `tests/jobs-mortos.mjs:91` | sandbox-de-testes | throw nomeado |
+| `tests/deletes-escopados.mjs:156` | clinica-teste | throw nomeado, já com ponteiro para este doc |
+
+**Aberto, mas por outro mecanismo:** `tests/trava-vendas.mjs:92` usa
+`restaurante-teste` como CHAVE de `PEDIDOS_HISTORICOS`, e itera os tenants que o
+banco devolve. Com o seed apagado ele não fica vácuo — apenas deixa de exercitar
+aquele tenant, silenciosamente. É o padrão de estado declarado que a CLAUDE.md
+recomenda; o acoplamento é mais fraco, não inexistente.
+
+**A boa notícia, medida:** nenhum dos nove passa VERDE com o seed ausente. Todos
+morrem, e sete dizem por quê. Não é a classe "teste verde que não testa nada" —
+é a classe "suíte que uma operação legítima de painel derruba".
+
+**Por que o guard não pega estes.** `tests/seed-independente.mjs:40-44` é uma
+**lista fixa de cinco caminhos**, não uma varredura de `tests/`. Ele prova o que
+foi consertado e é cego para o resto — inclusive para um arquivo novo que nasça
+acoplado. Trocar a lista por varredura com allowlist para os casos legítimos
+(`trava-vendas`, `tenants-efemeros`) é o próximo passo natural, e é barato.
+
+**Ordem sugerida quando isto for retomado:** os dois crashes opacos primeiro
+(`migracao-audio`, `migracao-foto-agente`), porque hoje custam uma sessão de
+depuração para descobrir que a causa era um tenant apagado; depois a varredura
+do guard; e por último a migração dos oito para `tenants-efemeros.mjs`, que é
+trabalho maior e sem urgência enquanto os seeds existirem.
+
 ## Critério de aceitação da reescrita
 
 Uma frase, e ela é verificável:
 
 > **Apagar seed nenhum consegue deixá-los verdes.**
 
-**Atingido em 17/08.** Os três seeds foram soft-deletados de verdade e os cinco
+O antecedente de "-los" é **os cinco de isolamento**, e só eles. O critério
+nunca foi enunciado sobre a suíte inteira; o que faltou foi escrever isso ao
+lado da palavra FEITO.
+
+**Atingido em 17/08, para os cinco.** Os três seeds foram soft-deletados de verdade e os cinco
 rodaram: fase2 56, modulos 15, produtos 21, pedidos 21, fotos 17 — todos zero
 vermelhas. Seeds restaurados no `finally` do mesmo processo.
 
@@ -142,7 +201,7 @@ nunca desligando o trigger, que valeria para a sessão inteira.
    `supabase/migrations/20260817000000_40_ver_pedido_volatile.sql`). Destruturar
    `{ data, error }` e imprimir o erro no `checar` paga sozinho.
 
-## O prazo, cumprido
+## O prazo, cumprido — para os cinco
 
 Era "antes do próximo cliente entrar". Feito em 17/08, com `emporio`,
 `estudyou-sendbox` e `fortalize` já conectados e o quarto (`CEEJAAR`) recém-criado
