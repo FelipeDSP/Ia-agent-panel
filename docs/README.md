@@ -50,6 +50,10 @@ documentação e material de referência.
   numero que a OpenAI cobra: `intermediateSteps` (sonda B ja instrumentada), API de
   execucoes do n8n (recomendado — o `execucao_id` da migracao 37 ja e a chave de juncao)
   e chave por tenant (bloqueada por credencial de no nao aceitar expressao).
+- [`PENDENCIA-PISO-SIMILARIDADE.md`](PENDENCIA-PISO-SIMILARIDADE.md) — **a fazer, com
+  gatilho.** `match_kb_documentos` nao tem piso: sempre devolve o menos distante, nunca
+  "nao tenho isso". Medido no corpus real, conteudo IRRELEVANTE chega a 0,625 e chunk do
+  MESMO documento desce a 0,165 — as faixas se sobrepoem, entao piso fixo nao separa.
 - [`PENDENCIA-FATURA-OPENAI.md`](PENDENCIA-FATURA-OPENAI.md) — **a fazer, com gatilho.**
   A parte NAO-tecnica da cobranca por consumo: como a fatura da OpenAI entra no sistema
   todo mes (quem pega, quando, e o que conta como consumo de cliente). Inclui a medicao
