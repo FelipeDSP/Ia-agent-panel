@@ -32,6 +32,27 @@ bots"` não se aplica a este endpoint nesta versão.
 Os 200 de escrita são o controle que faz os 401 significarem política de bot, e
 não credencial inválida.
 
+### 1.1 O bot cria conversa? Não — medido em 18/08
+
+A pergunta decidia se dava para validar num "atendimento técnico" criado pelo
+próprio painel, em vez de mexer em conversa de cliente.
+
+```
+POST /contacts        {}                                        → 401  not authorized for bots
+POST /conversations   {}                                        → 404  Resource could not be found
+POST /conversations   {inbox_id:189}                            → 404  (idem)
+POST /conversations   {inbox_id:189, source_id:"..."}            → 404  (idem)
+POST /conversations   {inbox_id:189, source_id:"...", contact_id}→ 404  (idem)
+```
+
+O `404` é interessante e **não muda a conclusão**: ele não é o 401 de bot, ou
+seja, a requisição passou da autorização e morreu resolvendo recurso. Mas as
+três formas falham igual, e o caminho para sair do 404 exigiria um
+`contact_id` real — que o bot não consegue obter, porque **criar contato é 401 e
+listar contato também**.
+
+Porta fechada, então. O estado "time não verificado" (seção 6) fica.
+
 ## 2. A regra que sustenta o desenho: olhe o CORPO, não o status
 
 `team_id` inexistente devolve **200 com corpo `null`**. Status 200 aqui não
@@ -81,7 +102,7 @@ o time é por cliente.
 Isso entra em **toda chamada ao modelo** — o mesmo custo por turno que foi
 medido no `system_prompt` (era 63% do turno do Empório antes da otimização).
 
-Proposta: **120 caracteres por descrição, 6 times**.
+Proposta: **120 caracteres por descrição E 720 caracteres no total**.
 
 ```
 120 chars ≈ 39 tokens · 6 times ≈ 234 tokens por chamada
@@ -91,6 +112,16 @@ turno de 2 chamadas ≈ 470 tokens
 Contra um turno de ~8.300 (Empório com o prompt novo), são ~6%. Aceitável.
 Com 160 chars e 10 times seriam ~1.030 por turno, ~12% — não aceitável para uma
 funcionalidade de roteamento.
+
+**O teto que vale é o da SOMA, e o por-descrição sozinho não segura nada:**
+quinze times de 80 caracteres passam em toda validação individual e custam
+1.200 — o dobro do cenário de seis. Quem paga a conta é o total, então é o total
+que precisa de limite; o teto por descrição existe só para uma única descrição
+não comer a cota inteira.
+
+Na prática o cliente vê **"580 de 720 usados"** somando tudo, e o formulário
+recusa o que passar. Contador por campo sem contador do conjunto é a mesma
+armadilha de olhar uma linha e não a tabela.
 
 **Estourar o teto BLOQUEIA o salvamento, com o contador à vista.** Não trunca: o
 texto é lido por um modelo para tomar decisão, e cortar no meio muda o sentido
@@ -132,13 +163,41 @@ Duas exigências para essa validação não ter efeito colateral:
 - **atribuir e desatribuir na mesma operação.** Validar mexe numa conversa real;
   ao terminar, ela volta ao estado anterior. `{"team_id": null}` desatribui —
   medido.
-- **usar uma conversa que exista.** Sem `GET /conversations`, o painel não
-  escolhe uma: usa a conversa mais recente daquele tenant, que ele conhece pelo
-  próprio banco (`conversas`).
+- **usar a conversa mais antiga já RESOLVIDA**, e não a mais recente. Sem
+  `GET /conversations` o painel escolhe pelo próprio banco, e a mais recente é
+  provavelmente um atendimento em curso — atribuir e desatribuir ali é mexer
+  na tela de alguém que está trabalhando. A mais antiga resolvida ninguém está
+  olhando.
 
 Se o tenant não tiver conversa nenhuma, a validação não roda e o time é salvo
 como **não verificado**, com o aviso na tela. Melhor um estado declarado do que
 uma validação que finge ter acontecido.
+
+## 6.1 E se o time for apagado no Chatwoot depois?
+
+A validação da seção 6 roda **uma vez**, no cadastro. O time pode sumir depois —
+e aí a transferência volta a ser silenciosa, que é justamente o que este desenho
+existe para impedir.
+
+**O sinal já existe e é o mesmo da seção 2:** no momento da transferência, o
+corpo volta `null`. O que falta é não descartá-lo.
+
+Regra: quando a atribuição devolve `null` em runtime, o fluxo
+
+1. cai para o time padrão (seção 7) — o atendimento não pode parar por isso;
+2. **grava a falha no time cadastrado** — algo como `verificado_em` /
+   `falhou_em` na linha daquele time;
+3. e o painel mostra o time com aviso: *"não encontrado no Chatwoot na última
+   transferência"*, com o botão de revalidar ao lado.
+
+Assim o cliente descobre pelo painel, e não por um atendimento que não chegou.
+É o mesmo raciocínio de `PENDENCIA-PERGUNTA-SEM-RESPOSTA`: o sinal existe no
+momento em que a coisa falha, e o valor está em **persistir** em vez de deixar
+passar.
+
+**Não** revalidar periodicamente em background: seria atribuir e desatribuir
+conversas de clientes reais numa rotina, sem ninguém pedindo. O evento de
+transferência é o momento honesto de descobrir.
 
 ## 7. O time padrão
 
