@@ -55,6 +55,11 @@ documentação e material de referência.
   criterio de prompt-vs-base EXISTIA e estava fechado num `<details>` nas duas telas —
   o emporio pos 5.708 chars de fatos no prompt e 127 na base. Dois consertos feitos, o
   resto registrado com prioridade.
+- [`PENDENCIA-EXPIRAR-RASCUNHO.md`](PENDENCIA-EXPIRAR-RASCUNHO.md) — **a fazer, com
+  gatilho.** A 38 expira so `aguardando_pagamento`, e o indice de "um pedido aberto por
+  conversa" cobre rascunho tambem: quem abandona o carrinho e volta amanha reencontra o
+  de ontem. Inclui a armadilha medida — `atualizado_em` NAO se move ao adicionar item,
+  entao "contar da ultima alteracao" viraria "da criacao" em silencio.
 - [`PENDENCIA-PISO-SIMILARIDADE.md`](PENDENCIA-PISO-SIMILARIDADE.md) — **a fazer, com
   gatilho.** `match_kb_documentos` nao tem piso: sempre devolve o menos distante, nunca
   "nao tenho isso". Medido no corpus real, conteudo IRRELEVANTE chega a 0,625 e chunk do
