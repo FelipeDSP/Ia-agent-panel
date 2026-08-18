@@ -46,10 +46,18 @@
 // `usage`, e ai o n8n estima a partir do texto. Se `usage` viesse, a chave seria
 // `tokenUsage`.
 //
-// Nao e configuracao daqui: nao ha nenhuma chave `stream` nos 56 nos do
-// workflow e o gatilho e webhook comum. A causa e interna ao AgentExecutor do
-// LangChain, que roda o modelo em streaming por padrao — e chamada em streaming
-// nao devolve `usage` sem `stream_options.include_usage`.
+// CAUSA CORRIGIDA EM 18/08 (noite), depois de medir a execucao 3979336:
+// o nó está com `responsesApiEnabled: true`, e a Responses API DEVOLVE uso.
+// Varredura do `runData` inteiro (27 nos): ZERO ocorrencias de `usage`,
+// `usage_metadata`, `input_tokens` ou `output_tokens`; a saida do sub-no e so
+// `{response:{generations:[[{text}]]}, tokenUsageEstimate}`, sem objeto
+// `message`. Ou seja: o modelo devolve e O N8N DESCARTA antes de persistir.
+// A explicacao anterior (streaming do AgentExecutor) era especulacao minha
+// apresentada como medicao — nao ha nada no workflow que ligue streaming.
+//
+// Isso e MELHOR noticia: depende de versao futura do n8n, nao de limitacao do
+// modelo. No dia em que ele guardar a mensagem, o caminho 2 vira exato sem
+// precisar de nada nosso — e a sonda B abaixo e o alarme.
 //
 // O QUE MUDA E O QUE NAO MUDA. Nao invalida a calibracao: a estimativa do n8n e
 // melhor que a nossa (ela ve o prompt ja montado, com schema de tool e janela de

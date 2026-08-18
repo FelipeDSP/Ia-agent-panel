@@ -81,6 +81,15 @@ documentação e material de referência.
   `setAll` do `@supabase/ssr`. 16–30 h em 5 ondas.
 
 ## n8n — [`n8n/`](n8n/)
+
+> **Deriva instância↔repositório.** `npm run n8n:diff` compara os workflows que
+> RODAM na instância com os arquivos versionados, ignorando o volátil (posição,
+> id de nó, webhookId). Existe porque em 18/08 o nó `OpenAI Chat Model` foi
+> flagrado com `responsesApiEnabled: true` na instância e sem o campo no
+> arquivo — descoberto por acaso, num print. `n8n:sincronia` compara o arquivo
+> com o GERADOR e nunca olhou a instância. Precisa de `N8N_API_KEY` no
+> `.env.local`; a lógica de comparação tem prova offline em
+> `npm run teste:diff-n8n`.
 - [`n8n-cutover.md`](n8n/n8n-cutover.md) — cutover do agente para este banco.
 - [`n8n-limpar-memoria.md`](n8n/n8n-limpar-memoria.md) — limpeza da memória do agente.
 

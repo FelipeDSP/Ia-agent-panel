@@ -48,7 +48,9 @@
     "teste:sonda-tokens": "node tests/sonda-tokens.mjs",
     "teste:componentes-token": "node --env-file=.env.local tests/migracao-componentes-token.mjs",
     "teste:componentes-no": "node tests/estima-tokens-componentes.mjs",
-    "teste:acl-secdef": "node --env-file=.env.local tests/migracao-acl-security-definer.mjs"
+    "teste:acl-secdef": "node --env-file=.env.local tests/migracao-acl-security-definer.mjs",
+    "teste:diff-n8n": "node tests/diff-n8n.mjs",
+    "n8n:diff": "node --env-file=.env.local scripts/diff-n8n-instancia.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

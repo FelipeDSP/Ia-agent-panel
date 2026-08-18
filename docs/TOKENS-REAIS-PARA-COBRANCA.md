@@ -118,6 +118,59 @@ turno, com o `tenant_id` já preenchido.
    onde veio cada linha. Sem ela, reconciliado e estimado ficam
    indistinguíveis — e é a primeira pergunta de quem contesta.
 
+### VEREDICTO FINAL (18/08, noite) — o motivo é OUTRO, e é melhor notícia
+
+> Esta seção **corrige** a explicação da seção seguinte, que continua abaixo por
+> ser o registro do que se sabia às 15h. O que mudou não foi a decisão: foi a
+> CAUSA, e causa errada leva a reabrir a pergunta errada daqui a seis meses.
+
+**O que a sonda B respondeu, na execução 3979336 do Empório:**
+
+```
+"_sonda_b": { "usos": 0, "chaves_topo": ["output","intermediateSteps"], "visitados": 49 }
+```
+
+Zero. A previsão registrada antes do teste se confirma, e o **caminho 1 está
+fechado** — o objeto que chega ao nó Code tem duas chaves e nada mais.
+
+**Mas o motivo que eu tinha escrito estava errado.** Eu afirmei que a chamada
+não devolve `usage` porque o AgentExecutor roda o modelo em streaming. Isso era
+**especulação apresentada com confiança de medição**. O nó está com
+`responsesApiEnabled: true` — a Responses API é outro endpoint, com formato de
+resposta próprio, e ela **devolve** uso (`usage.input_tokens` /
+`output_tokens`).
+
+**O que foi medido**, puxando o JSON completo da execução (201.577 chars,
+formato `flatted`) e varrendo o `runData` inteiro, 27 nós:
+
+| procurado | ocorrências no `runData` |
+|---|---|
+| `usage`, `usage_metadata`, `input_tokens`, `output_tokens` | **0** |
+| `response_metadata` | 24, **todas `{}`**, e só no histórico do Redis Chat Memory |
+| `tokenUsageEstimate` | uma por chamada ao modelo |
+
+E a saída do sub-nó, crua:
+
+```json
+{ "response": { "generations": [[{ "text": "" }]] },
+  "tokenUsageEstimate": { "completionTokens": 0, "promptTokens": 5483, "totalTokens": 5483 } }
+```
+
+**Não existe objeto `message`.** Só o texto e a estimativa própria do n8n.
+
+**A causa correta:** o modelo devolve o uso; **o n8n descarta antes de
+persistir**. Isso é melhor notícia que a explicação anterior, porque depende de
+uma versão futura do n8n e não de uma limitação do modelo nem do endpoint. No
+dia em que o n8n guardar o objeto da mensagem, **o caminho 2 vira exato sem
+precisar de nada nosso** — e a sonda B é o alarme que avisa.
+
+**Armadilha de método, registrada porque quase custou um relatório errado:** a
+primeira varredura foi por `indexOf` no texto do JSON e achou `usage_metadata`
+duas vezes. Eram os **comentários do próprio `estima-tokens.js`**, que viajam
+dentro do workflow embutido na execução. Procurar string num documento que
+contém o próprio código é falso positivo garantido — a resposta veio de parsear
+o `flatted` e andar na árvore.
+
 ### RESOLVIDO em 18/08: é `tokenUsageEstimate`, e não há botão para mudar
 
 Conferido no JSON versionado, sem esperar execução:
