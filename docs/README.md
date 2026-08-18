@@ -10,6 +10,12 @@ documentação e material de referência.
   §5.4 da spec com o estado atual.
 - [`ESPEC-CATALOGO-DE-TOOLS.md`](especificacao/ESPEC-CATALOGO-DE-TOOLS.md) — iniciativa
   do catálogo de tools multi-tenant.
+- [`ESPEC-TRANSFERIR-PARA-TIME.md`](ESPEC-TRANSFERIR-PARA-TIME.md) — **desenho, nada
+  construido.** Mandar a conversa para um time do Chatwoot. A medicao que decidia o custo
+  esta feita: o token de bot ATRIBUI (200 com o objeto do time), mas nao lista nada
+  (`GET /teams` e 401 para bots). Dai sai o resto do desenho — cadastro manual do
+  `team_id`, validacao no salvamento, e a regra que sustenta tudo: **olhe o CORPO da
+  resposta, nao o status**, porque id errado devolve 200 com `null`.
 - [`FLUXO-CRITICO.md`](especificacao/FLUXO-CRITICO.md) — o caminho crítico do sistema.
 
 ## Guias
