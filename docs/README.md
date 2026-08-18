@@ -50,6 +50,10 @@ documentação e material de referência.
   numero que a OpenAI cobra: `intermediateSteps` (sonda B ja instrumentada), API de
   execucoes do n8n (recomendado — o `execucao_id` da migracao 37 ja e a chave de juncao)
   e chave por tenant (bloqueada por credencial de no nao aceitar expressao).
+- [`PENDENCIA-FATURA-OPENAI.md`](PENDENCIA-FATURA-OPENAI.md) — **a fazer, com gatilho.**
+  A parte NAO-tecnica da cobranca por consumo: como a fatura da OpenAI entra no sistema
+  todo mes (quem pega, quando, e o que conta como consumo de cliente). A tecnica ja esta
+  decidida em TOKENS-REAIS-PARA-COBRANCA.
 - [`PENDENCIA-MARGEM.md`](PENDENCIA-MARGEM.md) — **decidido não fazer, com gatilho.**
   Margem por cliente em `/admin/consumo`: por que não agora (não há valor de plano no
   schema, provedor de pagamento em aberto, custo de centavos) e o que a retoma.

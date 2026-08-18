@@ -1,5 +1,12 @@
 # Vendas — estado e decisões
 
+> **Vocabulário corrigido em 18/08/2026.** Onde estes números eram chamados de
+> "real", leia **"estimativa do n8n"**. O campo do sub-nó é `tokenUsageEstimate`,
+> a chave de *fallback* do tracing: ela aparece porque a resposta do modelo não
+> traz `usage`, e então o n8n estima a partir do texto. É melhor que a nossa
+> estimativa — enxerga o prompt já montado, com schema de tool e janela de
+> memória dentro — e **não é a fatura**. Ver `docs/TOKENS-REAIS-PARA-COBRANCA.md`.
+
 Documento vivo. Registra o que já foi decidido sobre o agente vender, para não
 reabrir discussão a cada retomada.
 
@@ -790,7 +797,7 @@ Abertas:
 Medido em 11/08/2026 contra execuções reais, ao fechar a fatia 2.
 
 ```
-execução   chamadas ao modelo   real (soma)   registrado   erro
+execução   chamadas ao modelo   n8n (soma)    registrado   erro
 3948813            1                1554         1045       1,5x
 3948994            2                3828         1045       3,7x
 3948818            6               10481         1049      10,0x   ← a venda
@@ -809,13 +816,13 @@ call é outro round-trip que reenvia o prompt inteiro; a venda fez seis.
 três execuções e errou 0,0% / −1,4% / 0,0%. `K` vem de `intermediateSteps`, que
 exigiu ligar `returnIntermediateSteps` no AI Agent.
 
-**2. Base subestimada.** A primeira chamada real custou 1554 tokens; a estimativa
+**2. Base subestimada.** A primeira chamada custou 1554 tokens pelo n8n; a estimativa
 deu 1045. Faltam ~509, que são os schemas das tools (`TOKENS_FERRAMENTAS = 320`
 está velho, aponta para ~830) mais a janela do Redis. **Não corrigido** — não dá
 para separar "schema" de "memória" com os dados que temos.
 
 **3. Memória invisível.** Duas execuções com conteúdo de memória diferente
-estimaram o mesmo 1045, enquanto o real diferiu em 306 tokens. E a janela acabou
+estimaram o mesmo 1045, enquanto o do n8n diferiu em 306 tokens. E a janela acabou
 de ir de 5 para 20.
 
 ### Calibrado: 3,11 chars/token e 622 tokens de schema
@@ -824,18 +831,18 @@ Duas execuções com o **mesmo texto de prompt** e memórias diferentes formam u
 sistema de duas equações — e aí os dois desconhecidos se separam:
 
 ```
-3948813   real 1554 = 2901/r + S           (conversa nova, memória ~0)
-3949288   real 2036 = (2901+1500)/r + S
+3948813   n8n 1554 = 2901/r + S           (conversa nova, memória ~0)
+3949288   n8n 2036 = (2901+1500)/r + S
 subtraindo:    482 = 1500/r   →   r = 3,112   →   S = 622
 ```
 
 Conferido contra as quatro execuções disponíveis:
 
 ```
-3948813   previsto  1556   real  1554   +0,1%
-3949288   previsto  2040   real  2036   +0,2%
-3948994   previsto  3775   real  3828   −1,4%   (2 chamadas)
-3948818   previsto 10485   real 10481    0,0%   (6 chamadas, a venda)
+3948813   previsto  1556   n8n  1554   +0,1%
+3949288   previsto  2040   n8n  2036   +0,2%
+3948994   previsto  3775   n8n  3828   −1,4%   (2 chamadas)
+3948818   previsto 10485   n8n 10481    0,0%   (6 chamadas, a venda)
 ```
 
 Antes disso o mesmo cálculo errava de 1,5x a 10x.
@@ -885,8 +892,8 @@ Fica a estimativa. A multiplicidade já está corrigida por aritmética.
 ### O que a mesma execução revelou sobre a memória
 
 ```
-execução 3949227    1 chamada    real 2016    estimado 1043    faltam 973
-execução 3948813    1 chamada    real 1554    estimado 1045    faltam 509
+execução 3949227    1 chamada    n8n 2016    estimado 1043    faltam 973
+execução 3948813    1 chamada    n8n 1554    estimado 1045    faltam 509
 ```
 
 Mesma estimativa, mesmo número de chamadas, e a diferença quase dobrou. **A causa

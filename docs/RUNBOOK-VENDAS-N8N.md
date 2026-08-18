@@ -1,5 +1,12 @@
 # Runbook — importar vendas no n8n
 
+> **Vocabulário corrigido em 18/08/2026.** Onde estes números eram chamados de
+> "real", leia **"estimativa do n8n"**. O campo do sub-nó é `tokenUsageEstimate`,
+> a chave de *fallback* do tracing: ela aparece porque a resposta do modelo não
+> traz `usage`, e então o n8n estima a partir do texto. É melhor que a nossa
+> estimativa — enxerga o prompt já montado, com schema de tool e janela de
+> memória dentro — e **não é a fatura**. Ver `docs/TOKENS-REAIS-PARA-COBRANCA.md`.
+
 > **Fatia 2** (tools de venda no ar) está nos passos 0–6 abaixo e **já foi
 > executada** — o restaurante-teste fechou uma venda real.
 > **Fatia 3** (dois agents por perfil) é a seção no fim do arquivo: *Fatia 3 —
@@ -76,7 +83,7 @@ referência no principal** — hoje é `lT5oxXJKulPdlPPR`.
 
 1. Importe `n8n/workflows/agente-principal.json`
 2. Nos 4 nós novos, o campo **Workflow** está com placeholder. Troque pelo ID
-   real anotado no passo 1:
+   valor anotado no passo 1 (estimativa do n8n):
 
 ```
 Consultar Catalogo  →  SUBSTITUIR_ID_CONSULTAR_CATALOGO
@@ -134,9 +141,9 @@ Não dá para derivar do texto: o schema das tools é contado como prompt token
 pela API e não aparece no que o nó vê. Medição:
 
 1. Abra uma execução recente do principal, entre no sub-nó **OpenAI Chat Model**
-2. Anote `tokenUsageEstimate.promptTokens`
+2. Anote `tokenUsageEstimate.promptTokens` (estimativa do n8n, **não** a fatura)
 3. Compare com o que o `Estima Tokens` registrou na mesma execução
-4. A diferença é o valor real — ajuste a constante e reexecute
+4. A diferença é o que falta à nossa estimativa — ajuste a constante e reexecute
    `node scripts/gerar-principal-vendas.mjs` (ele preserva o número que estiver lá)
 
 Errar isso não quebra nada visível: só faz o rateio de custo por tenant mentir.
@@ -271,9 +278,9 @@ execução no perfil básico basta**:
 1. Descontrate **Vendas** do `restaurante-teste` (Admin → Módulos)
 2. Mande **uma** mensagem simples, sem tool call
 3. Na execução, anote:
-   - `tokenUsageEstimate.promptTokens` do sub-nó `OpenAI Chat Model` → **real**
+   - `tokenUsageEstimate.promptTokens` do sub-nó `OpenAI Chat Model` → **estimativa do n8n** (a referência; não é a fatura)
    - `_estimado_entrada` e `_historico_chars` do `Estima Tokens`
-4. Resolva `S = real − (texto + memória) / 3,112`
+4. Resolva `S = estimativa_n8n − (texto + memória) / 3,112`
 5. Ponha o número em `scripts/gerar-principal.mjs` (`S:` do perfil `basico`,
    e `medido: true`), rode `node scripts/gerar-principal.mjs`, reimporte
 6. **Recontrate Vendas** para o `restaurante-teste`

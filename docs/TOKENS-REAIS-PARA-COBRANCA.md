@@ -11,6 +11,30 @@
 > para a proporção**. Caminho 1 segue instrumentado porque a decisão passou a ser
 > entre estimativas, e a pergunta virou qual delas erra menos.
 
+## O desenho, decidido em 18/08/2026
+
+Quatro afirmações. As três primeiras estão medidas neste documento; a quarta é a
+consequência delas na conversa com o cliente.
+
+1. **A fatura da OpenAI é a âncora.** O total cobrado dos clientes num mês nunca
+   excede o que foi pago à OpenAI naquele mês. Isso não é meta de precisão — é
+   propriedade aritmética do rateio, e vale mesmo com a medida por turno errada.
+2. **O rateio sai da proporção que já temos.** É para isso que a estimativa
+   serve, e é o que ela faz bem: ordenar e proporcionar clientes entre si.
+3. **Nenhum dos três caminhos entrega medição exata por tenant, e isso está
+   decidido por MEDIÇÃO, não por falta de tentativa.** Caminho 3 entregaria e
+   está bloqueado pela credencial fixa do nó; caminhos 1 e 2 entregam o que o
+   n8n mede, e o que o n8n mede é estimativa dele (seção "RESOLVIDO" abaixo).
+   A diferença entre uma escolha e uma desistência é exatamente esta seção.
+4. **O que sustenta a conversa com quem contesta é "você foi X% do consumo do
+   mês"** — não o valor absoluto por turno. A proporção é defensável: sai de
+   dados de execução, o total confere com a fatura, e a soma das contas fecha.
+   "Caracteres sobre 3,112" nunca seria defensável, e é o que se cobra hoje.
+
+**O que falta é a parte não-técnica:** como a fatura entra no sistema todo mês.
+Registrado em [`PENDENCIA-FATURA-OPENAI.md`](PENDENCIA-FATURA-OPENAI.md) — não
+construído.
+
 ## O que já foi descartado, e não vale retestar
 
 A sonda A (`_sonda`, no nó `Estima Tokens`) tentou alcançar o sub-nó

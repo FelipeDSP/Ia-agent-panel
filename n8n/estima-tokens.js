@@ -17,7 +17,7 @@
 //
 // Medido em 2026-08-11 contra execucoes reais, ele NAO era consistente:
 //
-//   execucao   chamadas ao modelo   real (soma)   registrado   erro
+//   execucao   chamadas ao modelo   n8n (soma)    registrado   erro
 //   3948813            1                1554         1045       1,5x
 //   3948994            2                3828         1045       3,7x
 //   3948818            6               10481         1049      10,0x
@@ -29,19 +29,40 @@
 //    erro cresce com o uso de ferramenta — ou seja, quem vende era subcobrado
 //    contra quem so conversa. Corrigido aqui.
 //
-// 2. BASE SUBESTIMADA. A primeira chamada real custou 1554 tokens; a estimativa
+// 2. BASE SUBESTIMADA. A primeira chamada custou 1554 tokens pelo n8n; a estimativa
 //    de texto + TOKENS_FERRAMENTAS deu 1045. Faltam ~509, que sao os schemas das
 //    tools (a constante esta velha) mais a janela de memoria do Redis, que o no
 //    nao enxerga. NAO corrigido ainda — depende da sonda abaixo.
 //
 // 3. MEMORIA INVISIVEL. Duas execucoes com conteudo de memoria diferente
-//    estimaram o MESMO valor (1045), enquanto o real diferiu em 306 tokens.
+//    estimaram o MESMO valor (1045), enquanto o do n8n diferiu em 306 tokens.
+//
+// ----------------------------------------------------------------------------
+// "REAL" ERA MENTIRA — VOCABULARIO CORRIGIDO EM 18/08/2026
+// ----------------------------------------------------------------------------
+// Ate hoje este arquivo chamava de "real" o numero do sub-no. Ele NAO vem da
+// API: o campo se chama `tokenUsageEstimate`, e essa chave e o caminho de
+// FALLBACK do tracing do n8n — aparece quando a resposta do modelo nao traz
+// `usage`, e ai o n8n estima a partir do texto. Se `usage` viesse, a chave seria
+// `tokenUsage`.
+//
+// Nao e configuracao daqui: nao ha nenhuma chave `stream` nos 56 nos do
+// workflow e o gatilho e webhook comum. A causa e interna ao AgentExecutor do
+// LangChain, que roda o modelo em streaming por padrao — e chamada em streaming
+// nao devolve `usage` sem `stream_options.include_usage`.
+//
+// O QUE MUDA E O QUE NAO MUDA. Nao invalida a calibracao: a estimativa do n8n e
+// melhor que a nossa (ela ve o prompt ja montado, com schema de tool e janela de
+// memoria dentro), e estar a +-1,4% de uma medida melhor continua valendo. Muda
+// o vocabulario, que ensinava errado quem lesse: em nenhum ponto desta cadeia
+// existe um numero que a OpenAI cobra. A unica fonte indiscutivel e a fatura —
+// ver docs/TOKENS-REAIS-PARA-COBRANCA.md.
 //
 // ----------------------------------------------------------------------------
 // A SONDA
 // ----------------------------------------------------------------------------
-// O numero exato existe: `tokenUsageEstimate` no sub-no "OpenAI Chat Model", uma
-// entrada por chamada. A tentativa anterior concluiu que um no Code no fluxo
+// O numero do sub-no "OpenAI Chat Model" (`tokenUsageEstimate`, estimativa do
+// n8n) tem uma entrada por chamada. A tentativa anterior concluiu que um no Code no fluxo
 // principal nao alcanca sub-no. Isso e testado aqui de novo, com varias formas
 // de acesso e dentro de try/catch — se alguma funcionar, o valor exato substitui
 // toda a estimativa e as tres causas acima somem de uma vez.
@@ -57,16 +78,16 @@
 // Duas execucoes com o MESMO texto de prompt e memorias diferentes formam um
 // sistema de duas equacoes, e ai os dois desconhecidos se separam:
 //
-//   3948813   real 1554 = 2901/r + S          (conversa nova, memoria ~0)
-//   3949288   real 2036 = (2901+1500)/r + S
+//   3948813   n8n 1554 = 2901/r + S          (conversa nova, memoria ~0)
+//   3949288   n8n 2036 = (2901+1500)/r + S
 //   subtraindo:    482 = 1500/r   ->   r = 3,112   ->   S = 622
 //
 // Conferido contra as quatro execucoes disponiveis:
 //
-//   3948813   previsto  1556   real  1554   +0,1%
-//   3949288   previsto  2040   real  2036   +0,2%
-//   3948994   previsto  3775   real  3828   -1,4%   (2 chamadas)
-//   3948818   previsto 10485   real 10481    0,0%   (6 chamadas, a venda)
+//   3948813   previsto  1556   n8n  1554   +0,1%
+//   3949288   previsto  2040   n8n  2036   +0,2%
+//   3948994   previsto  3775   n8n  3828   -1,4%   (2 chamadas)
+//   3948818   previsto 10485   n8n 10481    0,0%   (6 chamadas, a venda)
 //
 // Antes desta calibracao o mesmo calculo errava de 1,5x a 10x.
 // ============================================================================
@@ -138,7 +159,7 @@ const emTokens = (t) => Math.ceil((t || '').length / CHARS_POR_TOKEN);
 // ----------------------------------------------------------------------------
 // 1. Sonda: o numero exato esta alcancavel?
 // ----------------------------------------------------------------------------
-let real = null;
+let usoN8n = null;
 let sonda = 'nao_tentada';
 
 const formas = [
@@ -153,7 +174,7 @@ for (const [nome, fn] of formas) {
       .map((j) => j?.tokenUsageEstimate ?? j?.tokenUsage ?? null)
       .filter(Boolean);
     if (usos.length > 0) {
-      real = {
+      usoN8n = {
         chamadas: usos.length,
         entrada: usos.reduce((a, u) => a + (u.promptTokens || 0), 0),
         saida: usos.reduce((a, u) => a + (u.completionTokens || 0), 0),
@@ -212,7 +233,15 @@ const chamadas = 1 + passos;
 // -- a que produziu `output` -- nao vira passo. Somar so o que ela achar
 // subcobra, calado, que e exatamente a falha que este arquivo existe para
 // impedir. Se a sonda achar N usos com N = `chamadas` - 1, o caminho e somar o
-// real dos passos e estimar apenas a ultima chamada.
+// uso reportado nos passos e estimar apenas a ultima chamada.
+//
+// PREVISAO REGISTRADA EM 18/08, ANTES DE QUALQUER EXECUCAO: deve achar ZERO. Se
+// a chamada nao devolve `usage` -- que e o que o `tokenUsageEstimate` do sub-no
+// indica --, a AIMessage tambem nao carrega `usage_metadata`. Achar zero fecha o
+// caminho 1 pela mesma causa que fechou o 2; achar QUALQUER COISA refuta a
+// explicacao inteira e reabre o caminho 1 como o melhor dos tres. Por isso ela
+// fica no ar ate a primeira execucao: custa uma varredura de objeto e responde
+// uma pergunta que esta aberta desde 11/08.
 const acharUsos = (raiz) => {
   const achados = [];
   const vistos = new Set();
@@ -241,19 +270,25 @@ const acharUsos = (raiz) => {
 let sonda_b;
 try {
   const r = acharUsos(agent);
-  sonda_b = {
-    // Responde "alguem inspecionou o objeto inteiro?" sem precisar de ninguem.
-    chaves_topo: Object.keys(agent || {}),
-    usos: r.achados.length,
-    // Se isto bater com `chamadas`, acabou: o exato esta aqui e cobre tudo.
-    // Se for `chamadas` - 1, falta so a chamada final, que se estima.
-    chamadas_estimadas: chamadas,
-    entrada: r.achados.reduce((a, u) => a + u.entrada, 0),
-    saida: r.achados.reduce((a, u) => a + u.saida, 0),
-    caminhos: r.achados.map((u) => u.caminho).slice(0, 8),
-    visitados: r.visitados,
-    truncou: r.truncou,
-  };
+  sonda_b = r.achados.length === 0
+    // Caso previsto: compacto de proposito. Um campo de diagnostico que despeja
+    // objeto grande em TODA mensagem vira ruido que ninguem le -- e ai ele nao
+    // avisa nada no dia em que mudar. `chaves_topo` fica porque e o que responde
+    // "entao o que TEM no objeto?", que e a pergunta seguinte.
+    ? { usos: 0, chaves_topo: Object.keys(agent || {}), visitados: r.visitados }
+    : {
+        // A previsao caiu: aqui vale despejar tudo, porque muda a decisao.
+        usos: r.achados.length,
+        // Batendo com `chamadas`, o uso reportado cobre tudo. Sendo
+        // `chamadas` - 1, falta so a chamada final, que se estima.
+        chamadas_estimadas: chamadas,
+        entrada: r.achados.reduce((a, u) => a + u.entrada, 0),
+        saida: r.achados.reduce((a, u) => a + u.saida, 0),
+        caminhos: r.achados.map((u) => u.caminho).slice(0, 8),
+        chaves_topo: Object.keys(agent || {}),
+        visitados: r.visitados,
+        truncou: r.truncou,
+      };
 } catch (e) {
   sonda_b = { erro: String(e && e.message).slice(0, 120) };
 }
@@ -274,22 +309,24 @@ const estimado_entrada = chamadas * base + CRESCIMENTO_POR_CHAMADA * ((chamadas 
 const estimado_saida = emTokens(textoSaida);
 
 // ----------------------------------------------------------------------------
-// 3. Real quando der, estimado quando nao
+// 3. A estimativa do n8n quando der, a nossa quando nao
 // ----------------------------------------------------------------------------
-const tokens_entrada = real ? real.entrada : estimado_entrada;
-const tokens_saida = real ? real.saida : estimado_saida;
+const tokens_entrada = usoN8n ? usoN8n.entrada : estimado_entrada;
+const tokens_saida = usoN8n ? usoN8n.saida : estimado_saida;
 
 return [{
   json: {
     output: textoSaida,
     tokens_entrada,
     tokens_saida,
-    _fonte_tokens: real ? 'api_real' : 'estimativa_com_multiplicidade',
+    // O rotulo diz de QUEM e a estimativa. Nenhum dos dois valores vem da
+    // OpenAI, e o nome nao pode sugerir que vem.
+    _fonte_tokens: usoN8n ? 'estimativa_n8n_sub_no' : 'estimativa_nossa_com_multiplicidade',
     // Diagnostico: some daqui quando a sonda tiver dado veredicto e o caminho
     // estiver decidido. Ate la, e o que responde se da para parar de estimar.
     _sonda: sonda,
     _sonda_b: sonda_b,
-    _chamadas: real ? real.chamadas : chamadas,
+    _chamadas: usoN8n ? usoN8n.chamadas : chamadas,
     _estimado_entrada: estimado_entrada,
     _historico_chars: historicoChars,
     _perfil: perfil,
