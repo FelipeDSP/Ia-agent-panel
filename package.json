@@ -54,7 +54,8 @@
     "teste:desconectar-chatwoot": "node --env-file=.env.local tests/desconectar-chatwoot.mjs",
     "teste:comparacoes-tipo": "node --env-file=.env.local tests/comparacoes-de-tipo.mjs",
     "teste:relatorios": "node --import ./tests/lib/ts.mjs tests/relatorios.mjs",
-    "teste:times": "node --env-file=.env.local tests/migracao-times.mjs"
+    "teste:times": "node --env-file=.env.local tests/migracao-times.mjs",
+    "teste:times-chatwoot": "node --import ./tests/lib/ts.mjs tests/times-chatwoot.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

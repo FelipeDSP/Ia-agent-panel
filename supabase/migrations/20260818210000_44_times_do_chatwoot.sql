@@ -103,11 +103,17 @@ begin
 end;
 $$;
 
-create trigger trg_tenant_times_teto
+-- `create OR REPLACE trigger` (Postgres 14+; aqui roda 17.6). Com `create
+-- trigger` puro a migracao NAO e reexecutavel: a segunda aplicacao morre em
+-- "trigger already exists", e o teste que aplica em transacao abortada contra
+-- producao para de rodar no instante em que a migracao entra — foi exatamente
+-- o que aconteceu aqui, e a CLAUDE.md avisa dessa armadilha para funcoes.
+-- Trigger nao tem `if not exists`; tem `or replace`.
+create or replace trigger trg_tenant_times_teto
   before insert or update on public.tenant_times
   for each row execute function public.tenant_times_teto_descricao();
 
-create trigger trg_tenant_times_upd
+create or replace trigger trg_tenant_times_upd
   before update on public.tenant_times
   for each row execute function public.set_atualizado_em();
 
@@ -116,6 +122,11 @@ create trigger trg_tenant_times_upd
 -- policy vai na MESMA migracao que cria a tabela.
 -- ---------------------------------------------------------------------------
 alter table public.tenant_times enable row level security;
+
+-- `create policy` tambem nao tem `if not exists` nem `or replace`: o idioma que
+-- mantem a migracao reexecutavel e dropar antes. Dentro da transacao, a janela
+-- sem policy nao existe para ninguem de fora.
+drop policy if exists p_tenant_times_all on public.tenant_times;
 
 create policy p_tenant_times_all on public.tenant_times
   for all

@@ -6,6 +6,8 @@ import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarEdicaoTenantAdmin } from '@/lib/tenants/schema';
 import { clientePodeDesligar } from '@/lib/tools/registro';
+import { MAX_DESCRICAO_TOTAL, validarTime } from '@/lib/tools/times-chatwoot';
+import { verificarTime } from '@/lib/tools/times-chatwoot.server';
 import {
   TOOL_TRANSFERIR,
   validarTransferirCliente,
@@ -207,4 +209,245 @@ export async function salvarTransferirHumano(
 
   revalidatePath('/painel/configuracoes');
   return { sucesso: 'Configuração de transferência salva.' };
+}
+
+
+/**
+ * Cadastra um time do Chatwoot para o tenant.
+ *
+ * O CADASTRO É MANUAL porque o token de Agent Bot não lista times — `GET /teams`
+ * responde 401 "not authorized for bots" (medido em 18/08). Não há seletor a
+ * popular; o cliente copia o número da URL do Chatwoot.
+ *
+ * E POR ISSO A VALIDAÇÃO EXISTE. `team_id` errado não dá erro na hora de
+ * transferir: o Chatwoot devolve 200 com corpo `null` e a conversa não vai para
+ * lugar nenhum. Descobrir isso na tela é incomparavelmente melhor que descobrir
+ * num atendimento que não chegou.
+ *
+ * O que NÃO acontece aqui: bloquear o salvamento quando a verificação não roda.
+ * Sem conversa nenhuma no tenant (cliente novo, que é exatamente quem está
+ * cadastrando), não há onde testar — o time entra como NÃO VERIFICADO, com o
+ * aviso. Estado declarado é melhor que validação que finge ter acontecido.
+ */
+export async function salvarTime(_estado: EstadoConfig, fd: FormData): Promise<EstadoConfig> {
+  const usuario = await exigirTenantAdmin();
+
+  const validado = validarTime(fd);
+  if (!validado.ok) return { errosCampo: validado.erros };
+  const { teamId, nome, descricao, padrao } = validado.valor;
+
+  const supabase = await criarClienteServidor();
+
+  // O teto da SOMA também é checado aqui, para a mensagem ser útil: o trigger
+  // do banco barra de qualquer jeito (inclusive script e SQL avulso), mas o
+  // erro dele não sabe quanto sobrou.
+  const { data: existentes } = await supabase
+    .from('tenant_times')
+    .select('descricao')
+    .eq('tenant_id', usuario.tenantId);
+  const usados = (existentes ?? []).reduce((a, t) => a + (t.descricao?.length ?? 0), 0);
+  if (usados + descricao.length > MAX_DESCRICAO_TOTAL) {
+    return {
+      errosCampo: {
+        descricao:
+          `As descrições somam ${usados} de ${MAX_DESCRICAO_TOTAL} caracteres e esta tem ` +
+          `${descricao.length}. Encurte alguma — elas entram no prompt a cada mensagem.`,
+      },
+    };
+  }
+
+  /*
+   * A VERIFICAÇÃO usa a conversa mais antiga já RESOLVIDA, e não a mais
+   * recente: a recente é provavelmente um atendimento em curso, e atribuir e
+   * desatribuir ali é mexer na tela de quem está trabalhando.
+   */
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('chatwoot_url, chatwoot_account_id')
+    .eq('id', usuario.tenantId)
+    .maybeSingle();
+  const { data: cred } = await supabase
+    .from('tenant_credenciais')
+    .select('chatwoot_token')
+    .eq('tenant_id', usuario.tenantId)
+    .maybeSingle();
+  const { data: conversa } = await supabase
+    .from('conversas')
+    .select('conversation_id')
+    .eq('tenant_id', usuario.tenantId)
+    .eq('status', 'resolvido')
+    .order('criado_em', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  let verificadoEm: string | null = null;
+  let falhouEm: string | null = null;
+  let aviso: string | null = null;
+
+  if (!tenant?.chatwoot_account_id || !tenant.chatwoot_url || !cred?.chatwoot_token) {
+    aviso = 'Time salvo sem verificar: este cliente ainda não está conectado ao Chatwoot.';
+  } else if (!conversa) {
+    aviso =
+      'Time salvo sem verificar: não há conversa encerrada para testar. ' +
+      'Depois da primeira conversa, use “Verificar” para confirmar o número.';
+  } else {
+    const r = await verificarTime({
+      url: tenant.chatwoot_url,
+      accountId: tenant.chatwoot_account_id,
+      token: cred.chatwoot_token,
+      conversationId: conversa.conversation_id,
+      teamId,
+    });
+    if (r.estado === 'existe') verificadoEm = new Date().toISOString();
+    else if (r.estado === 'nao_existe') {
+      // NÃO SALVA. É o caso que a validação existe para pegar.
+      return {
+        errosCampo: {
+          team_id:
+            `O Chatwoot não tem o time ${teamId} nesta conta. Confira o número no fim da ` +
+            'URL, em Configurações → Times → clicar no time.',
+        },
+      };
+    } else {
+      falhouEm = null;
+      aviso = `Time salvo sem verificar: ${r.motivo}.`;
+    }
+  }
+
+  const { error } = await supabase.from('tenant_times').insert({
+    tenant_id: usuario.tenantId,
+    team_id: teamId,
+    nome,
+    descricao,
+    padrao,
+    verificado_em: verificadoEm,
+    falhou_em: falhouEm,
+  });
+
+  if (error) {
+    if (error.code === '23505') {
+      return {
+        erro:
+          'Já existe um time com esse número ou esse nome — ou já há um time padrão. ' +
+          'O agente escolhe pelo nome, então dois iguais o deixariam sem critério.',
+      };
+    }
+    if (error.code === '23514') return { erro: error.message };
+    return { erro: `Não foi possível salvar: ${error.message}` };
+  }
+
+  revalidatePath('/painel/configuracoes');
+  return {
+    sucesso: aviso ?? `Time “${nome}” salvo e confirmado no Chatwoot.`,
+  };
+}
+
+/** Revalida um time já cadastrado — o botão ao lado do aviso de "não encontrado". */
+export async function verificarTimeSalvo(_estado: EstadoConfig, fd: FormData): Promise<EstadoConfig> {
+  const usuario = await exigirTenantAdmin();
+  const id = String(fd.get('id') ?? '');
+  if (!id) return { erro: 'Time não informado.' };
+
+  const supabase = await criarClienteServidor();
+  const { data: time } = await supabase
+    .from('tenant_times')
+    .select('team_id, nome')
+    .eq('tenant_id', usuario.tenantId)
+    .eq('id', id)
+    .maybeSingle();
+  if (!time) return { erro: 'Time não encontrado.' };
+
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('chatwoot_url, chatwoot_account_id')
+    .eq('id', usuario.tenantId)
+    .maybeSingle();
+  const { data: cred } = await supabase
+    .from('tenant_credenciais')
+    .select('chatwoot_token')
+    .eq('tenant_id', usuario.tenantId)
+    .maybeSingle();
+  const { data: conversa } = await supabase
+    .from('conversas')
+    .select('conversation_id')
+    .eq('tenant_id', usuario.tenantId)
+    .eq('status', 'resolvido')
+    .order('criado_em', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!tenant?.chatwoot_account_id || !cred?.chatwoot_token || !conversa) {
+    return { erro: 'Ainda não dá para verificar: falta conexão com o Chatwoot ou conversa encerrada.' };
+  }
+
+  const r = await verificarTime({
+    url: tenant.chatwoot_url as string,
+    accountId: tenant.chatwoot_account_id,
+    token: cred.chatwoot_token,
+    conversationId: conversa.conversation_id,
+    teamId: time.team_id,
+  });
+
+  const agora = new Date().toISOString();
+  await supabase
+    .from('tenant_times')
+    .update(
+      r.estado === 'existe'
+        ? { verificado_em: agora, falhou_em: null }
+        : r.estado === 'nao_existe'
+          ? { falhou_em: agora }
+          : {},
+    )
+    .eq('tenant_id', usuario.tenantId)
+    .eq('id', id);
+
+  revalidatePath('/painel/configuracoes');
+  if (r.estado === 'existe') return { sucesso: `“${time.nome}” confirmado no Chatwoot.` };
+  if (r.estado === 'nao_existe') {
+    return { erro: `“${time.nome}” não existe mais no Chatwoot (time ${time.team_id}).` };
+  }
+  return { erro: `Não deu para verificar agora: ${r.motivo}.` };
+}
+
+/** Remove um time. O padrão só sai depois de outro assumir. */
+export async function excluirTime(_estado: EstadoConfig, fd: FormData): Promise<EstadoConfig> {
+  const usuario = await exigirTenantAdmin();
+  const id = String(fd.get('id') ?? '');
+  if (!id) return { erro: 'Time não informado.' };
+
+  const supabase = await criarClienteServidor();
+
+  // Apagar o padrão deixaria o fallback sem destino, e o modo de falha volta a
+  // ser silencioso — que é o que este desenho inteiro existe para impedir.
+  const { data: alvo } = await supabase
+    .from('tenant_times')
+    .select('padrao, nome')
+    .eq('tenant_id', usuario.tenantId)
+    .eq('id', id)
+    .maybeSingle();
+  if (!alvo) return { erro: 'Time não encontrado.' };
+
+  if (alvo.padrao) {
+    const { count } = await supabase
+      .from('tenant_times')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', usuario.tenantId);
+    if ((count ?? 0) > 1) {
+      return {
+        erro:
+          `“${alvo.nome}” é o time padrão — para onde vai quando o agente não sabe escolher. ` +
+          'Marque outro como padrão antes de removê-lo.',
+      };
+    }
+  }
+
+  const { error } = await supabase
+    .from('tenant_times')
+    .delete()
+    .eq('tenant_id', usuario.tenantId)
+    .eq('id', id);
+
+  if (error) return { erro: `Não foi possível remover: ${error.message}` };
+  revalidatePath('/painel/configuracoes');
+  return { sucesso: `Time “${alvo.nome}” removido.` };
 }

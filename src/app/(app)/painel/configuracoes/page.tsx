@@ -19,21 +19,29 @@ import {
 import { FormularioConfig } from './formulario';
 import { FormularioTransferir } from './formulario-transferir';
 import { ListaModulos, SwitchModulo } from './lista-modulos';
+import { Times, type TimeDaTela } from './times';
 
 export default async function PaginaConfiguracoes() {
   const usuario = await exigirTenantAdmin();
   const supabase = await criarClienteServidor();
 
-  const [{ data: tenant }, { data: tools }] = await Promise.all([
+  const [{ data: tenant }, { data: tools }, { data: timesRaw }] = await Promise.all([
     supabase
       .from('tenants')
-      .select('agente_ativo, debounce_segundos, msg_midia_nao_suportada, msg_fora_escopo')
+      .select('agente_ativo, debounce_segundos, msg_midia_nao_suportada, msg_fora_escopo, chatwoot_account_id')
       .eq('id', usuario.tenantId)
       .maybeSingle(),
     supabase
       .from('tenant_tools')
       .select('tool_nome, ativo, contratado, config')
       .eq('tenant_id', usuario.tenantId),
+    // `eq('tenant_id')` redundante com a RLS de proposito (regra 6).
+    supabase
+      .from('tenant_times')
+      .select('id, team_id, nome, descricao, padrao, verificado_em, falhou_em')
+      .eq('tenant_id', usuario.tenantId)
+      .order('padrao', { ascending: false })
+      .order('nome'),
   ]);
 
   if (!tenant) {
@@ -44,6 +52,8 @@ export default async function PaginaConfiguracoes() {
   const toolTransferir = (tools ?? []).find((t) => t.tool_nome === TOOL_TRANSFERIR) ?? null;
   const transferirContratado = Boolean(toolTransferir?.contratado);
   const configTransferir = (toolTransferir?.config ?? {}) as Partial<ConfigTransferir>;
+  const times = (timesRaw ?? []) as TimeDaTela[];
+  const contaChatwoot = tenant.chatwoot_account_id ? String(tenant.chatwoot_account_id) : null;
   const horarioTransferir = configTransferir.horario ?? HORARIO_PADRAO;
 
   // Meus módulos: só o que o cliente PODE AGIR.
@@ -134,6 +144,23 @@ export default async function PaginaConfiguracoes() {
                 'conversa não é pausada sozinha — você pausa em Conversas ou no Chatwoot.'
               }
             />
+
+            {/*
+              Os times moram DENTRO do card da transferência, e não em rota
+              própria: é configuração da mesma tool, e rota nova exigiria
+              declaração no registry para uma seção que só faz sentido ao lado
+              do horário e do aviso.
+            */}
+            <div className="flex flex-col gap-3 border-t border-border pt-5">
+              <div>
+                <h3 className="text-sm font-medium">Times do Chatwoot</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Com times cadastrados, o agente escolhe para qual mandar a conversa. Sem
+                  nenhum, ele transfere como hoje — pausa e deixa a nota.
+                </p>
+              </div>
+              <Times times={times} contaChatwoot={contaChatwoot} />
+            </div>
 
             <FormularioTransferir
               ativo={Boolean(toolTransferir?.ativo)}
