@@ -125,7 +125,11 @@ try {
     // grant a authenticated de proposito. A assercao afirma a LISTA, para que
     // uma quarta aparecer seja falha e nao silencio.
     const esperadas = role === 'authenticated' || role === 'anon'
-      ? ['api_n8n_enviar_foto', 'api_n8n_pode_transcrever', 'api_n8n_registrar_mensagem', 'api_n8n_tem_pedido_pendente']
+      // `api_n8n_registrar_mensagem` saiu desta lista na migração 42: ela é
+      // SECURITY DEFINER e ESCREVE em `mensagens_log`, que está virando base de
+      // cobrança, e `anon` é a chave que vai no navegador. Deixar a entrada
+      // morta aqui faria uma reabertura futura passar despercebida.
+      ? ['api_n8n_enviar_foto', 'api_n8n_pode_transcrever', 'api_n8n_tem_pedido_pendente']
       : [];
     const inesperadas = rows.map((r) => r.proname).filter((n) => !esperadas.includes(n));
     checar(

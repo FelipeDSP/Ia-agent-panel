@@ -950,15 +950,19 @@ w.connections['Enviar Foto do Produto'] = {
 // `null` sem tipo seria ambiguo.
 {
   const reg = no('Registra Mensagem');
+  // $10 e a decomposicao dos tokens (migracao 42), e vai SO na linha de
+  // `saida`: a de `entrada` nao carrega token nenhum, entao decompor la seria
+  // inventar. `null::jsonb` explicito na entrada pelo mesmo motivo do
+  // `null::numeric` ao lado — nulo sem tipo e ambiguo.
   reg.parameters.query =
-    "SELECT public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'entrada', $7::text, 0, 0, $6::text, $8::numeric, $9::text) AS log_entrada,\n" +
-    "       public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'saida', $3::text, $4::int, $5::int, $6::text, null::numeric, $9::text) AS log_saida;";
+    "SELECT public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'entrada', $7::text, 0, 0, $6::text, $8::numeric, $9::text, null::jsonb) AS log_entrada,\n" +
+    "       public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'saida', $3::text, $4::int, $5::int, $6::text, null::numeric, $9::text, $10::jsonb) AS log_saida;";
   reg.parameters.options.queryReplacement =
     "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id, " +
     "$('Estima Tokens').first().json.output, $('Estima Tokens').first().json.tokens_entrada, " +
     "$('Estima Tokens').first().json.tokens_saida, $('Resolve Tenant').first().json.modelo, " +
     "$('Lista Depois').first().json.lista_depois, $('Mensagem Pronta').first().json.audio_segundos, " +
-    "$execution.id ] }}";
+    "$execution.id, $('Estima Tokens').first().json.componentes_json ] }}";
 }
 
 const novosNoCanvas = restaurarLayout();

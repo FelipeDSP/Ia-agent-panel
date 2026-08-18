@@ -45,7 +45,9 @@
     "teste:grants-n8n": "node tests/grants-n8n.mjs",
     "teste:conhecimento": "node --import ./tests/lib/ts.mjs tests/conhecimento-lista.mjs",
     "guarda": "node tests/lib/com-guarda.mjs",
-    "teste:sonda-tokens": "node tests/sonda-tokens.mjs"
+    "teste:sonda-tokens": "node tests/sonda-tokens.mjs",
+    "teste:componentes-token": "node --env-file=.env.local tests/migracao-componentes-token.mjs",
+    "teste:componentes-no": "node tests/estima-tokens-componentes.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

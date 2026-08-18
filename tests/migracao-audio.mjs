@@ -48,6 +48,16 @@ const R32 = lim('20260812183756_32_mensagens_log_audio_segundos_rollback.sql');
 // argumentos viva ao lado da de 7 que o rollback recria — duas vivas, chamada
 // ambígua, exatamente o que a 32 existe para evitar.
 const R37 = lim('20260814150100_37_mensagens_log_execucao_rollback.sql');
+/*
+ * A 42 entra na cadeia pelo MESMO motivo que a 37 entrou: ela acrescentou
+ * `p_componentes` e dropou a assinatura de 9 argumentos. Com a 42 aplicada em
+ * produção, replayar 32+37 sozinhas ressuscita a de 9 ao lado da de 10 — as
+ * duas com DEFAULT — e a chamada de 7 argumentos que este teste faz volta a ser
+ * ambígua. O elo novo não é opcional: é a lição de 14/08 repetindo com outro
+ * número.
+ */
+const M42 = lim('20260818120000_42_componentes_de_token.sql');
+const R42 = lim('20260818120000_42_componentes_de_token_rollback.sql');
 
 const c = new pg.Client({ connectionString: process.env.SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } });
 
@@ -121,8 +131,10 @@ try {
   ).rows.map((r) => r.column_name);
   chk('coluna audio_segundos existe', cols.includes('audio_segundos'));
 
-  // Fecha a cadeia: a 32 sozinha ressuscita a assinatura que a 37 dropou.
+  // Fecha a cadeia: a 32 sozinha ressuscita a assinatura que a 37 dropou, e a
+  // 37 sozinha ressuscita a que a 42 dropou. A cadeia é 32 -> 37 -> 42.
   await c.query(M37);
+  await c.query(M42);
 
   const assinaturasDe = async () => (await c.query(`
     select pg_get_function_identity_arguments(p.oid) a from pg_proc p
@@ -130,15 +142,16 @@ try {
     where n.nspname='public' and p.proname='api_n8n_registrar_mensagem'`)).rows;
 
   const assinaturas = await assinaturasDe();
-  chk('UMA assinatura só depois de 32+37 — sem overload ambíguo', assinaturas.length === 1,
+  chk('UMA assinatura só depois de 32+37+42 — sem overload ambíguo', assinaturas.length === 1,
     JSON.stringify(assinaturas.map((x) => x.a)));
 
   // A PROPRIEDADE, e não o número: reaplicar a cadeia inteira de novo continua
   // deixando uma. É o que torna a migração reexecutável de verdade.
   await c.query(M32);
   await c.query(M37);
+  await c.query(M42);
   const reaplicada = await assinaturasDe();
-  chk('reaplicar 32+37 mantém UMA assinatura', reaplicada.length === 1,
+  chk('reaplicar 32+37+42 mantém UMA assinatura', reaplicada.length === 1,
     JSON.stringify(reaplicada.map((x) => x.a)));
 
   const t = (await c.query("select id from public.tenants where slug='restaurante-teste'")).rows[0];
@@ -171,6 +184,8 @@ try {
   // CERTO. Para exercitar o caminho limpo e preciso um mundo sem audio, e a
   // transacao abortada e o unico lugar onde da para ter isso sem perder nada.
   await c.query('delete from public.mensagens_log where audio_segundos is not null');
+  // Ordem INVERSA da aplicação: 42 saiu por último a entrar, sai primeiro.
+  await c.query(R42);
   await c.query(R37);
   await c.query(R32);
   const colsDepois = (await c.query(

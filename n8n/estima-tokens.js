@@ -302,10 +302,40 @@ let historicoChars = 0;
 try {
   historicoChars = Number($('Sync Conversa').first().json.historico_chars) || 0;
 } catch (e) { faltou.push('Sync Conversa'); }
-const base = emTokens(WRAPPER + systemPrompt + mensagens) + TOKENS_FERRAMENTAS + Math.ceil(historicoChars / 4);
+// ----------------------------------------------------------------------------
+// 2b. OS COMPONENTES, SEPARADOS — e o total DERIVADO deles
+// ----------------------------------------------------------------------------
+// Ate a migracao 42 este no calculava tudo isto e jogava fora todos menos a
+// soma. `mensagens_log` guardava so o total, e total nao se decompoe depois:
+// cada turno gravado somado e um turno que nunca podera ser olhado por parte.
+// A decisao de modelo de plano depende justamente de separar USO (mensagens,
+// memoria, round-trip) de CONFIGURACAO (comprimento do prompt que a agencia
+// escreveu) — ver docs/PENDENCIA-FATURA-OPENAI.md.
+//
+// AQUI NAO HA REGRA DE RATEIO. Nao existe "cliente" e "agencia", nao existe
+// teto de referencia, nao existe percentual. A classificacao esta em aberto e
+// entra na QUERY quando houver decisao; o que este no faz e nao perder o dado.
+//
+// O TOTAL PASSA A SER A SOMA DAS PARTES, e nao mais `chamadas * base`. A
+// diferenca e de no maximo 2 tokens (antes havia UM `ceil` sobre a
+// concatenacao; agora ha um por parte) — 0,03% no maior caso medido. Vale o
+// troco: assim `soma(componentes) === tokens_entrada` por construcao, e a
+// invariante nao depende de ninguem lembrar dela.
+const comp_wrapper = chamadas * emTokens(WRAPPER);
+const comp_system_prompt = chamadas * emTokens(systemPrompt);
+const comp_mensagens = chamadas * emTokens(mensagens);
+const comp_schema_tools = chamadas * TOKENS_FERRAMENTAS;
+// A memoria segue com /4 enquanto o resto usa /3.11 — divergencia herdada, que
+// subestima ~29%. NAO corrigida junto de proposito: mudar altera os totais e
+// invalida a calibracao, e misturar as duas coisas impede saber qual mexeu no
+// numero. Registrada em docs/TOKENS-REAIS-PARA-COBRANCA.md.
+const comp_memoria = chamadas * Math.ceil(historicoChars / 4);
+// Cada round-trip acrescenta resultado de tool + mensagem do assistente. NAO
+// cobre o TAMANHO do resultado (catalogo, chunk): a formula e cega para isso.
+const comp_round_trip = CRESCIMENTO_POR_CHAMADA * ((chamadas * (chamadas - 1)) / 2);
 
-// Cada chamada reenvia o prompt inteiro; o historico cresce a cada round-trip.
-const estimado_entrada = chamadas * base + CRESCIMENTO_POR_CHAMADA * ((chamadas * (chamadas - 1)) / 2);
+const estimado_entrada =
+  comp_wrapper + comp_system_prompt + comp_mensagens + comp_schema_tools + comp_memoria + comp_round_trip;
 const estimado_saida = emTokens(textoSaida);
 
 // ----------------------------------------------------------------------------
@@ -314,11 +344,35 @@ const estimado_saida = emTokens(textoSaida);
 const tokens_entrada = usoN8n ? usoN8n.entrada : estimado_entrada;
 const tokens_saida = usoN8n ? usoN8n.saida : estimado_saida;
 
+// A DECOMPOSICAO SO ACOMPANHA O TOTAL QUE ELA EXPLICA. Se um dia a sonda A
+// voltar a funcionar, `tokens_entrada` passa a vir do sub-no e as partes acima
+// deixam de somar esse numero — decompor um total que nao foi calculado aqui
+// seria inventar. Nesse caso vao so `chamadas` e `fonte`, e as colunas de
+// componente ficam nulas, que e a resposta honesta.
+const componentes = usoN8n
+  ? { chamadas: usoN8n.chamadas, fonte: 'estimativa_n8n_sub_no' }
+  : {
+      wrapper: comp_wrapper,
+      system_prompt: comp_system_prompt,
+      schema_tools: comp_schema_tools,
+      mensagens: comp_mensagens,
+      memoria: comp_memoria,
+      round_trip: comp_round_trip,
+      chamadas,
+      fonte: 'estimativa_nossa_com_multiplicidade',
+    };
+
 return [{
   json: {
     output: textoSaida,
     tokens_entrada,
     tokens_saida,
+    // String, e nao objeto: o no Postgres manda o valor como parametro, e
+    // `$10::jsonb` espera texto JSON. Passar objeto depende de como o driver
+    // resolve serializacao — dependencia que nao precisa existir.
+    componentes_json: JSON.stringify(componentes),
+    // O mesmo conteudo legivel, para quem abre a execucao no n8n.
+    _componentes: componentes,
     // O rotulo diz de QUEM e a estimativa. Nenhum dos dois valores vem da
     // OpenAI, e o nome nao pode sugerir que vem.
     _fonte_tokens: usoN8n ? 'estimativa_n8n_sub_no' : 'estimativa_nossa_com_multiplicidade',
