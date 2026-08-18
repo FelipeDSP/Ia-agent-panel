@@ -139,11 +139,24 @@ try {
   const aclAntes = await rolesComExecute();
   console.log(`  (antes) ${aclAntes.join(', ')}`);
   chk('o retrato do ACL foi capturado', aclAntes.length > 0, JSON.stringify(aclAntes));
-  // Não afirmo a lista exata: se produção já estiver diferente do que eu vi, o
-  // teste tem de continuar dizendo a verdade sobre o DEPOIS, que é o que importa.
-  chk('antes da 42, n8n_agent NÃO tinha grant explícito (executava por PUBLIC)',
-    !aclAntes.includes('n8n_agent') && aclAntes.includes('PUBLIC'),
-    `veio ${JSON.stringify(aclAntes)} — se isto mudou, a 42 já foi aplicada`);
+
+  // AVISO, NÃO ASSERÇÃO — e a primeira versão errou justamente aqui.
+  //
+  // Estava escrito como `chk('antes da 42, n8n_agent NÃO tinha grant
+  // explícito')`. Passou enquanto a 42 não tinha sido aplicada e ficou vermelho
+  // no minuto seguinte ao apply, sem defeito nenhum: era afirmação sobre o
+  // ESTADO DO MUNDO, e o estado mudou porque o sistema funcionou. É o defeito
+  // que a CLAUDE.md descreve, escrito no mesmo dia em que a regra foi citada —
+  // ler a regra não protege nem quem a escreve.
+  //
+  // A propriedade que este teste garante é sobre o DEPOIS, e está na seção 6:
+  // seja qual for o ponto de partida, aplicar a 42 termina com n8n_agent e
+  // service_role podendo chamar e mais ninguém. O antes é contexto para quem
+  // depura, então vira linha informativa.
+  const partiaDePublic = !aclAntes.includes('n8n_agent') && aclAntes.includes('PUBLIC');
+  console.log(partiaDePublic
+    ? '  aviso: partindo do estado PRÉ-42 (n8n_agent executava por PUBLIC)'
+    : '  aviso: a 42 já está aplicada neste banco — o teste reaplica por cima, que é o esperado de migração reexecutável');
 
   // -------------------------------------------------------------------------
   console.log('\n-- 2. Aplicar --\n');

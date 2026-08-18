@@ -34,6 +34,18 @@ const lim = (f) =>
 
 const M37 = lim('20260814150100_37_mensagens_log_execucao.sql');
 const R37 = lim('20260814150100_37_mensagens_log_execucao_rollback.sql');
+/*
+ * A 42 acrescentou `p_componentes` e dropou a assinatura de 9 argumentos. Este
+ * teste replaya a 37, que RECRIA a de 9 — e com a de 10 viva ao lado, toda
+ * chamada aqui vira `42725 ambiguous_function`. É a mesma armadilha de 14/08,
+ * e ela não avisa: o teste fica vermelho em sete asserções ao mesmo tempo, com
+ * um código de erro que não menciona assinatura nenhuma.
+ *
+ * A saída aqui é desfazer a 42 ANTES (este teste é sobre o mundo da 37, com 8 e
+ * 9 argumentos), e não replayar 37+42: as asserções abaixo afirmam "1
+ * assinatura, a de 8". Tudo dentro da transação abortada.
+ */
+const R42 = lim('20260818120000_42_componentes_de_token_rollback.sql');
 
 if (!process.env.SUPABASE_DB_URL) {
   console.error('SUPABASE_DB_URL ausente. Rode com --env-file=.env.local');
@@ -127,6 +139,13 @@ try {
     return r.erro ? 0 : r.rows[0].n;
   };
   const comChaveAntes = await comChave();
+
+  // Volta ao mundo pré-42 antes de replayar a 37. Ver o comentário no topo:
+  // sem isto, a 37 ressuscita a assinatura de 9 ao lado da de 10 e tudo aqui
+  // vira ambiguidade. É idempotente — num banco sem a 42 aplicada, cada comando
+  // do rollback é `if exists` e não faz nada.
+  const desfaz42 = await tentar(R42);
+  chk('desfazer a 42 (pré-condição do replay da 37)', desfaz42.erro === null, `veio ${desfaz42.erro}`);
 
   const aplicou = await tentar(M37);
   chk('migração aplica', aplicou.erro === null, `veio ${aplicou.erro}`);
