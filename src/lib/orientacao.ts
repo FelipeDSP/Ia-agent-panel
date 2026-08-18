@@ -54,3 +54,41 @@ export const DICAS_BASE: string[] = [
   'Use as palavras que o cliente usa ("quanto custa", "valor", "preço" na mesma resposta).',
   'Mudou algo? Atualize a base. O agente responde pelo que está aqui, não pelo histórico das conversas.',
 ];
+
+/**
+ * O CRITÉRIO QUE DECIDE ONDE CADA COISA MORA.
+ *
+ * Existia — é o quinto item de `DICAS_PROMPT` — e estava dentro de um
+ * `<details>` fechado, nas DUAS telas. Ou seja: a regra de maior consequência do
+ * painel exigia dois cliques e uma leitura até o fim da lista.
+ *
+ * O Empório é a prova de que não chegava: 5.708 caracteres de fatos (horário,
+ * entrega, pagamento, endereço) no prompt e 127 na base — exatamente a inversão
+ * contra a qual a dica avisa. E o erro é caro e mudo: o prompt entra em TODA
+ * chamada ao modelo, a base só quando alguém pergunta. Ninguém percebe pelo
+ * atendimento; percebe-se na fatura, meses depois.
+ *
+ * Por isso a frase saiu do acordeão e virou texto fixo. As duas metades são
+ * recíprocas de propósito: em qualquer das duas telas que a pessoa caia, ela
+ * aprende a divisão inteira. Vivem aqui, juntas, para não divergirem quando
+ * alguém editar só uma.
+ */
+export const CRITERIO_NO_PROMPT =
+  'Aqui vai QUEM o agente é e COMO ele se comporta: tom de voz, regras e o que ele nunca deve fazer. ' +
+  'Preço, horário, endereço, entrega e pagamento ficam melhor na base de conhecimento — lá você atualiza sem mexer no prompt.';
+
+export const CRITERIO_NA_BASE =
+  'Aqui vai o que MUDA: preço, horário, endereço, entrega, pagamento, políticas de troca. ' +
+  'Como o agente fala e o que ele não pode prometer ficam no prompt, na Visão geral.';
+
+/**
+ * Quantos trechos a busca devolve por pergunta.
+ *
+ * NÃO é enfeite de texto: é o número que a tool do n8n passa para
+ * `api_n8n_buscar_kb` (`n8n/workflows/Tool - Busca KB Multi-Tenant.json`, nó
+ * `Busca Vetorial`). O aviso de base pequena diz "o agente recebe TODOS os seus
+ * trechos" e isso só é verdade enquanto o total couber aqui — se os dois
+ * divergirem, o painel passa a afirmar algo falso sobre o comportamento do
+ * agente. `tests/conhecimento-lista.mjs` compara os dois.
+ */
+export const TRECHOS_POR_BUSCA = 5;

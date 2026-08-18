@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
 import { formatarDataHora } from '@/lib/utils';
-import { DICAS_PROMPT, MODELO_PROMPT } from '@/lib/orientacao';
+import { CRITERIO_NO_PROMPT, DICAS_PROMPT, MODELO_PROMPT } from '@/lib/orientacao';
 import {
   restaurarVersaoPrompt,
   salvarPrompt,
@@ -66,6 +66,11 @@ export function PromptEditor({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* FORA do acordeão de propósito: é a regra que decide onde cada coisa
+          mora, e dentro do `<details>` ela custava dois cliques e uma lista até
+          o fim. Ver CRITERIO_NO_PROMPT. */}
+      <p className="text-sm text-muted-foreground">{CRITERIO_NO_PROMPT}</p>
+
       <details className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm">
         <summary className="cursor-pointer font-medium">Como escrever um bom prompt</summary>
         <ul className="mt-3 flex list-disc flex-col gap-1.5 pl-5 text-muted-foreground">

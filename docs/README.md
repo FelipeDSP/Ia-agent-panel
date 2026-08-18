@@ -50,6 +50,11 @@ documentação e material de referência.
   numero que a OpenAI cobra: `intermediateSteps` (sonda B ja instrumentada), API de
   execucoes do n8n (recomendado — o `execucao_id` da migracao 37 ja e a chave de juncao)
   e chave por tenant (bloqueada por credencial de no nao aceitar expressao).
+- [`AUDITORIA-PAINEL-CLIENTE.md`](AUDITORIA-PAINEL-CLIENTE.md) — percurso do painel do
+  cliente sob a lente **decisao exigida sem criterio** (nao feiura). O caso central: o
+  criterio de prompt-vs-base EXISTIA e estava fechado num `<details>` nas duas telas —
+  o emporio pos 5.708 chars de fatos no prompt e 127 na base. Dois consertos feitos, o
+  resto registrado com prioridade.
 - [`PENDENCIA-PISO-SIMILARIDADE.md`](PENDENCIA-PISO-SIMILARIDADE.md) — **a fazer, com
   gatilho.** `match_kb_documentos` nao tem piso: sempre devolve o menos distante, nunca
   "nao tenho isso". Medido no corpus real, conteudo IRRELEVANTE chega a 0,625 e chunk do
