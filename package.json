@@ -53,7 +53,8 @@
     "n8n:diff": "node scripts/diff-n8n-instancia.mjs",
     "teste:desconectar-chatwoot": "node --env-file=.env.local tests/desconectar-chatwoot.mjs",
     "teste:comparacoes-tipo": "node --env-file=.env.local tests/comparacoes-de-tipo.mjs",
-    "teste:relatorios": "node --import ./tests/lib/ts.mjs tests/relatorios.mjs"
+    "teste:relatorios": "node --import ./tests/lib/ts.mjs tests/relatorios.mjs",
+    "teste:times": "node --env-file=.env.local tests/migracao-times.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
