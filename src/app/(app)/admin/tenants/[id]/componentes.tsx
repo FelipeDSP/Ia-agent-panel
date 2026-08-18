@@ -264,6 +264,17 @@ function DesconectarChatwoot({ tenantId, accountId }: { tenantId: string; accoun
                 valendo. A segunda é para quando <strong>o bot mudou ou o token foi
                 regenerado</strong>: aí o guardado só atrapalha, e reconectar vai pedir um novo.
               </p>
+              {/*
+                O AVISO PRECISA VIR ANTES DO CLIQUE, não depois. "Apagar a
+                credencial" parece definitivo, e quem clica achando que
+                invalidou o token não invalidou nada: o Chatwoot não sabe desta
+                tela. Dizer isso só na mensagem de sucesso chegaria tarde para
+                quem apagou justamente para revogar.
+              */}
+              <p className="text-xs">
+                Apagar limpa <strong>o nosso lado</strong>, não o do Chatwoot: o token continua
+                válido lá até alguém regenerá-lo por lá.
+              </p>
             </div>
           </div>
         </Alert>
