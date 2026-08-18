@@ -6,6 +6,51 @@
 > cobre autenticação, autorização e a matriz papel × recurso; aqui não repito o que já
 > está lá, foco nos cinco vetores pedidos.
 
+> ## ⚠ ADENDO DE 2026-08-18 — a conclusão acima ficou desatualizada
+>
+> **"Nenhuma vulnerabilidade explorável" não vale mais.** Em 18/08 foi encontrada
+> e **provada** uma exposição de credencial: `api_n8n_pode_transcrever` e
+> `api_n8n_enviar_foto` são `SECURITY DEFINER`, devolvem `chatwoot_token` no
+> retorno e estavam executáveis por `anon` — a chave publicável, a que vai no
+> bundle do navegador.
+>
+> A prova não é de catálogo. Chamada real, por HTTPS, sem sessão nenhuma:
+>
+> ```
+> POST /rest/v1/rpc/api_n8n_pode_transcrever {"p_tenant_id":"<uuid>", ...}
+> → HTTP 200, chatwoot_token preenchido
+> ```
+>
+> Com esse token se fala pelo WhatsApp da loja. **Corrigido pela migração 43**,
+> aplicada no mesmo dia; a mesma chamada agora responde `42501`.
+>
+> **Por que esta varredura não pegou:** ela é de 06/08 e olhou o código da
+> aplicação (SQL injection, XSS, CSRF, headers). As seis funções expostas
+> nasceram nas migrações **26, 33, 35 e 38** — as três últimas posteriores a
+> esta auditoria. O vetor também não estava na lista pedida: **ACL de função no
+> Postgres** não é injeção nem XSS, é superfície de API, e só aparece
+> consultando `pg_proc.proacl` ou chamando com a chave anônima.
+>
+> **Sobre a gravidade, com a avaliação corrigida:** o `tenant_id` não é segredo.
+> Não vaza pelo painel do cliente, mas aparece em URL do admin e circula em
+> conversa, log e suporte. É **identificador conhecido**, não credencial — o que
+> significa que a exposição dependia apenas de alguém querer, não de alguém
+> descobrir.
+>
+> **A origem não foi afrouxamento.** Ninguém abriu o que estava fechado: as
+> funções nasceram assim, depois da migração 21 ter tirado a credencial do
+> alcance do painel. O padrão correto existia **na cabeça de quem escrevia e não
+> na verificação** — `tests/grants-n8n.mjs` varria só `api_n8n_*` e ainda tinha
+> as três numa allowlist com justificativa falsa. É a mesma família do critério
+> de prompt-versus-base do painel: a regra certa, existindo em lugar que não
+> alcança quem precisa dela. Agora a asserção é sobre a classe (nenhuma
+> `SECURITY DEFINER` executável por `anon`, sem allowlist), então função nova
+> nasce coberta.
+>
+> **Pendente, e não é técnico:** rotacionar os tokens do Chatwoot. Fechar o ACL
+> impede vazamento novo e não desfaz o antigo — a rota esteve pública desde a
+> criação de cada função.
+
 ## Resumo
 
 | Vetor | Achados | Severidade máxima |
