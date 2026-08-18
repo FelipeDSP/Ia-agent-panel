@@ -114,18 +114,69 @@ ferramenta, chunk recuperado, tamanho do catálogo consultado) e **sensível
 justamente para o que é configuração** (o comprimento do prompt que a agência
 escreveu no painel). Cobrar por essa proporção faria o Empório pagar 4x por
 alguém ter escrito um prompt de 12 mil caracteres, e a Fortalize pagará mais
-ainda — o prompt dela tem 15,4 mil.
+ainda — o prompt dela tem 15,4 mil. A decisão sobre isso está na seção
+seguinte.
 
-Duas saídas, e a escolha é de negócio:
+## DECIDIDO em 18/08/2026: normalizar, prompt é custo da agência
 
-- **aceitar** que prompt longo custa mais, porque de fato custa — a OpenAI cobra
-  por ele em toda chamada — e então dizer isso ao cliente na hora de escrever o
-  prompt, em vez de na fatura;
-- **normalizar** o rateio pelo que é atribuível ao cliente (mensagens, chamadas
-  de ferramenta) e tratar o prompt como custo da agência.
+Havia duas saídas. **Escolhida a segunda: o rateio é sobre o que é atribuível ao
+cliente, e wrapper + schema de tool + system prompt são custo da agência.**
 
-Nenhuma das duas dá para decidir sem antes ter a resposta do parágrafo anterior
-para todos os tenants, não só dois.
+### Por quê
+
+**O cliente não escolheu o prompt — a agência escreveu.** Cobrar por ele
+significa que a conta dele muda quando a agência refatora, sem ele ter feito
+nada. Uma fatura que se mexe por trabalho interno de quem emite a fatura é
+indefensável na primeira vez que for perguntada, e ela vai ser perguntada
+exatamente quando subir.
+
+**E a primeira saída tem incentivo perverso:** com o prompt dentro da base de
+cobrança, encurtar prompt vira perda de receita. Ou seja, a régua pagaria a
+agência para não fazer a otimização que baratearia o produto — e a mesma pessoa
+controla os dois lados. A segunda saída inverte o sinal: prompt longo passa a
+custar a quem tem a caneta, que é o único arranjo em que a otimização acontece.
+
+Isto não é preciosismo de justiça. É a diferença entre uma régua imprecisa e uma
+régua **torta na direção errada**: a estimativa de hoje é cega para o que é uso
+(resultado de ferramenta, chunk recuperado, catálogo consultado) e sensível para
+o que é configuração (comprimento do prompt). Imprecisão se corrige com
+calibração; direção errada não.
+
+### A regra
+
+| Atribuível ao CLIENTE | Custo da AGÊNCIA |
+|---|---|
+| mensagens (o que o cliente dele escreveu e o que o agente respondeu) | wrapper do perfil (3.767 chars ≈ 1.212 tok) |
+| chamadas de ferramenta, e o conteúdo que elas devolvem (catálogo, chunk da KB dele) | schema das tools (`S`: 622 no vendas, 266 no básico) |
+| embedding de ingestão do que ele subiu | `system_prompt` do tenant |
+
+**Uma peça não estava na lista e precisa de destino: a janela de memória**
+(`historico_chars`, ~970 tokens por mensagem e crescendo com a conversa). É a
+conversa do próprio cliente reenviada a cada chamada, então a leitura natural é
+**atribuível a ele** — e vale registrar que ela é o maior termo de crescimento da
+conta, maior que o prompt em conversa longa. Se a intenção for outra, é aqui que
+se escreve.
+
+### O que isso exige de quem for implementar
+
+**A decomposição precisa ser GRAVADA, e hoje não é.** `mensagens_log` guarda só
+`tokens_entrada`, `tokens_saida` e `modelo` — o total, já somado. O
+`estima-tokens.js` calcula os componentes internamente (wrapper, prompt,
+mensagens, `S`, memória) e joga fora todos menos a soma. Sem os componentes, a
+regra acima **não é aplicável retroativamente**: não dá para separar depois o que
+nunca foi separado na gravação.
+
+Consequência prática: se a cobrança por consumo for acontecer, a primeira coisa a
+fazer não é a tela de lançamento da fatura — é o log passar a gravar a
+decomposição. É barato (os números já existem no nó, só não saem dele) e é a
+única parte que **perde valor a cada dia que não é feita**, porque cada turno que
+passa é um turno que nunca poderá ser rateado por esta regra.
+
+### O que continua em aberto
+
+A decisão acima é sobre a REGRA. Ela não depende da fatura ser lançável, e por
+isso pôde ser tomada agora. Continua aberto tudo da seção anterior: quem pega a
+fatura, quando, e o que conta como consumo de cliente.
 
 ## Gatilho para retomar
 
