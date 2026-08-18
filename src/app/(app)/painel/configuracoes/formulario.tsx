@@ -41,28 +41,40 @@ export function FormularioConfig({
         />
         <span className="text-sm font-medium">Agente ligado</span>
       </label>
-      <p className="-mt-3 text-xs text-muted-foreground">
-        Desligado, o agente para de responder às conversas deste cliente.
-      </p>
 
+      {/*
+        "Debounce" era jargão e o parágrafo abaixo existia só para traduzi-lo. O
+        rótulo passa a dizer o que o campo faz e a faixa vira sufixo do campo —
+        interface no lugar de prosa. O `name` continua `debounce_segundos`
+        porque é o que a Server Action lê.
+      */}
       <div className="flex max-w-xs flex-col gap-2">
-        <Label htmlFor="debounce_segundos">Debounce (segundos)</Label>
-        <Input
-          id="debounce_segundos"
-          name="debounce_segundos"
-          type="number"
-          min="1"
-          max="60"
-          defaultValue={debounce}
-        />
-        <p className="text-xs text-muted-foreground">
-          Tempo de espera antes de o agente responder (1 a 60s).
-        </p>
+        <Label htmlFor="debounce_segundos">Espera antes de responder</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="debounce_segundos"
+            name="debounce_segundos"
+            type="number"
+            min="1"
+            max="60"
+            className="w-24"
+            defaultValue={debounce}
+          />
+          <span className="text-sm text-muted-foreground">segundos (1 a 60)</span>
+        </div>
         <ErroCampo msg={estado.errosCampo?.['debounce_segundos']} />
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="msg_midia_nao_suportada">Mensagem para mídia não suportada</Label>
+        {/*
+          O rótulo antigo ("mídia não suportada", "fora de escopo") nomeava a
+          categoria interna e não dizia QUANDO a frase é enviada — quem preenche
+          escreve imaginando um caso e a frase sai em outro. Trocar o rótulo pelo
+          gatilho resolve sem acrescentar parágrafo nenhum.
+        */}
+        <Label htmlFor="msg_midia_nao_suportada">
+          Quando mandam foto, vídeo ou documento
+        </Label>
         <Textarea
           id="msg_midia_nao_suportada"
           name="msg_midia_nao_suportada"
@@ -72,7 +84,9 @@ export function FormularioConfig({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="msg_fora_escopo">Mensagem para fora de escopo</Label>
+        <Label htmlFor="msg_fora_escopo">
+          Quando o assunto foge do que o agente atende
+        </Label>
         <Textarea
           id="msg_fora_escopo"
           name="msg_fora_escopo"

@@ -42,13 +42,14 @@ export function FormularioTransferir({
           configurar horário achando que o módulo já está no ar. */}
       {ativo ? (
         <>
-          <p className="text-xs text-muted-foreground">
-            Módulo ligado. O agente pode passar a conversa para um atendente dentro do horário
-            abaixo e pausa o bot naquela conversa.
-          </p>
-          {/* Sem canal de aviso, transferir é silencioso: o bot pausa e fica só a
-              nota privada no Chatwoot. Como o módulo entra ligado por padrão, o
-              cliente pode nunca ter escolhido isso — o aviso diz onde olhar. */}
+          {/* "Módulo ligado. O agente pode passar a conversa..." saiu daqui: o
+              switch logo acima já mostra o estado, e o resto descrevia o que o
+              módulo faz para quem acabou de ligá-lo.
+
+              O aviso abaixo FICA, e é o único dos três que fica: sem canal de
+              aviso, transferir é silencioso — o bot pausa e sobra a nota privada
+              no Chatwoot. Como o módulo entra ligado por padrão, o cliente pode
+              nunca ter escolhido isso, e não há nada na tela de onde deduzir. */}
           {!notificarAtual ? (
             <Alert>
               <strong>Você não recebe aviso quando alguém pede atendimento.</strong> A conversa é
@@ -64,10 +65,16 @@ export function FormularioTransferir({
           ) : null}
         </>
       ) : (
+        /*
+         * FICA, encurtado — e com um defeito de conteúdo corrigido: mandava
+         * ligar em "Meus módulos", mas o switch deste módulo vive NESTE card,
+         * logo acima. O texto apontava para o lugar errado.
+         *
+         * A consequência que sobra não é dedutível: dá para configurar tudo
+         * aqui e nada valer até o switch subir.
+         */
         <Alert>
-          Este módulo está <strong>desligado</strong>. Você pode ajustar o horário e o aviso
-          agora, mas o agente só vai transferir depois que você ligar em{' '}
-          <strong>Meus módulos</strong>, acima.
+          Desligado: o que você ajustar aqui só passa a valer quando ligar o botão acima.
         </Alert>
       )}
 
@@ -113,6 +120,7 @@ export function FormularioTransferir({
               type="number"
               min="0"
               max="23"
+              placeholder="8"
               defaultValue={horario.hora_inicio}
             />
             <ErroCampo msg={estado.errosCampo?.['hora_inicio']} />
@@ -125,14 +133,16 @@ export function FormularioTransferir({
               type="number"
               min="1"
               max="24"
+              placeholder="18"
               defaultValue={horario.hora_fim}
             />
             <ErroCampo msg={estado.errosCampo?.['hora_fim']} />
           </div>
         </div>
+        {/* O FORMATO virou placeholder (8 e 18) e min/max do campo. Sobra a
+            consequência, que é o que ninguém deduz olhando dois campos de hora. */}
         <p className="-mt-1 text-xs text-muted-foreground">
-          Horas em 0–24 (ex.: abre 8, fecha 18). Fora desse horário o agente informa que não há
-          atendente e segue ajudando.
+          Fora desse horário o agente avisa que não há atendente e segue ajudando.
         </p>
       </fieldset>
 
@@ -161,18 +171,18 @@ export function FormularioTransferir({
                 defaultValue={destinoNumero}
                 disabled={!notificar}
               />
+              {/* O formato está no placeholder. Sobra a regra do 9, que é
+                  armadilha real e não se deduz de lugar nenhum — mas cabe em
+                  uma linha em vez de três. */}
               <p className="text-xs text-muted-foreground">
-                Número completo com o código do país (55). Digite exatamente como o número está no
-                WhatsApp — no Brasil, alguns não têm o 9 depois do DDD. Se o aviso não chegar no
-                teste, tente sem esse 9.
+                Se o aviso não chegar, tente sem o 9 depois do DDD.
               </p>
               <ErroCampo msg={estado.errosCampo?.['destino']} />
             </div>
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            O canal de aviso por WhatsApp ainda não foi configurado pela agência. Você já pode
-            definir o horário; assim que o canal estiver pronto, o aviso aparece aqui.
+            O aviso por WhatsApp ainda não foi configurado pela agência — o horário acima já vale.
           </p>
         )}
       </fieldset>

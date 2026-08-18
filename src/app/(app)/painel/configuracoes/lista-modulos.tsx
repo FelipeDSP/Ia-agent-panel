@@ -69,8 +69,13 @@ export function SwitchModulo({
     <div className="flex flex-col gap-2">
       {erro ? <Alert variant="destructive">{erro}</Alert> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
+        {/*
+          O rótulo diz QUAL controle é; o switch já diz o estado. "Módulo ligado"
+          ao lado de um switch verde é a mesma informação duas vezes, e a leitura
+          custa mais que o switch.
+        */}
         <label htmlFor={`switch-${toolNome}`} className="cursor-pointer text-sm font-medium">
-          {ligado ? 'Módulo ligado' : 'Módulo desligado'}
+          {rotulo}
         </label>
         <Switch
           id={`switch-${toolNome}`}
@@ -80,7 +85,13 @@ export function SwitchModulo({
           aria-label={`${ligado ? 'Desligar' : 'Ligar'} ${rotulo}`}
         />
       </div>
-      {ligado && aviso ? <p className="text-xs text-muted-foreground">{aviso}</p> : null}
+      {/*
+        INVERTIDO: o aviso aparece com o módulo DESLIGADO, não ligado.
+        Ligado, ele era uma hipótese ("se você desligar...") ocupando espaço
+        permanente. Desligado, é o estado em que a pessoa está agora — e aí a
+        consequência não é dedutível de um switch cinza.
+      */}
+      {!ligado && aviso ? <p className="text-xs text-muted-foreground">{aviso}</p> : null}
     </div>
   );
 }
@@ -131,10 +142,15 @@ export function ListaModulos({ modulos }: { modulos: ModuloItem[] }) {
                 >
                   {m.rotulo}
                 </label>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {m.resumo}
-                  {m.temConfigCliente ? ' Ajuste os detalhes abaixo.' : ''}
-                </p>
+                {/*
+                  O resumo só aparece no módulo DESLIGADO. Quem contratou e está
+                  com o módulo no ar já sabe o que ele faz; repetir a descrição
+                  em toda visita é o texto que o cliente pula. Desligado, o
+                  resumo é o que responde "o que eu ganho ligando isto?".
+                */}
+                {!ligado ? (
+                  <p className="mt-0.5 text-xs text-muted-foreground">{m.resumo}</p>
+                ) : null}
               </div>
 
               <div className="flex items-center gap-3">

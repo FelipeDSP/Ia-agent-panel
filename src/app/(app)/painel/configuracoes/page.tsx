@@ -74,17 +74,11 @@ export default async function PaginaConfiguracoes() {
     <div className="flex flex-col gap-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Comportamento do agente e mensagens de sistema.
-        </p>
       </header>
 
       <Card>
         <CardHeader>
           <CardTitle>Agente e mensagens</CardTitle>
-          <CardDescription>
-            Modelo e temperatura ficam com a agência e não aparecem aqui.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <FormularioConfig
@@ -103,9 +97,7 @@ export default async function PaginaConfiguracoes() {
         <Card>
           <CardHeader>
             <CardTitle>Meus módulos</CardTitle>
-            <CardDescription>
-              O que está incluído no seu plano. Para contratar um módulo novo, fale com a agência.
-            </CardDescription>
+            <CardDescription>Para contratar outro, fale com a agência.</CardDescription>
           </CardHeader>
           <CardContent>
             <ListaModulos modulos={modulos} />
@@ -120,9 +112,6 @@ export default async function PaginaConfiguracoes() {
         <Card>
           <CardHeader>
             <CardTitle>Transferência para atendimento humano</CardTitle>
-            <CardDescription>
-              Defina quando o agente pode passar a conversa para uma pessoa e como você é avisado.
-            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             {/* O switch vive AQUI, e não na lista de "Meus módulos": este card já
@@ -134,10 +123,15 @@ export default async function PaginaConfiguracoes() {
               toolNome={TOOL_TRANSFERIR}
               rotulo="Transferir para humano"
               ativo={Boolean(toolTransferir?.ativo)}
+              /*
+               * O aviso agora aparece só com o módulo DESLIGADO, e por isso está
+               * no presente: descreve o estado em que a pessoa está, não uma
+               * hipótese. Ligado, o switch verde já diz tudo e o parágrafo era
+               * texto permanente sobre algo que não estava acontecendo.
+               */
               aviso={
-                'Desligar tira a saída de escape da conversa: quem pedir para falar com uma ' +
-                'pessoa continua conversando com o agente, e a conversa deixa de ser pausada ' +
-                'sozinha — você pausa manualmente em Conversas ou no Chatwoot.'
+                'Quem pedir para falar com uma pessoa continua conversando com o agente, e a ' +
+                'conversa não é pausada sozinha — você pausa em Conversas ou no Chatwoot.'
               }
             />
 
