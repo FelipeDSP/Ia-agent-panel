@@ -47,7 +47,8 @@
     "guarda": "node tests/lib/com-guarda.mjs",
     "teste:sonda-tokens": "node tests/sonda-tokens.mjs",
     "teste:componentes-token": "node --env-file=.env.local tests/migracao-componentes-token.mjs",
-    "teste:componentes-no": "node tests/estima-tokens-componentes.mjs"
+    "teste:componentes-no": "node tests/estima-tokens-componentes.mjs",
+    "teste:acl-secdef": "node --env-file=.env.local tests/migracao-acl-security-definer.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

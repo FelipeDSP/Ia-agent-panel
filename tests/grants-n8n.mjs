@@ -111,29 +111,75 @@ try {
   const semSr = fnsSr.filter((f) => !f.pode).map((f) => f.proname);
   checar('todas continuam executáveis por service_role', semSr.length === 0, semSr.join(', '));
 
-  // E o outro lado: quem NAO pode continuar podendo. Um `grant to public` num
-  // create descuidado abriria a API do n8n para qualquer sessao autenticada.
-  for (const role of ['anon', 'authenticated']) {
+  // ---------------------------------------------------------------------------
+  // PROPRIEDADE, E NAO LISTA: nenhuma SECURITY DEFINER ao alcance de `anon`
+  // ---------------------------------------------------------------------------
+  // O QUE ESTAVA AQUI ANTES, E POR QUE NAO PEGOU NADA. Havia uma varredura de
+  // `api_n8n_*` com allowlist. Ela falhou duas vezes, de formas independentes:
+  //
+  //  1. ESCOPO. O filtro era `proname like 'api\_n8n\_%'`. Em 18/08 foram
+  //     encontradas SETE funcoes SECURITY DEFINER abertas a `anon`, e QUATRO
+  //     delas nao casam com o prefixo — `pedido_aberto_da_conversa`,
+  //     `expirar_pedidos_vencidos`, `pedido_horas_para_expirar` e
+  //     `tenants_versionar_prompt`. Eram invisiveis para o teste.
+  //
+  //  2. A ALLOWLIST, e esta e a pior. As outras tres (`enviar_foto`,
+  //     `pode_transcrever`, `tem_pedido_pendente`) ESTAVAM na lista de
+  //     esperadas, com a justificativa "sao chamadas pelo painel com JWT de
+  //     tenant". A justificativa era FALSA: varredura em `src/` acha zero
+  //     referencias as tres; quem chama sao workflows do n8n. Ou seja, a
+  //     allowlist converteu um estado nao examinado em decisao documentada — que
+  //     e exatamente como allowlist apodrece.
+  //
+  //     E o custo foi real: `api_n8n_pode_transcrever` devolve `chatwoot_token`.
+  //     Em 18/08 o token do Emporio saiu por HTTPS, com a chave publicavel e sem
+  //     sessao, so passando o `tenant_id`. A migracao 43 fechou.
+  //
+  // Por isso a assercao agora e sobre PROPRIEDADE e varre `public` inteiro:
+  // funcao nova nasce coberta, com qualquer nome.
+  {
+    const { rows: expostas } = await c.query(
+      `select p.proname, pg_get_function_identity_arguments(p.oid) args
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.prokind = 'f'
+          and p.prosecdef
+          and coalesce(has_function_privilege('anon', p.oid, 'execute'), false)
+        order by p.proname`,
+    );
+    // SEM allowlist. `anon` e a chave que vai no bundle do navegador, e
+    // SECURITY DEFINER ignora RLS: a combinacao nao tem caso legitimo neste
+    // projeto. Se um dia tiver, o certo e discutir o caso, nao afrouxar a regra.
+    // (`has_function_privilege` para `anon` ja cobre grant a PUBLIC, que e por
+    // onde as sete estavam passando — nenhuma tinha `anon=` explicito sozinho.)
+    checar(
+      `nenhuma SECURITY DEFINER de public e executavel por anon (${expostas.length} encontradas)`,
+      expostas.length === 0,
+      expostas.map((f) => `${f.proname}(${f.args})`).join(' | '),
+    );
+  }
+
+  // `authenticated` TEM caso legitimo: RPC que o painel chama com a sessao do
+  // usuario. Aqui a lista e declarada e versionada — mas ela lista o que o
+  // PAINEL usa, verificavel por grep em `src/`, e nao "o que por acaso esta
+  // aberto". Uma quinta aparecer e falha.
+  {
+    const PAINEL = [
+      'billing_consumo_mensal',   // /admin/consumo
+      'billing_volume_mensal',    // /painel/consumo
+      'conversa_historico',       // /painel/conversas/[id]
+      'agendar_podcast',          // formulario publico do site
+    ];
     const { rows } = await c.query(
       `select p.proname
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-        where n.nspname = 'public' and p.proname like 'api\\_n8n\\_%'
-          and coalesce(has_function_privilege($1, p.oid, 'execute'), false)`,
-      [role],
+        where n.nspname = 'public' and p.prokind = 'f' and p.prosecdef
+          and coalesce(has_function_privilege('authenticated', p.oid, 'execute'), false)
+        order by p.proname`,
     );
-    // Tres delas sao chamadas pelo painel com JWT de tenant e por isso tem
-    // grant a authenticated de proposito. A assercao afirma a LISTA, para que
-    // uma quarta aparecer seja falha e nao silencio.
-    const esperadas = role === 'authenticated' || role === 'anon'
-      // `api_n8n_registrar_mensagem` saiu desta lista na migração 42: ela é
-      // SECURITY DEFINER e ESCREVE em `mensagens_log`, que está virando base de
-      // cobrança, e `anon` é a chave que vai no navegador. Deixar a entrada
-      // morta aqui faria uma reabertura futura passar despercebida.
-      ? ['api_n8n_enviar_foto', 'api_n8n_pode_transcrever', 'api_n8n_tem_pedido_pendente']
-      : [];
-    const inesperadas = rows.map((r) => r.proname).filter((n) => !esperadas.includes(n));
+    const inesperadas = rows.map((r) => r.proname).filter((n) => !PAINEL.includes(n));
     checar(
-      `nenhuma api_n8n_* nova ficou aberta para ${role}`,
+      'nenhuma SECURITY DEFINER nova ficou aberta para authenticated',
       inesperadas.length === 0,
       inesperadas.join(', '),
     );
