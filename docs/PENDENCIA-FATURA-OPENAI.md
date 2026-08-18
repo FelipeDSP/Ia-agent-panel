@@ -44,6 +44,89 @@ Consequências que já dá para antecipar, e que o desenho vai ter de resolver:
 - **Margem continua fora** — ver [`PENDENCIA-MARGEM.md`](PENDENCIA-MARGEM.md). O
   gatilho dela é o mesmo: custo mensal virar número que se sente.
 
+## Antes de cobrar: entender por que um tenant custa 4x outro
+
+**Rateio proporcional só é justo se a proporção refletir USO, não configuração
+acidental.** Esta seção existe porque a primeira medição já mostra que hoje ela
+reflete configuração.
+
+### O que foi medido (18/08/2026, `mensagens_log`)
+
+Os tokens moram na linha de `saida` do turno — a de `entrada` vem zerada, o que
+faz média ingênua por `direcao='entrada'` dar zero.
+
+| tenant | turnos | média entrada/turno | menor | maior |
+|---|---|---|---|---|
+| `emporio` | 21 | **10.495** | 5.546 | 23.386 |
+| `restaurante-teste` | 39 | **2.519** | 13 | 7.653 |
+
+### A causa não é a base de conhecimento
+
+A hipótese em aberto era que os ~80 chunks da Fortalize inflavam o contexto do
+Empório, e que limpar a base derrubaria a média. **A aritmética diz que não**, e
+diz por dois motivos independentes:
+
+**1. O tamanho do prompt do tenant explica quase tudo.**
+
+| tenant | `system_prompt` | ≈ tokens |
+|---|---|---|
+| `fortalize` | 15.446 chars | 4.967 |
+| `emporio` | 12.206 chars | 3.925 |
+| `restaurante-teste` | 205 chars | 66 |
+| `acqua-lavanderia` | 110 chars | 35 |
+
+O prompt entra em **cada chamada ao modelo**. Rodando a fórmula do
+`estima-tokens.js` com o wrapper de vendas (3.767 chars ≈ 1.212 tokens) e
+`S = 622`:
+
+```
+base 1 chamada, emporio      previsto 5.759   observado 5.546–6.253
+base 1 chamada, restaurante  previsto 1.900   observado (média mista) 2.519
+```
+
+E os 21 turnos do Empório são **bimodais** — agrupam em ~5,9 mil e ~11,9 mil,
+com dois casos em 18,5 mil e 23,4 mil. Isso é 1, 2 e 4 chamadas ao modelo, não
+tamanho de base: cada round-trip de ferramenta reenvia o prompt inteiro. Prompt
+grande × mais chamadas é o 4x inteiro.
+
+**2. O número não consegue enxergar a base, nem que ela estivesse inflando.**
+`CRESCIMENTO_POR_CHAMADA = 55` é tudo o que a fórmula soma por round-trip de
+ferramenta. O **tamanho do resultado da tool não entra na conta** — nem catálogo,
+nem chunk recuperado. Então os 80 chunks jamais apareceram neste número, e
+limpá-los não vai fazê-lo cair.
+
+**Cuidado com a leitura inversa:** o contexto REAL que a OpenAI viu pode muito
+bem ter sido inflado pelos chunks. A estimativa é que é cega para isso. Ou seja,
+a suspeita pode estar certa sobre a realidade e ainda assim errada sobre este
+número — e é este número que iria para a conta.
+
+### Previsão para a conversa de teste
+
+Escrita antes de rodar: **a média não cai para ~3 mil.** Deve ficar em ~6 mil nos
+turnos de uma chamada e ~12 mil nos de duas. Se cair para 3 mil, a causa é outra
+— prompt encurtado ou turnos que pararam de chamar ferramenta —, e não a limpeza
+da base.
+
+### O que isso implica para a cobrança
+
+A estimativa de hoje é **cega justamente para o que é uso** (resultado de
+ferramenta, chunk recuperado, tamanho do catálogo consultado) e **sensível
+justamente para o que é configuração** (o comprimento do prompt que a agência
+escreveu no painel). Cobrar por essa proporção faria o Empório pagar 4x por
+alguém ter escrito um prompt de 12 mil caracteres, e a Fortalize pagará mais
+ainda — o prompt dela tem 15,4 mil.
+
+Duas saídas, e a escolha é de negócio:
+
+- **aceitar** que prompt longo custa mais, porque de fato custa — a OpenAI cobra
+  por ele em toda chamada — e então dizer isso ao cliente na hora de escrever o
+  prompt, em vez de na fatura;
+- **normalizar** o rateio pelo que é atribuível ao cliente (mensagens, chamadas
+  de ferramenta) e tratar o prompt como custo da agência.
+
+Nenhuma das duas dá para decidir sem antes ter a resposta do parágrafo anterior
+para todos os tenants, não só dois.
+
 ## Gatilho para retomar
 
 Quando a cobrança por consumo for de fato faturar — ou seja, quando existir o
