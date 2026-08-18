@@ -24,7 +24,13 @@
  *
  *      node scripts/diff-n8n-instancia.mjs --dir ../exportados-18-08
  *
- *    Manual, uma vez por mês, e não faz segredo nenhum circular.
+ *    Manual, uma vez por mês, e não faz segredo nenhum circular. A UI exporta
+ *    UM workflow por vez, então exportar só o que interessa é o uso normal: o
+ *    que não estiver na pasta sai como **NÃO VERIFICADO**, e não como ausente.
+ *
+ *      ... --dir <pasta> --completo
+ *
+ *    afirma que a pasta tem os nove. Aí o que faltar volta a ser achado.
  *
  * 2. API pública do n8n (`N8N_URL` + `N8N_API_KEY` no `.env.local`):
  *
@@ -155,6 +161,7 @@ const EH_PROGRAMA =
 if (EH_PROGRAMA) {
   const soJson = process.argv.includes('--json');
   const iDir = process.argv.indexOf('--dir');
+  const completo = process.argv.includes('--completo');
   const DIR_EXPORT = iDir >= 0 ? process.argv[iDir + 1] : null;
   const URL_BASE = (process.env.N8N_URL || '').replace(/\/+$/, '');
   const CHAVE = process.env.N8N_API_KEY;
@@ -220,11 +227,27 @@ if (EH_PROGRAMA) {
     }
   }
 
-  const relatorio = { soNoRepo: [], soNaInstancia: [], divergentes: [], iguais: [] };
+  const relatorio = { soNoRepo: [], naoVerificados: [], soNaInstancia: [], divergentes: [], iguais: [] };
 
   for (const [nome, { arquivo, wf }] of doRepo) {
     const inst = daInstancia.get(nome);
-    if (!inst) { relatorio.soNoRepo.push({ nome, arquivo }); continue; }
+    if (!inst) {
+      /*
+       * AUSENTE NA FONTE NAO SIGNIFICA AUSENTE NA INSTANCIA.
+       *
+       * A UI do n8n exporta um workflow por vez, entao pasta com 1 de 9 e uso
+       * normal. Reportar os outros 8 como "so no repo" afirma que sumiram da
+       * instancia — o diagnostico OPOSTO do real, e alarme falso ensina a
+       * ignorar o relatorio.
+       *
+       * Quem sabe o conjunto inteiro e a API (lista tudo) ou uma afirmacao
+       * explicita de quem exportou (`--completo`). Sem uma das duas, o honesto
+       * e dizer NAO VERIFICADO.
+       */
+      if (DIR_EXPORT && !completo) relatorio.naoVerificados.push({ nome, arquivo });
+      else relatorio.soNoRepo.push({ nome, arquivo });
+      continue;
+    }
     // Pela API a lista nao traz `nodes`; do arquivo exportado ja veio tudo.
     const cheio = DIR_EXPORT ? inst : await api(`/workflows/${inst.id}`);
     const difs = compararWorkflow(wf, cheio);
@@ -248,12 +271,22 @@ if (EH_PROGRAMA) {
       }
       console.log('');
     }
-    if (relatorio.soNoRepo.length) console.log(`  só no repo: ${relatorio.soNoRepo.map((x) => x.nome).join(', ')}`);
+    const verificados = relatorio.divergentes.length + relatorio.iguais.length;
+    console.log(`  verificados: ${verificados} de ${doRepo.size}`);
+    if (relatorio.naoVerificados.length) {
+      console.log(`\n  NAO VERIFICADOS (${relatorio.naoVerificados.length}) — ausentes da pasta exportada.`);
+      console.log('  Isto NAO quer dizer que sumiram da instancia; quer dizer que nao foram');
+      console.log('  conferidos. Exporte-os tambem, ou rode com --completo se a pasta ja tem todos.');
+      for (const x of relatorio.naoVerificados) console.log(`     ${x.nome}  (${x.arquivo})`);
+    }
+    if (relatorio.soNoRepo.length) console.log(`\n  SO NO REPO — ausentes da instancia: ${relatorio.soNoRepo.map((x) => x.nome).join(', ')}`);
     if (relatorio.soNaInstancia.length) console.log(`  só na instância: ${relatorio.soNaInstancia.map((x) => x.nome).join(', ')}`);
     if (relatorio.iguais.length) console.log(`  sem divergência: ${relatorio.iguais.join(', ')}`);
     console.log('');
   }
 
+  // `naoVerificados` NAO entra: nao e achado, e ausencia de verificacao — e
+  // reprovar por isso faria o uso normal (exportar um por vez) sair vermelho.
   const total = relatorio.divergentes.length + relatorio.soNoRepo.length + relatorio.soNaInstancia.length;
   process.exitCode = total > 0 ? 1 : 0;
 }

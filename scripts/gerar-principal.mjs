@@ -34,6 +34,21 @@ const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 const ARQ = path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json');
 const w = JSON.parse(fs.readFileSync(ARQ, 'utf8'));
 
+/*
+ * O WORKFLOW PRECISA DE `name`, e este era o unico dos nove sem.
+ *
+ * Nenhum export da UI sai sem `name` — o arquivo daqui nasceu de outro caminho e
+ * o campo nunca entrou. O efeito so apareceu quando o diff instancia x repo foi
+ * escrito: ele pareia por nome, e o arquivo que MAIS importa era justamente o
+ * que nao casava. Pior, o resultado saia como "so no repo", que se le como
+ * "sumiu da instancia" quando na verdade era "nao consegui parear" — diagnostico
+ * oposto.
+ *
+ * Fica aqui, e nao so no arquivo, porque o gerador reescreve o JSON inteiro: sem
+ * esta linha o campo some na proxima regeracao e o problema volta calado.
+ */
+w.name = w.name || 'Agente Multi-Tenant (Supabase)';
+
 const no = (nome) => w.nodes.find((n) => n.name === nome);
 const CRED_PG = { postgres: { id: 'MehTUROZlPmHG8kW', name: 'Agent ia Supabase' } };
 // ID do sub-workflow "Tool - Enviar Foto do Produto (Multi-Tenant)", importado

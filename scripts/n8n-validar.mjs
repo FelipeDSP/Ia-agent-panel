@@ -302,6 +302,23 @@ for (const caminho of arquivos) {
     );
   }
 
+  /*
+   * WORKFLOW SEM `name` E EXPORT INCOMPLETO.
+   *
+   * Nenhum export da UI do n8n sai sem `name`. Um arquivo sem o campo veio por
+   * outro caminho, e o estrago nao aparece no import: aparece em quem PAREIA
+   * workflow por nome — o diff instancia x repo reportava o principal como "so
+   * no repo", que se le como "sumiu da instancia" quando era "nao consegui
+   * parear". Achado em 18/08, no unico dos nove arquivos sem o campo, e
+   * justamente o mais importante.
+   */
+  if (typeof wf.name !== 'string' || wf.name.trim() === '') {
+    problemas.push(
+      'sem `name` (ou vazio) — export da UI nunca sai assim, e quem pareia por nome '
+      + 'passa a reportar este workflow como ausente da instancia'
+    );
+  }
+
   if (problemas.length === 0) {
     console.log(`  OK — ${nodes.length} nos, nenhum problema conhecido`);
   } else {

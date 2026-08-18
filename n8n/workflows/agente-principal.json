@@ -1,4 +1,5 @@
 {
+  "name": "Agente Multi-Tenant (Supabase)",
   "nodes": [
     {
       "parameters": {
