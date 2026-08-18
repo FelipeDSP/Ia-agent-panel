@@ -53,8 +53,9 @@ documentação e material de referência.
 - [`PENDENCIA-FATURA-OPENAI.md`](PENDENCIA-FATURA-OPENAI.md) — **a fazer, com gatilho.**
   A parte NAO-tecnica da cobranca por consumo: como a fatura da OpenAI entra no sistema
   todo mes (quem pega, quando, e o que conta como consumo de cliente). Inclui a medicao
-  de por que um tenant custa 4x outro (e o system_prompt, nao a KB) e a REGRA DE RATEIO
-  ja decidida: prompt, wrapper e schema de tool sao custo da agencia.
+  de por que um tenant custa 4x outro (e o system_prompt, nao a KB) e a discussao EM
+  ABERTO sobre cobrar o prompt do cliente — adiada ate medir 3 a 6 clientes. A gravacao
+  dos componentes nao espera por ela: decomposicao nao e retroativa.
 - [`PENDENCIA-MARGEM.md`](PENDENCIA-MARGEM.md) — **decidido não fazer, com gatilho.**
   Margem por cliente em `/admin/consumo`: por que não agora (não há valor de plano no
   schema, provedor de pagamento em aberto, custo de centavos) e o que a retoma.

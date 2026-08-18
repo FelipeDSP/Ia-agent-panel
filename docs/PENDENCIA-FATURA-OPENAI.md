@@ -117,66 +117,73 @@ alguém ter escrito um prompt de 12 mil caracteres, e a Fortalize pagará mais
 ainda — o prompt dela tem 15,4 mil. A decisão sobre isso está na seção
 seguinte.
 
-## DECIDIDO em 18/08/2026: normalizar, prompt é custo da agência
+## EM ABERTO: o prompt entra na conta do cliente?
 
-Havia duas saídas. **Escolhida a segunda: o rateio é sobre o que é atribuível ao
-cliente, e wrapper + schema de tool + system prompt são custo da agência.**
+> **Histórico honesto.** Em 18/08 isto chegou a ser registrado como decidido
+> ("prompt é custo da agência"). **Reaberto no mesmo dia**, antes de qualquer
+> linha de código, porque a decisão estava sendo tomada sem o dado que a torna
+> decidível. Fica escrito como discussão em aberto, com os dois lados, para não
+> se repetir o padrão de marcar como fechado o que ainda não fechou.
 
-### Por quê
+**Princípio em vigor enquanto se mede: "cliente usa, cliente paga."** O modelo de
+plano será decidido com 3 a 6 clientes medidos no primeiro mês — não por
+argumento.
 
-**O cliente não escolheu o prompt — a agência escreveu.** Cobrar por ele
-significa que a conta dele muda quando a agência refatora, sem ele ter feito
-nada. Uma fatura que se mexe por trabalho interno de quem emite a fatura é
-indefensável na primeira vez que for perguntada, e ela vai ser perguntada
-exatamente quando subir.
+### A favor de cobrar o prompt do cliente
 
-**E a primeira saída tem incentivo perverso:** com o prompt dentro da base de
-cobrança, encurtar prompt vira perda de receita. Ou seja, a régua pagaria a
-agência para não fazer a otimização que baratearia o produto — e a mesma pessoa
-controla os dois lados. A segunda saída inverte o sinal: prompt longo passa a
-custar a quem tem a caneta, que é o único arranjo em que a otimização acontece.
+O prompt foi escrito **a pedido dele** e descreve o negócio dele: cardápio, tom,
+política de atendimento. É serviço prestado a esse cliente, e o custo que ele
+gera na OpenAI é real e recorrente — a cada chamada.
 
-Isto não é preciosismo de justiça. É a diferença entre uma régua imprecisa e uma
-régua **torta na direção errada**: a estimativa de hoje é cega para o que é uso
-(resultado de ferramenta, chunk recuperado, catálogo consultado) e sensível para
-o que é configuração (comprimento do prompt). Imprecisão se corrige com
-calibração; direção errada não.
+### Contra
 
-### A regra
+**O tamanho mede quão eficiente foi a escrita, não o que ele pediu.** Reescrever
+12 mil caracteres em 6 mil entrega o mesmo atendimento pela metade da conta: o
+cliente pagaria pela verbosidade de quem redigiu, sem ter pedido nem uma coisa
+nem outra, e a conta mudaria numa refatoração em que ele não participou.
 
-| Atribuível ao CLIENTE | Custo da AGÊNCIA |
-|---|---|
-| mensagens (o que o cliente dele escreveu e o que o agente respondeu) | wrapper do perfil (3.767 chars ≈ 1.212 tok) |
-| chamadas de ferramenta, e o conteúdo que elas devolvem (catálogo, chunk da KB dele) | schema das tools (`S`: 622 no vendas, 266 no básico) |
-| embedding de ingestão do que ele subiu | `system_prompt` do tenant |
+E **cria incentivo contra otimizar**: com o prompt dentro da base de cobrança,
+encurtá-lo vira perda de receita — e quem tem a caneta é quem recebe.
 
-**Uma peça não estava na lista e precisa de destino: a janela de memória**
-(`historico_chars`, ~970 tokens por mensagem e crescendo com a conversa). É a
-conversa do próprio cliente reenviada a cada chamada, então a leitura natural é
-**atribuível a ele** — e vale registrar que ela é o maior termo de crescimento da
-conta, maior que o prompt em conversa longa. Se a intenção for outra, é aqui que
-se escreve.
+### Saída intermediária
 
-### O que isso exige de quem for implementar
+Cobrar até um **tamanho de referência** (por exemplo 4 mil caracteres) e tratar o
+excedente como custo da agência. Preserva o "serviço prestado a ele" e tira o
+prêmio pela verbosidade: o teto vira o alvo de quem escreve. O número de
+referência é arbitrário até haver medição — é justamente o que os 3 a 6 clientes
+vão dizer.
 
-**A decomposição precisa ser GRAVADA, e hoje não é.** `mensagens_log` guarda só
-`tokens_entrada`, `tokens_saida` e `modelo` — o total, já somado. O
-`estima-tokens.js` calcula os componentes internamente (wrapper, prompt,
-mensagens, `S`, memória) e joga fora todos menos a soma. Sem os componentes, a
-regra acima **não é aplicável retroativamente**: não dá para separar depois o que
-nunca foi separado na gravação.
+### Decisão
 
-Consequência prática: se a cobrança por consumo for acontecer, a primeira coisa a
-fazer não é a tela de lançamento da fatura — é o log passar a gravar a
-decomposição. É barato (os números já existem no nó, só não saem dele) e é a
-única parte que **perde valor a cada dia que não é feita**, porque cada turno que
-passa é um turno que nunca poderá ser rateado por esta regra.
+**Adiada** até haver medição de 3 a 6 clientes. Hoje há dois com prompt de
+verdade (`emporio` 12.206 chars, `fortalize` 15.446) e o resto é seed — decidir
+com n = 2, sendo os dois do extremo alto, é decidir pelo caso extremo.
 
-### O que continua em aberto
+### O que NÃO está em aberto
 
-A decisão acima é sobre a REGRA. Ela não depende da fatura ser lançável, e por
-isso pôde ser tomada agora. Continua aberto tudo da seção anterior: quem pega a
-fatura, quando, e o que conta como consumo de cliente.
+- **Mensagens, janela de memória e round-trips de ferramenta são do cliente.**
+  A memória é a conversa dele reenviada; conversa longa é uso genuíno. (Se um dia
+  a intenção for outra, é aqui que se escreve.)
+- **Wrapper e schema das tools** nunca foram contestados como custo de
+  plataforma, mas herdam o mesmo gatilho: revisar com os mesmos dados.
+
+## A gravação é só gravação
+
+**Nada disso bloqueia guardar os componentes, e é exatamente por isso que a
+gravação vem primeiro.** O log guarda os componentes **separados e sem regra
+nenhuma aplicada**: nada de coluna "cliente" e "agência", nada de percentual,
+nada de teto de referência. A regra entra na **query**, quando houver decisão —
+e é essa separação que permite decidir depois sem regravar nada.
+
+O inverso não existe: **decomposição não é retroativa.** `mensagens_log` guarda
+hoje só o total já somado, e o `estima-tokens.js` calcula os componentes
+internamente e joga fora todos menos a soma. Cada turno que passa é um turno que
+nunca poderá ser olhado por componente — e a decisão de plano depende de olhar
+por componente, porque um total que mistura uso e configuração leva à decisão
+errada.
+
+Com três clientes entrando, a janela de perda é agora. É por isso que esta é a
+única parte desta pendência que não espera.
 
 ## Gatilho para retomar
 
