@@ -17,7 +17,7 @@
  * Uso: npm run teste:diff-n8n
  */
 
-import { achatar, compararWorkflow, normalizarNo, CAMPOS_NO_VOLATEIS }
+import { achatar, compararWorkflow, mesmaPasta, normalizarNo, CAMPOS_NO_VOLATEIS }
   from '../scripts/diff-n8n-instancia.mjs';
 
 let ok = 0;
@@ -112,6 +112,18 @@ chk('achatar não perde chave aninhada',
   Object.keys(achatar({ a: { b: { c: 1 } } })).includes('a.b.c'));
 chk('normalizarNo tira o volátil de topo',
   !Object.keys(normalizarNo(noBase())).some((k) => k.startsWith('position')));
+
+// -------------------------------------------------------------------------
+console.log('\n-- 5. A guarda contra comparar a pasta com ela mesma --\n');
+
+// Sem isto, apontar `--dir n8n/workflows` compararia os arquivos com eles
+// proprios, nao acharia divergencia e imprimiria "sem divergencia" — o falso
+// verde mais facil de produzir aqui, e com cara de aprovacao.
+chk('mesma pasta e detectada, com separador diferente',
+  mesmaPasta('n8n/workflows', 'n8n\\workflows'));
+chk('pasta diferente NAO e barrada', !mesmaPasta('n8n/workflows', '../exportados'));
+chk('caminho relativo x absoluto resolve para o mesmo',
+  mesmaPasta('./n8n/workflows', process.cwd() + '/n8n/workflows'));
 
 console.log('\n' + '-'.repeat(58));
 console.log(`  ${ok} passaram, ${falhas.length} falharam`);

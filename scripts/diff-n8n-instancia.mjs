@@ -18,17 +18,28 @@
  * de deriva do projeto, depois da Edge Function que ficou 10 dias fora do
  * commit e do nome de migração fora do ledger.
  *
- * COMO AUTENTICA. Pela API pública do n8n, com chave criada em
- * Settings → n8n API. NÃO usa a sessão do navegador de propósito: sessão expira
- * (a desta instância expirou no meio da investigação), exige humano logado e
- * não roda em CI. No `.env.local`:
+ * DE ONDE VEM O LADO "INSTÂNCIA" — duas fontes, e a primeira é a recomendada.
  *
- *   N8N_URL=https://n8n.chatyou.chat
- *   N8N_API_KEY=<a chave>
+ * 1. ARQUIVOS EXPORTADOS pela UI (padrão, e o caminho preferido):
  *
- * Uso:
- *   node --env-file=.env.local scripts/diff-n8n-instancia.mjs
- *   node --env-file=.env.local scripts/diff-n8n-instancia.mjs --json
+ *      node scripts/diff-n8n-instancia.mjs --dir ../exportados-18-08
+ *
+ *    Manual, uma vez por mês, e não faz segredo nenhum circular.
+ *
+ * 2. API pública do n8n (`N8N_URL` + `N8N_API_KEY` no `.env.local`):
+ *
+ *    ATENÇÃO AO QUE ESSA CHAVE VALE. Quem a tem cria workflow, e workflow lê
+ *    TODAS as credenciais da instância: Postgres, Redis, OpenAI e os tokens de
+ *    Chatwoot de todos os clientes. É acesso MAIOR que o do Supabase. Ela não
+ *    deve ser colada em conversa nem trafegar por chat.
+ *
+ *    Se um dia valer automatizar, o caminho é a chave MORAR NO SERVIDOR — um
+ *    workflow agendado do próprio n8n, ou job no Coolify com env var. Nunca
+ *    passando por uma pessoa.
+ *
+ * (A sessão do navegador não é opção: expira — a desta instância expirou no
+ * meio da investigação que originou este script —, exige humano logado e não
+ * roda sozinha.)
  *
  * Sai com código 1 se houver divergência — serve de teste.
  */
@@ -122,6 +133,17 @@ export function compararWorkflow(wfRepo, wfInstancia) {
   return difs;
 }
 
+/**
+ * A pasta de exportados é a MESMA do repositório?
+ *
+ * Guarda contra o falso verde mais fácil de produzir aqui: apontar `--dir` para
+ * `n8n/workflows` compara os arquivos com eles próprios, não acha divergência
+ * nenhuma e imprime "sem divergência" — tautologia com cara de aprovação.
+ */
+export function mesmaPasta(a, b) {
+  return path.resolve(a) === path.resolve(b);
+}
+
 // ---------------------------------------------------------------------------
 // Daqui para baixo só roda quando este arquivo É o programa. As funções acima
 // são importadas por `tests/diff-n8n.mjs`, que prova a regra de volátil SEM
@@ -132,15 +154,32 @@ const EH_PROGRAMA =
 
 if (EH_PROGRAMA) {
   const soJson = process.argv.includes('--json');
+  const iDir = process.argv.indexOf('--dir');
+  const DIR_EXPORT = iDir >= 0 ? process.argv[iDir + 1] : null;
   const URL_BASE = (process.env.N8N_URL || '').replace(/\/+$/, '');
   const CHAVE = process.env.N8N_API_KEY;
 
-  if (!URL_BASE || !CHAVE) {
+  if (DIR_EXPORT && !fs.existsSync(DIR_EXPORT)) {
+    console.error(`\nPasta nao encontrada: ${DIR_EXPORT}\n`);
+    process.exit(2);
+  }
+  if (DIR_EXPORT && mesmaPasta(DIR_EXPORT, DIR)) {
     console.error(
-      '\nFaltam N8N_URL e/ou N8N_API_KEY no .env.local.\n' +
-      'Crie a chave em Settings → n8n API e acrescente:\n' +
-      '  N8N_URL=https://n8n.chatyou.chat\n' +
-      '  N8N_API_KEY=<a chave>\n',
+      `\n--dir aponta para o PROPRIO diretorio do repositorio (${DIR}).\n` +
+      'Isso compararia os arquivos com eles mesmos e diria "sem divergencia"\n' +
+      'sem ter verificado nada. Exporte da UI para outra pasta.\n',
+    );
+    process.exit(2);
+  }
+
+  if (!DIR_EXPORT && (!URL_BASE || !CHAVE)) {
+    console.error(
+      '\nInforme a fonte do lado "instancia". Duas opcoes:\n\n' +
+      '  1. arquivos exportados pela UI (recomendado):\n' +
+      '       node scripts/diff-n8n-instancia.mjs --dir <pasta>\n\n' +
+      '  2. API publica (N8N_URL + N8N_API_KEY no .env.local) — lembrando que\n' +
+      '     essa chave le TODAS as credenciais da instancia, tokens de Chatwoot\n' +
+      '     de todos os clientes inclusive.\n',
     );
     process.exit(2);
   }
@@ -160,11 +199,25 @@ if (EH_PROGRAMA) {
   }
 
   const daInstancia = new Map();
-  let pagina = await api('/workflows?limit=250');
-  for (const w of pagina.data || []) daInstancia.set(w.name, w);
-  while (pagina.nextCursor) {
-    pagina = await api(`/workflows?limit=250&cursor=${encodeURIComponent(pagina.nextCursor)}`);
+  if (DIR_EXPORT) {
+    for (const f of fs.readdirSync(DIR_EXPORT).filter((x) => x.endsWith('.json'))) {
+      const j = JSON.parse(fs.readFileSync(path.join(DIR_EXPORT, f), 'utf8'));
+      // Copiar UM NO no n8n tambem gera .json. Sem `nodes` nao e workflow, e
+      // avisar e melhor que ignorar calado: arquivo errado na pasta viraria
+      // "workflow sumiu da instancia", que e o diagnostico oposto.
+      if (!Array.isArray(j.nodes)) {
+        console.error(`  aviso: ${f} nao parece workflow exportado (sem "nodes") — ignorado`);
+        continue;
+      }
+      daInstancia.set(j.name || f.replace(/\.json$/, ''), j);
+    }
+  } else {
+    let pagina = await api('/workflows?limit=250');
     for (const w of pagina.data || []) daInstancia.set(w.name, w);
+    while (pagina.nextCursor) {
+      pagina = await api(`/workflows?limit=250&cursor=${encodeURIComponent(pagina.nextCursor)}`);
+      for (const w of pagina.data || []) daInstancia.set(w.name, w);
+    }
   }
 
   const relatorio = { soNoRepo: [], soNaInstancia: [], divergentes: [], iguais: [] };
@@ -172,7 +225,8 @@ if (EH_PROGRAMA) {
   for (const [nome, { arquivo, wf }] of doRepo) {
     const inst = daInstancia.get(nome);
     if (!inst) { relatorio.soNoRepo.push({ nome, arquivo }); continue; }
-    const cheio = await api(`/workflows/${inst.id}`); // a lista não traz `nodes`
+    // Pela API a lista nao traz `nodes`; do arquivo exportado ja veio tudo.
+    const cheio = DIR_EXPORT ? inst : await api(`/workflows/${inst.id}`);
     const difs = compararWorkflow(wf, cheio);
     if (difs.length) relatorio.divergentes.push({ nome, arquivo, difs });
     else relatorio.iguais.push(nome);
@@ -184,7 +238,8 @@ if (EH_PROGRAMA) {
   if (soJson) {
     console.log(JSON.stringify(relatorio, null, 2));
   } else {
-    console.log(`\n== Instância x repositório — ${doRepo.size} arquivo(s) no repo, ${daInstancia.size} workflow(s) na instância ==\n`);
+    console.log(`\n== Instancia x repositorio — ${doRepo.size} no repo, ${daInstancia.size} da instancia ` +
+      `(fonte: ${DIR_EXPORT ? 'exportados de ' + DIR_EXPORT : 'API'}) ==\n`);
     for (const { nome, arquivo, difs } of relatorio.divergentes) {
       console.log(`  ${nome}  (${arquivo}) — ${difs.length} divergência(s)`);
       for (const d of difs) {

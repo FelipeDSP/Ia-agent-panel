@@ -82,14 +82,25 @@ documentação e material de referência.
 
 ## n8n — [`n8n/`](n8n/)
 
-> **Deriva instância↔repositório.** `npm run n8n:diff` compara os workflows que
-> RODAM na instância com os arquivos versionados, ignorando o volátil (posição,
-> id de nó, webhookId). Existe porque em 18/08 o nó `OpenAI Chat Model` foi
-> flagrado com `responsesApiEnabled: true` na instância e sem o campo no
-> arquivo — descoberto por acaso, num print. `n8n:sincronia` compara o arquivo
-> com o GERADOR e nunca olhou a instância. Precisa de `N8N_API_KEY` no
-> `.env.local`; a lógica de comparação tem prova offline em
-> `npm run teste:diff-n8n`.
+> **Deriva instância↔repositório.** Exporte os workflows pela UI para uma pasta e
+> rode `npm run n8n:diff -- --dir <pasta>`: compara o que RODA na instância com
+> os arquivos versionados, ignorando o volátil (posição, id de nó, webhookId) e
+> comparando credencial pelo NOME, não pelo id. Existe porque em 18/08 o nó
+> `OpenAI Chat Model` foi flagrado com `responsesApiEnabled: true` na instância e
+> sem o campo no arquivo — descoberto por acaso, num print; `n8n:sincronia`
+> compara o arquivo com o GERADOR e nunca olhou a instância.
+>
+> **Modo arquivo em vez de API, de propósito.** A chave da API do n8n cria
+> workflow, e workflow lê TODAS as credenciais da instância — Postgres, Redis,
+> OpenAI e os tokens de Chatwoot de todos os clientes. É acesso maior que o do
+> Supabase, e não deve trafegar por conversa. Se um dia valer automatizar, a
+> chave mora no SERVIDOR (workflow agendado do próprio n8n, ou job no Coolify com
+> env var), nunca numa pessoa.
+>
+> A lógica de comparação tem prova offline em `npm run teste:diff-n8n` (18
+> asserções, sabotagem inclusa), e o script recusa `--dir` apontando para o
+> próprio `n8n/workflows` — compararia os arquivos com eles mesmos e diria "sem
+> divergência" sem ter verificado nada.
 - [`n8n-cutover.md`](n8n/n8n-cutover.md) — cutover do agente para este banco.
 - [`n8n-limpar-memoria.md`](n8n/n8n-limpar-memoria.md) — limpeza da memória do agente.
 
