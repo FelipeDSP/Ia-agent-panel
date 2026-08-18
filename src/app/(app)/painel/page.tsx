@@ -76,8 +76,9 @@ export default async function PaginaPainel() {
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
+          {/* O `slug` saiu: é identificador interno, e o cliente não tem o que
+              fazer com ele. */}
           <h1 className="text-2xl font-semibold tracking-tight">{tenant.nome}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{tenant.slug}</p>
         </div>
         <div className="flex gap-2">
           <Badge variant={tenant.agente_ativo ? 'success' : 'warning'}>
@@ -109,28 +110,13 @@ export default async function PaginaPainel() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Configuração</CardTitle>
-          <CardDescription>Modelo e temperatura são definidos pela agência.</CardDescription>
-        </CardHeader>
-        {/*
-          Rotulo em cima, valor embaixo. Com justify-between numa coluna larga o
-          par fica nas duas pontas e a relacao entre eles se perde.
-        */}
-        <CardContent>
-          <dl className="grid gap-6 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-muted-foreground">Modelo</dt>
-              <dd className="mt-1 font-medium">{tenant.modelo}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Debounce</dt>
-              <dd className="mt-1 font-medium">{tenant.debounce_segundos}s</dd>
-            </div>
-          </dl>
-        </CardContent>
-      </Card>
+      {/*
+        O card "Configuração" (Modelo + Debounce) saiu daqui.
+        `modelo` é decisão da agência: o cliente não pode mudar e o nome
+        (`gpt-4.1-mini`) não significa nada para ele. `debounce` ele PODE mudar,
+        e o lugar disso é Configurações — em duplicata e só de leitura, servia
+        para confundir sobre onde se mexe.
+      */}
     </div>
   );
 }

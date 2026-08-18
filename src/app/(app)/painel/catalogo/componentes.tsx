@@ -303,9 +303,26 @@ export function GestaoCatalogo({
                 <Pencil className="h-4 w-4" /> Editando “{editando.nome}”
               </>
             ) : (
-              <>
-                <Plus className="h-4 w-4" /> Novo produto
-              </>
+              /*
+               * O "+" era ícone decorativo dentro do título, e ícone de mais ao
+               * lado de "Novo produto" é o lugar onde a mão vai — o cliente
+               * clicava e não acontecia nada.
+               *
+               * Virou botão de verdade, e faz a única coisa útil que cabe aqui:
+               * leva o foco para o campo Nome. Com catálogo longo, o cartão do
+               * formulário fica no topo e o gesto é justamente esse — clicar no
+               * "+" e começar a digitar.
+               *
+               * (Só existe fora do modo de edição: editando, o título vira
+               * "Editando X" e a saída é o Cancelar do formulário.)
+               */
+              <button
+                type="button"
+                onClick={() => document.getElementById('nome')?.focus()}
+                className="flex items-center gap-2 rounded-md text-left transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <Plus className="h-4 w-4" aria-hidden /> Novo produto
+              </button>
             )}
           </CardTitle>
           <CardDescription>

@@ -148,7 +148,7 @@ function DocumentoItem({
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{doc.nome}</p>
           <p className="text-xs text-muted-foreground">
-            {doc.chunks} chunk(s) · {dataCurta(doc.criadoEm)}
+            {doc.chunks} trecho(s) · {dataCurta(doc.criadoEm)}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -183,9 +183,11 @@ function DocumentoItem({
             <Alert variant="destructive">{erro}</Alert>
           ) : chunks && chunks.length > 0 ? (
             <>
+              {/* "Pode haver pequena sobreposição entre trechos" saiu: descreve
+                  como o corte é feito, e não muda nada que o cliente faça. O que
+                  fica responde o que ele está olhando. */}
               <p className="mb-3 text-xs text-muted-foreground">
-                {chunks.length} trecho(s) indexado(s) — é o texto que o agente consulta. Pode haver
-                pequena sobreposição entre trechos.
+                {chunks.length} trecho(s) — é o texto que o agente consulta.
               </p>
               <div className="flex max-h-96 flex-col divide-y divide-border overflow-y-auto rounded-xl bg-muted/40">
                 {chunks.map((c, i) => (
@@ -363,7 +365,10 @@ export function GestaoConhecimento({
           <CardHeader>
             <CardTitle>Processamentos</CardTitle>
             <CardDescription>
-              {temAtivo ? 'Atualizando automaticamente…' : 'Envios que precisam de atenção.'}
+              {/* Com job parado, o título "Processamentos" e o badge de erro já
+                  dizem tudo; a frase só repetia. Ligado, avisar que a tela se
+                  atualiza sozinha evita que a pessoa fique recarregando. */}
+              {temAtivo ? 'Atualizando automaticamente…' : null}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -425,7 +430,7 @@ export function GestaoConhecimento({
                         />
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {job.chunks_ok}/{job.chunks_total || '…'} chunks
+                        {job.chunks_ok}/{job.chunks_total || '…'} trechos
                       </p>
                     </div>
                   ) : null}
@@ -447,7 +452,7 @@ export function GestaoConhecimento({
           <CardDescription>
             {documentosIniciais.length === 0
               ? 'Nada ainda. Suba um arquivo ou cole um texto acima.'
-              : `${documentosIniciais.length} documento(s), indexados para o agente.`}
+              : `${documentosIniciais.length} documento(s).`}
           </CardDescription>
         </CardHeader>
         {documentosIniciais.length > 0 ? (
