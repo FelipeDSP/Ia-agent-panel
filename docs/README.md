@@ -60,6 +60,10 @@ documentação e material de referência.
   conversa" cobre rascunho tambem: quem abandona o carrinho e volta amanha reencontra o
   de ontem. Inclui a armadilha medida — `atualizado_em` NAO se move ao adicionar item,
   entao "contar da ultima alteracao" viraria "da criacao" em silencio.
+- [`PENDENCIA-PERGUNTA-SEM-RESPOSTA.md`](PENDENCIA-PERGUNTA-SEM-RESPOSTA.md) — **a fazer,
+  com gatilho.** "O que perguntaram e o agente nao soube responder?" e a unica metrica que
+  diria o que FAZER (qual documento falta na base), e nada hoje a responde. O sinal nasce
+  no n8n; o painel so le. Precisa de coluna de similaridade em mensagens_log.
 - [`PENDENCIA-PISO-SIMILARIDADE.md`](PENDENCIA-PISO-SIMILARIDADE.md) — **a fazer, com
   gatilho.** `match_kb_documentos` nao tem piso: sempre devolve o menos distante, nunca
   "nao tenho isso". Medido no corpus real, conteudo IRRELEVANTE chega a 0,625 e chunk do

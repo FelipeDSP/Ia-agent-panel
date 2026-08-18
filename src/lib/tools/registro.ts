@@ -247,7 +247,11 @@ export const ROTAS_SEMPRE_VISIVEIS = [
   { href: '/painel', rotulo: 'Visão geral', icone: 'LayoutDashboard' },
   { href: '/painel/conhecimento', rotulo: 'Base de conhecimento', icone: 'BookOpen' },
   { href: '/painel/conversas', rotulo: 'Conversas', icone: 'MessagesSquare' },
-  { href: '/painel/consumo', rotulo: 'Uso', icone: 'BarChart3' },
+  // Era `/painel/consumo`, rotulada "Uso". Virou Relatórios quando a tela
+  // deixou de contar mensagens e passou a responder o que o dono pergunta:
+  // a que horas o procuram, quantas conversas o agente levou sozinho, quanto
+  // virou pedido. Número de mensagens deixa de ser o protagonista.
+  { href: '/painel/relatorios', rotulo: 'Relatórios', icone: 'BarChart3' },
   { href: '/painel/configuracoes', rotulo: 'Configurações', icone: 'Settings' },
 ] as const;
 

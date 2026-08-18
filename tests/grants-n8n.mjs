@@ -166,7 +166,7 @@ try {
   {
     const PAINEL = [
       'billing_consumo_mensal',   // /admin/consumo
-      'billing_volume_mensal',    // /painel/consumo
+      'billing_volume_mensal',    // /painel/relatorios (era /painel/consumo)
       'conversa_historico',       // /painel/conversas/[id]
       'agendar_podcast',          // formulario publico do site
     ];
