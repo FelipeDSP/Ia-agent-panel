@@ -51,6 +51,45 @@
 > impede vazamento novo e não desfaz o antigo — a rota esteve pública desde a
 > criação de cada função.
 
+## Escopo — o que varredura de código alcança, e o que não
+
+> Seção acrescentada em 18/08/2026, e ela é a lição do adendo acima. Vale para
+> **toda auditoria deste tipo**, não só para esta.
+
+Varredura estática de código da aplicação cobre o que está escrito em `src/`,
+`supabase/functions/` e nos arquivos de migração: consulta montada por
+concatenação, HTML injetado, cookie sem `SameSite`, header ausente, segredo
+commitado.
+
+**Não cobre o ESTADO do banco**, e é por isso que esta auditoria disse "nenhuma
+vulnerabilidade explorável" enquanto seis funções `SECURITY DEFINER` estavam
+executáveis por `anon`. O grant não está no código: está em `pg_proc.proacl`,
+que é resultado do que foi aplicado, e diverge do que os arquivos dizem sempre
+que alguém rodou SQL avulso — ou sempre que uma migração recriou função e não
+relistou os grants, que aqui já aconteceu cinco vezes.
+
+Fora do alcance de leitura de código, e portanto a conferir **contra o banco**:
+
+- **ACL de função** — quem pode executar o quê, `PUBLIC` incluso;
+- **RLS** — tabela com RLS ligada mas sem policy, ou policy que não filtra;
+- **volatilidade e `SECURITY DEFINER`** — função que escreve marcada `STABLE`,
+  ou definer onde invoker bastaria;
+- **grants de tabela e de schema**, e o que o PostgREST expõe por consequência.
+
+**Duas verificações que valem mais que ler tudo de novo:**
+
+1. **Consultar o catálogo**, não o repositório: `pg_proc`, `pg_policies`,
+   `information_schema.role_table_grants`.
+2. **Chamar como o atacante chamaria** — `POST /rest/v1/rpc/<fn>` com a chave
+   publicável, sem sessão. Foi o que provou o vazamento em 18/08, depois de a
+   leitura de ACL já ter levantado a suspeita: o ACL diz o que o catálogo
+   contém, e a chamada diz o que acontece.
+
+Documento de segurança que afirma "nada explorável" sem ter feito (1) e (2)
+está afirmando mais do que verificou. Se a próxima auditoria não incluir o
+banco, ela deve dizer isso no resumo, em vez de deixar a conclusão parecer
+completa.
+
 ## Resumo
 
 | Vetor | Achados | Severidade máxima |

@@ -88,6 +88,11 @@ documentação e material de referência.
 Relatórios de auditoria pontuais (confiabilidade, dados, débito técnico, dependências,
 isolamento, multi-tenancy, performance, segurança, UI). Retratos de um momento — leia com
 a data em mente.
+
+**Antes de escrever uma auditoria de segurança nova, leia a seção "Escopo" de
+[`AUDIT-SEC-ESTATICA.md`](auditorias/AUDIT-SEC-ESTATICA.md):** varredura de código não
+alcança o estado do banco (ACL de função, RLS, grants), e foi por isso que aquele
+documento afirmou "nada explorável" com seis `SECURITY DEFINER` abertas a `anon`.
 - [`AUDIT-DEPENDENCIAS.md`](auditorias/AUDIT-DEPENDENCIAS.md) — inventário npm + Deno,
   vulnerabilidades e compatibilidade. Corrige a §3 de `AUDIT-DEBITO.md`: as 3 vulns HIGH
   **não** exigem Next 16.
