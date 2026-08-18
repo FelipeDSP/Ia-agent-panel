@@ -827,6 +827,16 @@ de ir de 5 para 20.
 
 ### Calibrado: 3,11 chars/token e 622 tokens de schema
 
+> **A otimização do prompt do Empório (18/08) invalida estes números? Não todos.**
+> As duas equações somam **2.901 caracteres** de texto contado (wrapper +
+> system_prompt + mensagens), e só o prompt antigo do Empório tinha 12.206 — a
+> calibração não foi feita nele e não poderia ter sido. `S` é o resíduo depois
+> de descontar o texto: é o schema das **tools**, que não muda quando um tenant
+> reescreve o próprio prompt; `r` é chars/token de português, idem. **O que cai
+> é a linha de base do Empório** (10.495 tokens/turno e o 4x derivado dela) —
+> marcada como anterior à otimização em `PENDENCIA-FATURA-OPENAI.md`, com a
+> expectativa nova ao lado: queda de ~32% por turno, não os 53% do corte.
+
 Duas execuções com o **mesmo texto de prompt** e memórias diferentes formam um
 sistema de duas equações — e aí os dois desconhecidos se separam:
 

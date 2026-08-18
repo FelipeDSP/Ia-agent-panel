@@ -52,6 +52,13 @@ reflete configuração.
 
 ### O que foi medido (18/08/2026, `mensagens_log`)
 
+> **TODOS OS NÚMEROS DESTA SEÇÃO SÃO ANTERIORES À OTIMIZAÇÃO DO PROMPT**, feita
+> em 18/08 logo depois: o `system_prompt` do `emporio` foi de **12.206 para
+> 5.708 caracteres** (−53%), cortando repetição — a regra de não inventar preço
+> aparecia em cinco seções, os horários em três — sem tirar regra de
+> comportamento. Sem esta marcação a próxima comparação não bateria e pareceria
+> defeito. O que a otimização muda está em "Depois da otimização", abaixo.
+
 Os tokens moram na linha de `saida` do turno — a de `entrada` vem zerada, o que
 faz média ingênua por `direcao='entrada'` dar zero.
 
@@ -100,7 +107,46 @@ bem ter sido inflado pelos chunks. A estimativa é que é cega para isso. Ou sej
 a suspeita pode estar certa sobre a realidade e ainda assim errada sobre este
 número — e é este número que iria para a conta.
 
+### Depois da otimização do prompt (18/08) — o que esperar agora
+
+Medido rodando o próprio nó com os dois tamanhos de prompt, mesma memória e
+mesma mistura de chamadas:
+
+| turno | prompt 12.206 | prompt 5.708 | variação |
+|---|---|---|---|
+| 1 chamada | 6.566 | 4.477 | **−32%** |
+| 2 chamadas | 13.187 | 9.009 | **−32%** |
+| 4 chamadas | 26.594 | 18.238 | **−31%** |
+
+**Cortar 53% do prompt derruba ~32% do turno, não 53%.** O prompt é um
+componente entre seis: wrapper (1.212/chamada), schema das tools (622/chamada),
+memória e mensagens não mudaram. Vale escrever porque a diferença entre os dois
+números é exatamente o tipo de coisa que depois vira "a conta não bate".
+
+Projeção para a média do Empório, mantida a mesma mistura de chamadas dos 21
+turnos: **10.495 → ~7.100**.
+
 ### Previsão para a conversa de teste
+
+> **SUBSTITUÍDA em 18/08.** A previsão original ("a média não cai para ~3 mil;
+> fica ~6 mil e ~12 mil") valia com o prompt ANTIGO, e ficou obsoleta no momento
+> em que ele foi cortado. Ela continua abaixo porque o raciocínio segue válido —
+> o que mudou foi uma variável, não a lógica.
+>
+> **A previsão que vale agora:** turnos de 1 chamada em ~3.900–4.700, de 2
+> chamadas em ~7.500–8.500, média perto de 7 mil.
+>
+> **E isto virou experimento controlado**, que é melhor do que era: uma variável
+> mudou, sozinha, com o antes medido. Se a queda for perto de 32%, confirma que
+> o número é dirigido pelo prompt — e confirma junto que a estimativa é
+> previsível, que é o ponto de "previsível com a variável errada".
+>
+> **A armadilha a evitar na leitura:** ver a média cair e creditar à limpeza da
+> base. A KB nunca esteve neste número (a fórmula é cega ao tamanho do retorno
+> de tool) e o corte do prompt sozinho explica a queda. Se cair MUITO mais que
+> 32%, aí sim há algo não modelado — e vale investigar em vez de comemorar.
+
+
 
 Escrita antes de rodar: **a média não cai para ~3 mil.** Deve ficar em ~6 mil nos
 turnos de uma chamada e ~12 mil nos de duas. Se cair para 3 mil, a causa é outra
@@ -156,7 +202,8 @@ vão dizer.
 ### Decisão
 
 **Adiada** até haver medição de 3 a 6 clientes. Hoje há dois com prompt de
-verdade (`emporio` 12.206 chars, `fortalize` 15.446) e o resto é seed — decidir
+verdade (`emporio` 5.708 chars desde 18/08, era 12.206; `fortalize` 15.446) e o
+resto é seed — decidir
 com n = 2, sendo os dois do extremo alto, é decidir pelo caso extremo.
 
 ### O que NÃO está em aberto

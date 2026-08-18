@@ -271,7 +271,7 @@ silêncio, e o sintoma chegaria como "o agente não entendeu meu pedido".
 
 ## Passo 3.4 — medir o S do perfil básico
 
-O `S` de vendas (622) foi medido. O de básico (**266**) é regra de três e está
+O `S` de vendas (622) foi medido — e **não** depende do `system_prompt` de tenant nenhum: é o schema das tools, o resíduo depois de descontar o texto. Reescrever o prompt de um cliente não pede nova medição dele. O de básico (**266**) é regra de três e está
 marcado `medido: false` no gerador. Como `r = 3,112` já é conhecido, **uma
 execução no perfil básico basta**:
 

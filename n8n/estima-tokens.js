@@ -90,6 +90,28 @@
 //   3948818   previsto 10485   n8n 10481    0,0%   (6 chamadas, a venda)
 //
 // Antes desta calibracao o mesmo calculo errava de 1,5x a 10x.
+//
+// ----------------------------------------------------------------------------
+// A OTIMIZACAO DO PROMPT DO EMPORIO (18/08) INVALIDA ESTES NUMEROS? NAO TODOS.
+// ----------------------------------------------------------------------------
+// Em 18/08 o system_prompt do emporio foi de 12.206 para 5.708 caracteres. A
+// pergunta natural e se `S = 622` e `r = 3,112` caem junto. Conferido:
+//
+//   NAO CAEM. As duas equacoes acima somam 2901 CARACTERES de texto contado
+//   (wrapper + system_prompt + mensagens). So o prompt antigo do emporio tinha
+//   12.206 — ou seja, a calibracao nao foi feita nele, e nao poderia ter sido.
+//   `S` e o residuo que sobra depois de descontar o texto: e o schema das
+//   TOOLS, que nao muda quando um tenant reescreve o proprio prompt. `r` e
+//   chars/token de portugues, idem.
+//
+//   O QUE CAI e a linha de base do emporio — a media de 10.495 tokens/turno, a
+//   comparacao de 4x contra o restaurante e a previsao derivada dela. Esses
+//   numeros sao de ANTES e estao marcados como tal em
+//   docs/PENDENCIA-FATURA-OPENAI.md, com a expectativa nova ao lado (queda de
+//   ~32% por turno, nao os 53% do corte: o prompt e um componente entre seis).
+//
+//   O QUE PRECISARIA de nova medicao e `S` do perfil BASICO (266), que continua
+//   sendo regra de tres — e isso e anterior a otimizacao, nao consequencia dela.
 // ============================================================================
 
 // ----------------------------------------------------------------------------
