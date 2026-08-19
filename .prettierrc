@@ -16,19 +16,33 @@
 # prettier, entao nao esta aqui: opcao redundante e mais uma coisa para
 # divergir sem ninguem notar.
 #
-# O QUE ESTE ARQUIVO NAO RESOLVE, e vale saber antes de rodar:
+# O QUE ESTE ARQUIVO NAO RESOLVE -- e o que ja foi fechado. As duas coisas na
+# mesma lista de proposito: item que sai da lista sem deixar rastro faz a
+# proxima pessoa reabrir a discussao do zero.
 #
-# 1. O REPOSITORIO NUNCA PASSOU POR PRETTIER. Mesmo com esta config,
-#    `npx prettier --write "src/**/*.{ts,tsx}"` ainda reescreve 61 dos 92
-#    arquivos (~423 insercoes, ~489 remocoes) -- quase tudo colapsando linha
-#    que foi escrita mais espalhada do que ele escreveria. Nao e ruido de aspas;
-#    e o repo inteiro nunca ter sido formatado. Passar o prettier em tudo de uma
-#    vez e uma decisao (churn de blame em 61 arquivos), nao um efeito colateral
-#    desta config.
+# 1. O REPOSITORIO NUNCA PASSOU POR PRETTIER. Medido em 19/08 sobre uma copia
+#    de `src/` (92 arquivos), com esta config:
 #
-# 2. O PRETTIER NAO E DEPENDENCIA DO PROJETO. `npx prettier` baixa a ultima
-#    versao publicada (3.9.6 em 19/08/2026), e versao nova muda formatacao
-#    default de vez em quando. Fixar em devDependencies fecharia essa porta.
+#      --list-different lista .............. 69
+#      destes, mudam de CONTEUDO ........... 61  (~423 insercoes, ~489 remocoes)
+#      diferem SO em fim de linha .......... 8   (CRLF na copia de trabalho; o
+#                                                git normaliza, entao nao
+#                                                aparecem em `git diff`)
+#      ja batem com a config ............... 23
+#
+#    Quase toda a mudanca de conteudo e colapsar linha escrita mais espalhada do
+#    que ele escreveria -- nao e ruido de aspas. Passar o prettier em tudo de uma
+#    vez e decisao sobre churn de blame em 61 arquivos, nao efeito colateral
+#    desta config. Os dois numeros valem repetir juntos porque `--list-different`
+#    sozinho da 69 e assusta mais do que deve.
+#
+# 2. FECHADA em 19/08/2026. Era: `npx prettier` baixava a ultima versao
+#    publicada, e versao nova muda formatacao default de vez em quando -- a
+#    config protege das aspas, nao de o npx trazer a 4.0 daqui a tres meses.
+#    Agora `prettier` esta em devDependencies com versao EXATA (3.9.6, sem `^`),
+#    e o `npx` do projeto usa a de node_modules antes de baixar qualquer coisa.
+#    Subir de versao passa a ser commit, com o reformat que vier junto visivel
+#    no diff.
 
 singleQuote: true
 printWidth: 100

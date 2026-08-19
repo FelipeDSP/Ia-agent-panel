@@ -247,15 +247,28 @@ export function Times({ times, contaChatwoot }: { times: TimeDaTela[]; contaChat
           {/*
             DOIS CONTADORES, e o do conjunto é o que importa: quinze descrições
             de 80 passam em qualquer limite por campo e custam o dobro de seis de
-            120. É a soma que entra no prompt a cada mensagem.
+            120.
+
+            O TOTAL CONTA TODAS AS DESCRIÇÕES, e isso não é descuido: quem impõe
+            os 720 é o trigger no banco, que soma todas as linhas de
+            `tenant_times` — com selo ou sem. O cálculo daqui é o mesmo do
+            trigger de propósito; divergir faria a tela aceitar o que a
+            constraint recusa.
+
+            O que mudou foi a EXPLICAÇÃO. Ela dizia "é a soma que entra no prompt
+            a cada mensagem", e com a migração 45 quem chega ao agente é só o
+            time confirmado. As duas convivem sem contradição: o teto é sobre o
+            que PODE custar prompt, o selo é sobre o que efetivamente vai. O
+            texto diz as duas — dizer só a segunda sugeriria que o número está
+            errado, e ele não está.
           */}
           <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
             <span>
               {descricao.length}/{MAX_DESCRICAO} nesta
             </span>
             <span className={restante < 0 ? 'font-medium text-destructive' : undefined}>
-              {usados + descricao.length} de {MAX_DESCRICAO_TOTAL} no total — o agente lê todas
-              a cada mensagem
+              {usados + descricao.length} de {MAX_DESCRICAO_TOTAL} no total — o teto vale para
+              todas; o agente lê as dos times confirmados
             </span>
           </div>
           <ErroCampo msg={estado.errosCampo?.['descricao']} />
