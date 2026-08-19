@@ -10,9 +10,14 @@
  *  - UM padrão por tenant, e o índice parcial deixa `padrao = false` repetir;
  *  - nome duplicado é recusado — o modelo escolhe PELO NOME, e dois iguais
  *    fariam o servidor resolver para um dos dois sem critério;
- *  - a RLS isola: o tenant A não lê o time do B (com contraprova de que o dado
- *    do B existe);
- *  - `api_n8n_times` responde a `n8n_agent` e é RECUSADA para `anon`.
+ *  - `api_n8n_times` filtra pelo ARGUMENTO: pedir os times de A não devolve os
+ *    de B (com contraprova de que o dado do B existe). NÃO é prova de RLS — a
+ *    função é SECURITY DEFINER e a policy não é consultada ali. A RLS de
+ *    `tenant_times` continua sem teste próprio; ver o comentário do caso;
+ *  - `api_n8n_times` responde a `n8n_agent` e é RECUSADA para `anon`;
+ *  - o `tenant_admin` NÃO lê a própria credencial do Chatwoot — o fato que
+ *    obriga a Server Action a usar `service_role`, com controle positivo para a
+ *    asserção não passar vazia.
  *
  * Uso: npm run teste:times
  */
@@ -159,7 +164,22 @@ try {
     `select count(*)::int n from public.api_n8n_times($1)`, [A])).rows[0].n;
   const vistoPorB = (await c.query(
     `select count(*)::int n from public.api_n8n_times($1)`, [B])).rows[0].n;
-  chk('api_n8n_times(A) não devolve os times de B',
+  /*
+   * ISOLAMENTO POR ARGUMENTO, NAO POR RLS — e a distincao importa.
+   *
+   * `api_n8n_times` e SECURITY DEFINER: ela roda como o dono e a policy de
+   * `tenant_times` nao e consultada aqui de jeito nenhum. E ainda que fosse, as
+   * claims de super_admin setadas no topo deste arquivo valem a transacao
+   * inteira, e `p_tenant_times_all` e
+   * `auth_is_super_admin() OR tenant_id = auth_tenant_id()` — abriria assim
+   * mesmo.
+   *
+   * O que esta assercao prova de verdade e util: o PARAMETRO filtra, e o
+   * SECURITY DEFINER nao vaza pelos lados. E garantia mais fragil que a da RLS,
+   * porque depende de quem chama passar o tenant certo — que e exatamente o que
+   * o n8n faz, e por isso vale ter.
+   */
+  chk('api_n8n_times filtra pelo ARGUMENTO (SECURITY DEFINER: a RLS nao entra aqui)',
     vistoPorA === 10 && vistoPorB === doB, `A=${vistoPorA} B=${vistoPorB}`);
   chk('e o padrão vem primeiro na lista', (await c.query(
     `select padrao from public.api_n8n_times($1) limit 1`, [B])).rows[0].padrao === true);
