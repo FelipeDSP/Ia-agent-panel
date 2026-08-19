@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 
 import { excluirTime, salvarTime, verificarTimeSalvo, type EstadoConfig } from '../acoes';
 import { Alert } from '@/components/ui/alert';
@@ -104,6 +104,26 @@ function LinhaTime({ time }: { time: TimeDaTela }) {
 export function Times({ times, contaChatwoot }: { times: TimeDaTela[]; contaChatwoot: string | null }) {
   const [estado, acao] = useActionState<EstadoConfig, FormData>(salvarTime, {});
   const [descricao, setDescricao] = useState('');
+
+  /*
+   * LIMPAR A DESCRIÇÃO NO SUCESSO. `team_id`, `nome` e o checkbox são campos
+   * não controlados, e o React 19 limpa o formulário sozinho ao fim da action;
+   * `descricao` é controlada por este estado, e sobrevivia. Dois estragos: o
+   * time seguinte nascia com a descrição do anterior já escrita — ninguém
+   * revisa campo que parece preenchido de propósito — e o contador do conjunto
+   * somava o salvo MAIS o rascunho remanescente, podendo acusar “passou de
+   * 720” sem ter passado.
+   *
+   * SÓ no sucesso, e a assimetria que sobra é DECISÃO EM ABERTO, não descuido:
+   * no erro o React limpa número e nome e esta descrição fica. Ou seja, quem
+   * recebe “o Chatwoot não tem o time 9999” perde justamente o campo que o erro
+   * mandou corrigir. Fechar isso exige escolher entre preservar os três
+   * (controlá-los todos) ou limpar os três — e as duas mexem no que o cliente
+   * vê depois de errar. Não é conserto mecânico, então não entrou junto.
+   */
+  useEffect(() => {
+    if (estado.sucesso) setDescricao('');
+  }, [estado]);
 
   const usados = times.reduce((a, t) => a + t.descricao.length, 0);
   const restante = MAX_DESCRICAO_TOTAL - usados - descricao.length;

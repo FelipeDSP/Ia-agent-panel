@@ -440,23 +440,61 @@ export async function verificarTimeSalvo(_estado: EstadoConfig, fd: FormData): P
   const r = await verificarTime({ ...ctx, teamId: time.team_id });
 
   const agora = new Date().toISOString();
-  await supabase
-    .from('tenant_times')
-    .update(
-      r.estado === 'existe'
-        ? { verificado_em: agora, falhou_em: null }
-        : r.estado === 'nao_existe'
-          ? { falhou_em: agora }
-          : {},
-    )
-    .eq('tenant_id', usuario.tenantId)
-    .eq('id', id);
+  const selo =
+    r.estado === 'existe'
+      ? { verificado_em: agora, falhou_em: null }
+      : r.estado === 'nao_existe'
+        ? { falhou_em: agora }
+        : null; // `nao_verificado` não muda selo nenhum — não há o que gravar.
+
+  /*
+   * O ERRO DA GRAVAÇÃO PRECISA SER OLHADO, e a ironia é o motivo deste
+   * comentário: esta ação existe para impedir que o painel afirme o que o
+   * Chatwoot não confirmou — e o ÚLTIMO passo dela afirmava sem conferir. Era
+   * `await supabase...update(...)` sem destructuring: falhando a escrita, a
+   * função seguia e devolvia “confirmado”, com o selo cinza na lista logo
+   * abaixo. A tela discordando de si mesma, e nada em lugar nenhum dizendo
+   * qual das duas metades estava certa.
+   *
+   * A MENSAGEM SEPARA AS DUAS COISAS DE PROPÓSITO. Quando a gravação falha, o
+   * Chatwoot CONFIRMOU: dizer “não foi possível verificar” seria mentira na
+   * direção oposta e mandaria o cliente conferir um número que está certo. O
+   * que falhou foi guardar aqui, e a saída é tentar de novo — no Chatwoot não
+   * há nada a fazer.
+   */
+  let erroSelo: string | null = null;
+  if (selo) {
+    const { error } = await supabase
+      .from('tenant_times')
+      .update(selo)
+      .eq('tenant_id', usuario.tenantId)
+      .eq('id', id);
+    if (error) erroSelo = error.message;
+  }
 
   revalidatePath('/painel/configuracoes');
-  if (r.estado === 'existe') return { sucesso: `“${time.nome}” confirmado no Chatwoot.` };
-  if (r.estado === 'nao_existe') {
-    return { erro: `“${time.nome}” não existe mais no Chatwoot (time ${time.team_id}).` };
+
+  if (r.estado === 'existe') {
+    if (erroSelo) {
+      return {
+        erro:
+          `O Chatwoot confirmou “${time.nome}” (time ${time.team_id}), mas não deu para guardar ` +
+          `o selo aqui — o número está certo, tente “Verificar” de novo. (${erroSelo})`,
+      };
+    }
+    return { sucesso: `“${time.nome}” confirmado no Chatwoot.` };
   }
+
+  if (r.estado === 'nao_existe') {
+    return {
+      erro:
+        `“${time.nome}” não existe mais no Chatwoot (time ${time.team_id}).` +
+        // Sem o selo gravado a lista continua mostrando o estado antigo, então
+        // esta frase é a Única pista que sobra do que aconteceu.
+        (erroSelo ? ` O selo não pôde ser guardado, e a lista não vai mostrar isso: ${erroSelo}` : ''),
+    };
+  }
+
   return { erro: `Não deu para verificar agora: ${r.motivo}.` };
 }
 
