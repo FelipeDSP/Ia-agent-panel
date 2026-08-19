@@ -28,7 +28,7 @@ o ambiente iria procurar. É a §4.
 | `NEXT_PUBLIC_SUPABASE_URL` | **sim** | — | `lib/supabase/config.ts:21` · `scripts/criar-super-admin.mjs:72` · 3 testes |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | **sim** | — | `lib/supabase/config.ts:26` · 3 testes |
 | `NEXT_PUBLIC_SITE_URL` | **na prática sim** | `'http://localhost:3000'` ⚠️ | `admin/acoes.ts:140,298` · `(auth)/acoes.ts:85` · `auth/confirmar/route.ts:23` |
-| `SUPABASE_SECRET_KEY` | **sim** (para ações de super_admin) | — | `lib/supabase/admin.ts:20` · `criar-super-admin.mjs:79` |
+| `SUPABASE_SECRET_KEY` | **sim** (super_admin **e** cadastro de time do Chatwoot) | — | `lib/supabase/admin.ts:20` · `criar-super-admin.mjs:79` · `painel/acoes.ts:241` |
 | `INGESTAO_SECRET` | **sim** (para ingestão) | — | `lib/ingestao.ts:20` |
 | `N8N_LIMPEZA_URL` | não | — | `lib/n8n.ts:29` |
 | `N8N_LIMPEZA_SECRET` | não | — | `lib/n8n.ts:30` |
@@ -50,7 +50,14 @@ Origem canônica para montar links de convite, recuperação de senha e os redir
 **`SUPABASE_SECRET_KEY`**
 Chave secreta da Admin API. Ignora RLS e enxerga todos os tenants — **servidor apenas**,
 protegida por `import 'server-only'` em `lib/supabase/admin.ts`. A leitura é **preguiçosa**:
-só lança quando uma ação de super_admin roda, não no boot. Além de exigir presença, valida
+só lança quando uma ação que precisa dela roda, não no boot.
+
+**Desde 18/08 ela deixou de ser só de super_admin:** `contextoDeVerificacao`
+(cadastro de times do Chatwoot, no painel do CLIENTE) a usa para ler
+`tenant_credenciais`, que é super-admin-only por desenho da migração 21a. Sem a
+variável no ambiente, cadastrar time estoura com erro não tratado — e estoura
+para **todo** tenant, inclusive os sem Chatwoot, porque o `criarClienteAdmin()`
+roda antes do primeiro early return. Além de exigir presença, valida
 que **não** é uma chave publishable (`admin.ts:31`) — erro comum que produziria falhas
 confusas de permissão em vez de uma mensagem clara.
 
