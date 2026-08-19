@@ -55,3 +55,24 @@ export function validarTime(fd: FormData): { ok: true; valor: TimeValidado } | {
   if (Object.keys(erros).length > 0) return { ok: false, erros };
   return { ok: true, valor: { teamId, nome, descricao, padrao: fd.get('padrao') === 'on' } };
 }
+
+/**
+ * O time chega ao agente? É a MESMA regra que a migração 45 aplica em
+ * `api_n8n_times` — `verificado_em is not null and falhou_em is null`.
+ *
+ * Existe como função, e não escrita à mão em cada lugar, porque as duas metades
+ * já divergiram uma vez: o `semPadrao` da tela olhava só `padrao`, então um
+ * padrão sem selo dava tela calada afirmando por omissão que estava tudo certo,
+ * enquanto o n8n não receberia time nenhum. Quem mexer aqui tem que mexer na
+ * migração junto — e o contrário também.
+ *
+ * Por que o selo é contrato e não enfeite: `POST /assignments` com `team_id`
+ * inexistente responde 200 com corpo `null` e DESATRIBUI a conversa. Mandar id
+ * não provado não é inofensivo.
+ */
+export function timeUtilizavel(t: {
+  verificado_em: string | null;
+  falhou_em: string | null;
+}): boolean {
+  return t.verificado_em !== null && t.falhou_em === null;
+}

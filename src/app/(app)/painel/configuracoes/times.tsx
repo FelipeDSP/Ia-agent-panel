@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
-import { MAX_DESCRICAO, MAX_DESCRICAO_TOTAL } from '@/lib/tools/times-chatwoot';
+import { MAX_DESCRICAO, MAX_DESCRICAO_TOTAL, timeUtilizavel } from '@/lib/tools/times-chatwoot';
 
 export type TimeDaTela = {
   id: string;
@@ -127,7 +127,22 @@ export function Times({ times, contaChatwoot }: { times: TimeDaTela[]; contaChat
 
   const usados = times.reduce((a, t) => a + t.descricao.length, 0);
   const restante = MAX_DESCRICAO_TOTAL - usados - descricao.length;
-  const semPadrao = times.length > 0 && !times.some((t) => t.padrao);
+  /*
+   * "TER PADRÃO MARCADO" E "TER PADRÃO QUE FUNCIONA" SÃO COISAS DIFERENTES, e a
+   * tela só sabia a primeira. Depois da migração 45, `api_n8n_times` não devolve
+   * time sem selo — então um padrão marcado e não verificado é um padrão que o
+   * agente nunca vai usar, e o aviso antigo ficava CALADO nesse caso, afirmando
+   * por omissão que estava tudo certo. Pior que mentir por texto: texto alguém
+   * relê, silêncio ninguém revisa.
+   *
+   * `timeUtilizavel` é a mesma regra da migração, com um nome só, para as duas
+   * metades não divergirem de novo.
+   */
+  const padraoMarcado = times.some((t) => t.padrao);
+  const padraoUtilizavel = times.some((t) => t.padrao && timeUtilizavel(t));
+
+  const semPadrao = times.length > 0 && !padraoMarcado;
+  const padraoSemSelo = times.length > 0 && padraoMarcado && !padraoUtilizavel;
 
   return (
     <div className="flex flex-col gap-4">
@@ -157,6 +172,34 @@ export function Times({ times, contaChatwoot }: { times: TimeDaTela[]; contaChat
           Nenhum time está marcado como <strong>padrão</strong>. A transferência continua
           funcionando — o agente pausa e a conversa espera na caixa de entrada —, mas ela
           não vai para nenhum time. Marque um para o atendimento cair no time certo.
+        </Alert>
+      ) : null}
+
+      {/*
+        AVISO PRÓPRIO, e não uma frase a mais no de cima: a causa é outra e a
+        SAÍDA é outra. Marcar outro time não resolve nada aqui — o que resolve é
+        confirmar o número, ou conectar a conta antes disso. Colapsar os dois na
+        mesma frase mandaria o cliente mexer no lugar errado, que é a classe de
+        defeito que esta tela inteira vem consertando.
+
+        E os dois são mutuamente exclusivos por construção: o de cima exige
+        nenhum padrão marcado, este exige um marcado.
+      */}
+      {padraoSemSelo ? (
+        <Alert variant="warning">
+          O time padrão ainda não foi confirmado no Chatwoot, então o agente{' '}
+          <strong>não vai usá-lo</strong> — a transferência continua funcionando, mas a
+          conversa fica sem time.{' '}
+          {contaChatwoot ? (
+            <>
+              Clique em <strong>Verificar</strong> na linha dele.
+            </>
+          ) : (
+            <>
+              Este cliente ainda não está conectado a uma conta do Chatwoot, e sem isso não
+              há como confirmar — fale com a agência.
+            </>
+          )}
         </Alert>
       ) : null}
 
