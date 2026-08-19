@@ -229,7 +229,7 @@ export async function salvarTransferirHumano(
  *
  * OS TRÊS MOTIVOS SÃO DISTINTOS DE PROPÓSITO. Cada um tem uma saída diferente:
  * sem conexão, alguém conecta a conta; sem credencial guardada, é a agência;
- * sem conversa encerrada, é encerrar uma conversa. Dizer "não está conectado"
+ * sem conversa nenhuma, é esperar a primeira chegar. Dizer "não está conectado"
  * quando o que falta é conversa manda procurar no lugar errado — e o cliente
  * confere a conexão, acha tudo certo, e não sai do lugar.
  */
@@ -356,11 +356,9 @@ export async function salvarTime(_estado: EstadoConfig, fd: FormData): Promise<E
     };
   }
 
-  /*
-   * A VERIFICAÇÃO usa a conversa mais antiga já RESOLVIDA, e não a mais
-   * recente: a recente é provavelmente um atendimento em curso, e atribuir e
-   * desatribuir ali é mexer na tela de quem está trabalhando.
-   */
+  // Qual conversa é usada e por quê: ver `contextoDeVerificacao`. A explicação
+  // mora lá e só lá — duplicada, a cópia mente na primeira mudança, que é o que
+  // acabou de acontecer com este comentário.
   const ctx = await contextoDeVerificacao(usuario.tenantId);
 
   let verificadoEm: string | null = null;

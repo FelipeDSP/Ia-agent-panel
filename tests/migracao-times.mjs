@@ -218,6 +218,17 @@ try {
   // `tenant_times` tem policy por tenant, entao ler > 0 sob as MESMAS claims e
   // o MESMO role prova que o harness esta de pe. Se o set_config quebrar, esta
   // assercao cai — e e ela que faz a de cima significar alguma coisa.
+  //
+  // A PRIMEIRA SABOTAGEM QUE EU RODEI NAO VALIA, e vale registrar: quebrei o
+  // `set_config` (nome de chave errado) esperando que este controle caisse. Caiu
+  // foi a assercao NEGATIVA — sem claims novas, as de super_admin setadas no topo
+  // deste arquivo sobrevivem, e a credencial vira legivel. Ou seja: aquele caso
+  // ela ja pegava sozinha, e a sabotagem nao exercitou o controle novo.
+  //
+  // A que prova e a SEGUNDA: claims aplicadas com `tenant_id` ERRADO. Ai a
+  // negativa passa por VACUIDADE (qualquer role nao-super devolve 0) e so este
+  // controle cai. Sabotar uma vez teria deixado o controle novo sem prova, com
+  // cara de provado.
   chk('controle positivo: sob as MESMAS claims, o tenant LE os proprios times',
     timesComoTenant > 0,
     `leu ${timesComoTenant} — se for 0, o set_config nao pegou e a assercao acima e vacua`);
