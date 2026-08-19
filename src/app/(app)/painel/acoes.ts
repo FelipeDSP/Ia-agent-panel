@@ -313,6 +313,16 @@ async function contextoDeVerificacao(tenantId: string): Promise<
 }
 
 /**
+ * A colisão foi no índice de PADRÃO? O PostgREST devolve o nome da constraint
+ * dentro de `message` ('duplicate key value violates unique constraint "x"'),
+ * e é o único jeito de separar as três causas de 23505 desta tabela. Se um dia
+ * o índice for renomeado, esta função cala — por isso o nome aparece UMA vez.
+ */
+function ehColisaoDePadrao(error: { message: string }): boolean {
+  return error.message.includes('uq_tenant_times_padrao');
+}
+
+/**
  * Cadastra um time do Chatwoot para o tenant.
  *
  * O CADASTRO É MANUAL porque o token de Agent Bot não lista times — `GET /teams`
@@ -383,27 +393,88 @@ export async function salvarTime(_estado: EstadoConfig, fd: FormData): Promise<E
     }
   }
 
-  const { error } = await supabase.from('tenant_times').insert({
-    tenant_id: usuario.tenantId,
-    team_id: teamId,
-    nome,
-    descricao,
-    padrao,
-    verificado_em: verificadoEm,
-    // `falhou_em` NÃO entra no insert: o caminho `nao_existe` retorna antes de
-    // salvar, então no cadastro ele seria sempre nulo. Quem o preenche é
-    // `verificarTimeSalvo` (e, no futuro, o sub-workflow quando a atribuição
-    // real devolver corpo nulo) — ou seja, ele marca time que EXISTIA e sumiu,
-    // que é exatamente o caso que o selo vermelho da tela mostra.
-  });
+  /*
+   * O PRIMEIRO TIME NASCE PADRÃO, sem perguntar. Sem padrão o roteamento fino
+   * não acontece — o sub-workflow manda `time_id: null` — e o cliente que
+   * cadastrou um time só não tem por que precisar marcar um checkbox para ele
+   * valer. Zero tela nova, e o estado inútil some do caminho normal.
+   */
+  const { data: comPadrao } = await supabase
+    .from('tenant_times')
+    .select('id')
+    .eq('tenant_id', usuario.tenantId)
+    .eq('padrao', true)
+    .limit(1)
+    .maybeSingle();
+
+  const promovido = !padrao && !comPadrao;
+
+  /*
+   * O HELPER É DONO DO DESTRUCTURING, e não devolve o builder. A primeira
+   * versão devolvia, e `npm run teste:mutacao-sem-erro` reprovou na hora com
+   * "NÃO CLASSIFICÁVEL (fronteira-de-funcao)": a varredura não segue valor
+   * atravessando função, e prefere reprovar a adivinhar. Estava certa — com o
+   * erro tratado do outro lado, nada aqui provava que ele era tratado.
+   */
+  const inserir = async (padraoValor: boolean) => {
+    const { error: erroInsert } = await supabase.from('tenant_times').insert({
+      tenant_id: usuario.tenantId,
+      team_id: teamId,
+      nome,
+      descricao,
+      padrao: padraoValor,
+      verificado_em: verificadoEm,
+      // `falhou_em` NÃO entra no insert: o caminho `nao_existe` retorna antes de
+      // salvar, então no cadastro ele seria sempre nulo. Quem o preenche é
+      // `verificarTimeSalvo` (e, no futuro, o sub-workflow quando a atribuição
+      // real devolver corpo nulo) — ou seja, ele marca time que EXISTIA e sumiu,
+      // que é exatamente o caso que o selo vermelho da tela mostra.
+    });
+    return erroInsert;
+  };
+
+  let error = await inserir(padrao || promovido);
+
+  /*
+   * A CORRIDA É REAL E QUEM ARBITRA É O ÍNDICE. `uq_tenant_times_padrao` é
+   * único parcial em `(tenant_id) where padrao`. Duas requisições simultâneas
+   * leem "não há padrão" e as duas inserem padrão: a segunda bate em 23505.
+   *
+   * Nenhum desenho fecha essa janela sem lock — nem mover o `not exists` para
+   * dentro do INSERT, porque duas instruções concorrentes também enxergam o
+   * mesmo "não existe" antes de qualquer commit. Então a corrida não é tratada
+   * como erro: se a promoção foi NOSSA (o cliente não pediu padrão) e a colisão
+   * foi no índice de padrão, o outro time acabou de virar o padrão, e este
+   * simplesmente não é — grava com `padrao: false` e pronto. Uma vez só.
+   *
+   * Reportar erro aqui seria mentir sobre a causa: o cliente não pediu padrão.
+   */
+  if (error && error.code === '23505' && promovido && ehColisaoDePadrao(error)) {
+    error = await inserir(false);
+  }
 
   if (error) {
+    /*
+     * TRÊS ÍNDICES ÚNICOS, TRÊS CAUSAS DIFERENTES. A mensagem antiga era uma só
+     * ("esse número ou esse nome — ou já há um time padrão") e passou a poder
+     * mentir: com a promoção automática, "já há um time padrão" apareceria para
+     * quem nunca marcou padrão nenhum.
+     */
     if (error.code === '23505') {
-      return {
-        erro:
-          'Já existe um time com esse número ou esse nome — ou já há um time padrão. ' +
-          'O agente escolhe pelo nome, então dois iguais o deixariam sem critério.',
-      };
+      if (ehColisaoDePadrao(error)) {
+        return { erro: 'Já há um time padrão. Desmarque o outro antes de marcar este.' };
+      }
+      if (error.message.includes('uq_tenant_times_tenant_team')) {
+        return { erro: `Já existe um time com o número ${teamId}.` };
+      }
+      if (error.message.includes('uq_tenant_times_tenant_nome')) {
+        return {
+          erro:
+            `Já existe um time chamado “${nome}”. O agente escolhe pelo nome, ` +
+            'então dois iguais o deixariam sem critério.',
+        };
+      }
+      return { erro: `Já existe um time assim: ${error.message}` };
     }
     if (error.code === '23514') return { erro: error.message };
     return { erro: `Não foi possível salvar: ${error.message}` };

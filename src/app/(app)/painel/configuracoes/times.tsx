@@ -140,14 +140,23 @@ export function Times({ times, contaChatwoot }: { times: TimeDaTela[]; contaChat
       ) : null}
 
       {/*
-        Sem padrão, um nome que o agente invente não tem para onde ir e a
-        transferência falha calada. É o buraco que o desenho inteiro existe para
-        fechar, então o aviso é o mais forte da tela.
+        DIZIA QUE A TRANSFERÊNCIA "FALHA CALADA" SEM PADRÃO, e isso deixou de ser
+        verdade quando o desenho fechou. O modelo NÃO escolhe time nesta versão:
+        o sub-workflow pega o `padrao` e, não havendo, manda `time_id: null` —
+        a conversa é pausada e entregue na inbox, que é o que todo cliente teve
+        até agora. Não há nome inventado sem destino porque não há nome
+        inventado.
+
+        O aviso continua valendo, com o peso certo: o que se perde sem padrão é
+        o roteamento fino, não o atendimento. Por isso o texto passa a dizer o
+        que CONTINUA funcionando antes de dizer o que falta — aviso que exagera
+        a consequência ensina a ignorar avisos.
       */}
       {semPadrao ? (
         <Alert variant="warning">
-          Nenhum time está marcado como <strong>padrão</strong>. Quando o agente não souber
-          escolher, a conversa fica sem time — marque um.
+          Nenhum time está marcado como <strong>padrão</strong>. A transferência continua
+          funcionando — o agente pausa e a conversa espera na caixa de entrada —, mas ela
+          não vai para nenhum time. Marque um para o atendimento cair no time certo.
         </Alert>
       ) : null}
 
