@@ -1,0 +1,34 @@
+# Formato do codigo. YAML (o prettier aceita JSON ou YAML aqui) porque comentario
+# em JSON nao existe, e o motivo destas duas linhas nao cabe numa mensagem de
+# commit que ninguem rele.
+#
+# POR QUE EXISTE: em 19/08 rodei `npx prettier --write` num arquivo e ele
+# reescreveu 343 linhas com ASPAS DUPLAS. Nao era opiniao do prettier sobre o
+# projeto -- era a ausencia deste arquivo, que faz ele usar os proprios padroes.
+# O diff real da entrega (60 linhas) ficou enterrado. Tive de reverter e
+# reaplicar a mao.
+#
+# OS VALORES SAO MEDIDOS, NAO ESCOLHIDOS:
+#   singleQuote  -> 394 imports com aspas simples em src/, ZERO com duplas.
+#   printWidth   -> das larguras testadas (80, 100, 110, 120), 100 e a que faz
+#                   menos arquivos divergirem do que ja esta escrito.
+# O resto (semi, trailingComma, arrowParens, tabWidth) ja bate com o default do
+# prettier, entao nao esta aqui: opcao redundante e mais uma coisa para
+# divergir sem ninguem notar.
+#
+# O QUE ESTE ARQUIVO NAO RESOLVE, e vale saber antes de rodar:
+#
+# 1. O REPOSITORIO NUNCA PASSOU POR PRETTIER. Mesmo com esta config,
+#    `npx prettier --write "src/**/*.{ts,tsx}"` ainda reescreve 61 dos 92
+#    arquivos (~423 insercoes, ~489 remocoes) -- quase tudo colapsando linha
+#    que foi escrita mais espalhada do que ele escreveria. Nao e ruido de aspas;
+#    e o repo inteiro nunca ter sido formatado. Passar o prettier em tudo de uma
+#    vez e uma decisao (churn de blame em 61 arquivos), nao um efeito colateral
+#    desta config.
+#
+# 2. O PRETTIER NAO E DEPENDENCIA DO PROJETO. `npx prettier` baixa a ultima
+#    versao publicada (3.9.6 em 19/08/2026), e versao nova muda formatacao
+#    default de vez em quando. Fixar em devDependencies fecharia essa porta.
+
+singleQuote: true
+printWidth: 100
