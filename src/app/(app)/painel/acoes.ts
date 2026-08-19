@@ -269,16 +269,29 @@ async function contextoDeVerificacao(tenantId: string): Promise<
   }
 
   /*
-   * A conversa mais antiga JÁ RESOLVIDA. Não a mais recente: essa é
-   * provavelmente um atendimento em curso, e atribuir e desatribuir ali é mexer
-   * na tela de quem está trabalhando.
+   * A conversa MENOS RECENTEMENTE TOCADA do tenant, qualquer status.
+   *
+   * Era `status = 'resolvido'` — e isso tornava o motivo 3 INALCANÇÁVEL.
+   * Ninguém escreve `'resolvido'` em `public.conversas`: os dois pontos do n8n
+   * que chamam `api_n8n_definir_status_conversa` passam `'pausado'` fixo, o
+   * painel só alterna ativo/pausado, e não existe webhook de mudança de status
+   * do Chatwoot. Produção tem 73 conversas — 72 `ativo`, 1 `pausado`, nenhuma
+   * `resolvido` desde maio. O CHECK da coluna aceita o valor, o que dá
+   * aparência de estado suportado; é estado morto.
+   *
+   * O efeito era o defeito que este arquivo já tinha consertado uma vez:
+   * a tela mandava "encerre uma conversa no Chatwoot", o cliente encerrava,
+   * nada mudava no banco, e ele voltava para a mesma frase.
+   *
+   * `atualizado_em` ascendente é a melhor aproximação disponível de "ninguém
+   * está olhando esta agora". Não é garantia — é o menos pior sem espelhar o
+   * status do Chatwoot (registrado em docs/PENDENCIAS.md).
    */
   const { data: conversa } = await supabase
     .from('conversas')
     .select('conversation_id')
     .eq('tenant_id', tenantId)
-    .eq('status', 'resolvido')
-    .order('criado_em', { ascending: true })
+    .order('atualizado_em', { ascending: true })
     .limit(1)
     .maybeSingle();
 
@@ -286,7 +299,7 @@ async function contextoDeVerificacao(tenantId: string): Promise<
     return {
       ok: false,
       motivo:
-        'ainda não há conversa encerrada para testar — encerre uma no Chatwoot e use “Verificar”',
+        'este cliente ainda não recebeu nenhuma conversa — a verificação precisa de uma que exista',
     };
   }
 
@@ -351,7 +364,6 @@ export async function salvarTime(_estado: EstadoConfig, fd: FormData): Promise<E
   const ctx = await contextoDeVerificacao(usuario.tenantId);
 
   let verificadoEm: string | null = null;
-  const falhouEm: string | null = null;
   let aviso: string | null = null;
 
   if (!ctx.ok) {
@@ -380,7 +392,11 @@ export async function salvarTime(_estado: EstadoConfig, fd: FormData): Promise<E
     descricao,
     padrao,
     verificado_em: verificadoEm,
-    falhou_em: falhouEm,
+    // `falhou_em` NÃO entra no insert: o caminho `nao_existe` retorna antes de
+    // salvar, então no cadastro ele seria sempre nulo. Quem o preenche é
+    // `verificarTimeSalvo` (e, no futuro, o sub-workflow quando a atribuição
+    // real devolver corpo nulo) — ou seja, ele marca time que EXISTIA e sumiu,
+    // que é exatamente o caso que o selo vermelho da tela mostra.
   });
 
   if (error) {

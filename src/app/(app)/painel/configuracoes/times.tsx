@@ -70,7 +70,12 @@ function LinhaTime({ time }: { time: TimeDaTela }) {
         <div className="flex items-center gap-2">
           <form action={acaoV}>
             <input type="hidden" name="id" value={time.id} />
-            <SubmitButton variant="ghost" size="sm" pendingLabel="Verificando…">
+            <SubmitButton
+              variant="ghost"
+              size="sm"
+              pendingLabel="Verificando…"
+              title="Atribui e desatribui este time numa conversa existente do Chatwoot."
+            >
               Verificar
             </SubmitButton>
           </form>
@@ -205,6 +210,21 @@ export function Times({ times, contaChatwoot }: { times: TimeDaTela[]; contaChat
         `allow_auto_assign` — prometer controle sobre o que não se controla é
         pior que não mencionar.
       */}
+      {/*
+        DIZER O QUE A VERIFICAÇÃO FAZ, e não só que ela existe.
+        `verificarTime` desfaz com `team_id: null` — não com o time que estava
+        antes —, porque o bot não consegue LER a conversa para saber qual era
+        (`GET /conversations` é 401, medido). Enquanto o alvo era "a mais antiga
+        já encerrada" isso era teórico; com o critério novo (a menos
+        recentemente tocada, qualquer status) a conversa escolhida pode ter time,
+        e a verificação o apaga. Não há conserto possível — o conserto é avisar.
+      */}
+      <p className="text-xs text-muted-foreground">
+        <strong>Verificar</strong> atribui e desatribui o time numa conversa existente do seu
+        Chatwoot, para confirmar que o número existe. Se aquela conversa já tiver um time, ele
+        sai — reatribua por lá se precisar.
+      </p>
+
       <p className="text-xs text-muted-foreground">
         No Chatwoot, cada time tem <strong>distribuição automática</strong>. Ligada, a conversa
         cai no colo de um atendente do time; desligada, fica na fila do time esperando alguém

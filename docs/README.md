@@ -38,6 +38,11 @@ documentação e material de referência.
 - [`SIMULACAO-MIGRACAO-V2.md`](SIMULACAO-MIGRACAO-V2.md) — **planejamento, não executado.**
   Migração para um schema v2 (documentos normalizados, CHECK de modelo, HNSW parcial):
   queries afetadas, plano expand/contract e estimativa de 29–45 h.
+- [`PENDENCIAS.md`](PENDENCIAS.md) — **o indice das pendencias**, com o gatilho de cada
+  uma numa tabela so. Comece por aqui em vez de abrir os nove arquivos.
+- [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da
+  demonstracao do emporio.** `'resolvido'` nunca e escrito em `conversas` (73 linhas, zero),
+  entao o painel mostra conversa encerrada ha meses como `ativo`.
 - [`PENDENCIA-CATEGORIA-PRODUTO.md`](PENDENCIA-CATEGORIA-PRODUTO.md) — **próxima fatia
   de vendas.** A pergunta aberta ("o que vocês têm?") ainda é respondida por
   `order by nome`, e no Empório sai `1, 10, 11, 12, 13`: não parece amostra, parece

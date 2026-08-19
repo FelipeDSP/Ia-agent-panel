@@ -199,11 +199,28 @@ try {
     [JSON.stringify({ app_metadata: { tenant_id: B, papel: 'tenant_admin' } })]);
   const comoTenant = (await c.query(
     `select count(*)::int n from public.tenant_credenciais where tenant_id = $1`, [B])).rows[0].n;
+  // Mesma sessao, mesmas claims, mesmo role: a leitura que TEM de funcionar.
+  const timesComoTenant = (await c.query(
+    `select count(*)::int n from public.tenant_times where tenant_id = $1`, [B])).rows[0].n;
   await c.query('reset role');
   await c.query('rollback to savepoint sp_cred');
 
   chk('o tenant_admin NAO le a propria credencial (a acao precisa de service_role)',
     comoTenant === 0, `leu ${comoTenant} linha(s) — a policy da 21a afrouxou`);
+
+  // CONTROLE POSITIVO — e sem ele a assercao acima nao vale nada.
+  //
+  // A policy de tenant_credenciais e `auth_is_super_admin()` e mais nada:
+  // QUALQUER role nao-super devolve 0, com ou sem as claims terem pegado. Se o
+  // `set_config` virasse no-op amanha, "leu 0 linhas" continuaria verdadeiro e o
+  // teste seguiria verde sem ter exercitado nada.
+  //
+  // `tenant_times` tem policy por tenant, entao ler > 0 sob as MESMAS claims e
+  // o MESMO role prova que o harness esta de pe. Se o set_config quebrar, esta
+  // assercao cai — e e ela que faz a de cima significar alguma coisa.
+  chk('controle positivo: sob as MESMAS claims, o tenant LE os proprios times',
+    timesComoTenant > 0,
+    `leu ${timesComoTenant} — se for 0, o set_config nao pegou e a assercao acima e vacua`);
 
   // Contraprova: a linha existe. Sem isso, "0 linhas" seria verdade tambem se
   // a credencial nunca tivesse sido gravada.
