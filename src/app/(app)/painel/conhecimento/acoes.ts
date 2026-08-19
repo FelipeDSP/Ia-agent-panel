@@ -94,11 +94,43 @@ export async function subirArquivo(
 
   const r = await invocarProcessamento(job.id);
   if (!r.ok) {
-    await supabase
+    /*
+     * MARCAR O JOB COMO 'erro' É O QUE TORNA A FALHA RECUPERÁVEL, e por isso o
+     * erro DESTA escrita precisa ser olhado. `'pendente'` está no conjunto que
+     * liga o polling (`componentes.tsx`, ATIVO) e o botão Reprocessar só
+     * renderiza com `tipo === 'arquivo' && status === 'erro'`. Se este update
+     * falhar em silêncio, o cliente fica com job eternamente “em andamento”,
+     * tela consultando o servidor para sempre, e uma mensagem mandando clicar
+     * num botão que não existe. O estado não é só irrecuperável — ele se
+     * disfarça de progresso.
+     *
+     * NÃO É O MESMO CASO DE `excluirTenant`, e a diferença importa para quem
+     * vier consertar por analogia. Lá havia duas escritas e a saída foi inverter
+     * a ordem, para o resto pendurado ser o menos ruim. Aqui NÃO HÁ ORDEM A
+     * INVERTER: quando este update roda, o arquivo já está no Storage e o job já
+     * existe. A pergunta não é em que ordem escrever — é o que a tela diz
+     * quando o estado ficou inconsistente e ninguém mais pode conserta-lo daqui.
+     *
+     * Por isso as duas mensagens são diferentes. “Tente reprocessar” só vale
+     * quando o selo gravou e o botão vai estar lá; com o selo perdido, quem
+     * resolve é a agência, e mandar o cliente clicar seria a mesma classe de
+     * defeito que abriu esta série: instrução para fazer o impossível.
+     */
+    const { error: erroSelo } = await supabase
       .from('jobs_ingestao')
       .update({ status: 'erro', erro_msg: `Falha ao disparar processamento (HTTP ${r.status ?? '?'}).` })
       .eq('tenant_id', usuario.tenantId)
       .eq('id', job.id);
+
+    if (erroSelo) {
+      return {
+        erro:
+          `“${arquivo.name}” foi enviado, mas o processamento não iniciou e não consegui ` +
+          'registrar a falha — ele vai continuar aparecendo como em andamento. ' +
+          'Não há o que fazer por aqui: avise a agência para destravar.',
+      };
+    }
+
     return { erro: 'Arquivo enviado, mas o processamento não iniciou. Tente reprocessar.' };
   }
 

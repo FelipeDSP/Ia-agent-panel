@@ -214,6 +214,14 @@ ok(
     `${vazados.length ? ': ' + vazados.map(rel).join(', ') : ''})`,
 );
 
+/*
+ * Quantas asserções a seção 1 gastou. CONTADA, não escrita à mão: o rodapé
+ * imprime "N sítios" e "M passaram" na mesma tela, e sem dizer de onde vem a
+ * diferença quem lê para e reconta. Número que não fecha é o começo de não
+ * confiar em nenhum.
+ */
+const META = passou + falhou;
+
 console.log('\n=== 2. Toda mutação tem o erro destruturado e lido ===\n');
 
 const naoClassificaveis = [];
@@ -251,6 +259,7 @@ for (const arquivo of serverActions) {
 
 console.log('\n------------------------------------------------------------');
 console.log(`  ${sitios} sítios de mutação em ${serverActions.length} Server Actions`);
+console.log(`  + ${META} asserções de âncora (seção 1) = ${sitios + META} casos`);
 if (naoClassificaveis.length) {
   console.log(`  ${naoClassificaveis.length} NÃO CLASSIFICÁVEL(EIS) — não vire exceção sozinho:`);
   for (const n of naoClassificaveis) console.log(`     ${n.onde} (${n.tipo})`);
