@@ -18,6 +18,7 @@ já não é pendência.
 | [Categoria de produto](PENDENCIA-CATEGORIA-PRODUTO.md) | "o que vocês têm?" responde por `order by nome` | próxima fatia de vendas |
 | [Guarda do Storage](PENDENCIA-GUARDA-STORAGE.md) | a guarda de dado alheio cobre 14 tabelas e não o Storage | primeiro cliente além do `restaurante-teste` com foto |
 | [Seed dos testes](PENDENCIA-SEED-DOS-TESTES.md) | **parcial** — os cinco de isolamento fecharam; outros nove ainda resolvem seed por slug | antes de apagar qualquer seed |
+| [Exclusão atômica](PENDENCIA-EXCLUSAO-ATOMICA.md) | excluir cliente são duas escritas PostgREST e não uma transação; a ordem foi invertida para o resto possível ser visível, mas resto ainda existe | depois da demonstração do `emporio`, ou ao excluir cliente com credencial real |
 | [Margem](PENDENCIA-MARGEM.md) | **decidido não fazer** — margem por cliente em `/admin/consumo` | planos diferentes entre clientes |
 
 Duas que **não** são pendência e vivem aqui perto, para não se procurar no lugar

@@ -601,6 +601,46 @@ export async function excluirTenant(
     };
   }
 
+  /*
+   * A CREDENCIAL SAI PRIMEIRO, E A ORDEM É ESCOLHA, NÃO ACASO.
+   *
+   * São duas escritas PostgREST, e duas escritas não formam transação: alguma
+   * metade pode ficar pendurada, e a decisão é QUAL. Antes o soft delete vinha
+   * primeiro e este `.delete()` corria sem o erro olhado — falhando, o cliente
+   * ficava excluído com o token do Chatwoot ainda no banco, e a tela redirecionava
+   * com cara de sucesso. Segredo órfão é o OPOSTO da intenção de quem clicou.
+   *
+   * E informar depois do soft delete é IMPOSSÍVEL nesta rota, não difícil: a
+   * página de detalhe filtra `deletado_em is null` e chama `notFound()`. A action
+   * pode devolver o erro que quiser — a página re-renderiza, dá 404, e a mensagem
+   * morre lá. Não é o `redirect` que engole; é a página.
+   *
+   * Invertendo, o resto possível vira credencial apagada com o tenant vivo: um
+   * SUBCONJUNTO do que o operador pediu, visível (a página ainda renderiza), e o
+   * retry converge — repetir apaga zero linhas de credencial, que não é erro no
+   * PostgREST, e completa a exclusão.
+   *
+   * O PREÇO, escolhido e não esquecido: entre as duas escritas o cliente fica vivo
+   * sem credencial, e o agente dele quebra no envio até o operador repetir.
+   *
+   * A versão sem metade pendurada é uma só — as duas escritas num SECURITY
+   * DEFINER, uma transação. Está em docs/PENDENCIA-EXCLUSAO-ATOMICA.md, fora
+   * daqui de propósito: esta inversão tira o pior estado agora, a migração tem a
+   * cerimônia inteira.
+   */
+  const { error: erroCredencial } = await supabase
+    .from('tenant_credenciais')
+    .delete()
+    .eq('tenant_id', tenantId);
+
+  if (erroCredencial) {
+    return {
+      erro:
+        `Não foi possível apagar a credencial do Chatwoot: ${erroCredencial.message}. ` +
+        'O cliente NÃO foi excluído — tente de novo.',
+    };
+  }
+
   // Solta o chatwoot_account_id na exclusão: ele é UNIQUE e, se ficasse preso ao
   // tenant morto, aquela conta do Chatwoot não poderia ser religada a nenhum outro
   // cliente. chatwoot_url é NOT NULL, então não pode ir a null — só zeramos o que
@@ -616,9 +656,6 @@ export async function excluirTenant(
     .is('deletado_em', null); // idempotente: não re-exclui
 
   if (error) return { erro: `Não foi possível excluir: ${error.message}` };
-
-  // A credencial vive em tabela separada (migracao 21a): limpa junto.
-  await supabase.from('tenant_credenciais').delete().eq('tenant_id', tenantId);
 
   revalidatePath('/admin/tenants');
   // A tela de detalhe filtra deletado_em IS NULL e daria 404; volta para a lista.
