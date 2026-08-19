@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { exigirTenantAdmin } from '@/lib/auth';
+import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarEdicaoTenantAdmin } from '@/lib/tenants/schema';
 import { clientePodeDesligar } from '@/lib/tools/registro';
@@ -213,6 +214,92 @@ export async function salvarTransferirHumano(
 
 
 /**
+ * O que a verificação de time precisa, e o que FALTA quando não dá para rodar.
+ *
+ * POR QUE EXISTE UM CLIENTE ADMIN AQUI, num fluxo de tenant_admin: o token do
+ * Chatwoot mora em `tenant_credenciais`, cuja ÚNICA policy é
+ * `auth_is_super_admin()` — a migração 21a tirou a credencial do alcance do
+ * cliente de propósito. Lendo com a sessão dele, `cred` volta sempre nula, e a
+ * verificação nunca rodava para ninguém. Foi o que aconteceu no primeiro teste
+ * real: os dois times ficaram "não verificado", inclusive o número certo.
+ *
+ * O `service_role` fica no servidor e o token não volta para o browser: ele é
+ * usado aqui para chamar o Chatwoot e some. O filtro por `tenantId` vem do JWT
+ * (`exigirTenantAdmin`), nunca do formulário.
+ *
+ * OS TRÊS MOTIVOS SÃO DISTINTOS DE PROPÓSITO. Cada um tem uma saída diferente:
+ * sem conexão, alguém conecta a conta; sem credencial guardada, é a agência;
+ * sem conversa encerrada, é encerrar uma conversa. Dizer "não está conectado"
+ * quando o que falta é conversa manda procurar no lugar errado — e o cliente
+ * confere a conexão, acha tudo certo, e não sai do lugar.
+ */
+async function contextoDeVerificacao(tenantId: string): Promise<
+  | { ok: true; url: string; accountId: number | string; token: string; conversationId: number | string }
+  | { ok: false; motivo: string }
+> {
+  const supabase = await criarClienteServidor();
+  const admin = criarClienteAdmin();
+
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('chatwoot_url, chatwoot_account_id')
+    .eq('id', tenantId)
+    .maybeSingle();
+
+  if (!tenant?.chatwoot_account_id || !tenant.chatwoot_url) {
+    return {
+      ok: false,
+      motivo: 'este cliente ainda não está conectado a uma conta do Chatwoot',
+    };
+  }
+
+  // service_role: a RLS de tenant_credenciais é super-admin-only (migração 21a).
+  const { data: cred } = await admin
+    .from('tenant_credenciais')
+    .select('chatwoot_token')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+
+  if (!cred?.chatwoot_token) {
+    return {
+      ok: false,
+      motivo:
+        'a credencial do Chatwoot deste cliente não está guardada — quem resolve é a agência',
+    };
+  }
+
+  /*
+   * A conversa mais antiga JÁ RESOLVIDA. Não a mais recente: essa é
+   * provavelmente um atendimento em curso, e atribuir e desatribuir ali é mexer
+   * na tela de quem está trabalhando.
+   */
+  const { data: conversa } = await supabase
+    .from('conversas')
+    .select('conversation_id')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'resolvido')
+    .order('criado_em', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!conversa) {
+    return {
+      ok: false,
+      motivo:
+        'ainda não há conversa encerrada para testar — encerre uma no Chatwoot e use “Verificar”',
+    };
+  }
+
+  return {
+    ok: true,
+    url: tenant.chatwoot_url,
+    accountId: tenant.chatwoot_account_id,
+    token: cred.chatwoot_token,
+    conversationId: conversa.conversation_id,
+  };
+}
+
+/**
  * Cadastra um time do Chatwoot para o tenant.
  *
  * O CADASTRO É MANUAL porque o token de Agent Bot não lista times — `GET /teams`
@@ -261,43 +348,16 @@ export async function salvarTime(_estado: EstadoConfig, fd: FormData): Promise<E
    * recente: a recente é provavelmente um atendimento em curso, e atribuir e
    * desatribuir ali é mexer na tela de quem está trabalhando.
    */
-  const { data: tenant } = await supabase
-    .from('tenants')
-    .select('chatwoot_url, chatwoot_account_id')
-    .eq('id', usuario.tenantId)
-    .maybeSingle();
-  const { data: cred } = await supabase
-    .from('tenant_credenciais')
-    .select('chatwoot_token')
-    .eq('tenant_id', usuario.tenantId)
-    .maybeSingle();
-  const { data: conversa } = await supabase
-    .from('conversas')
-    .select('conversation_id')
-    .eq('tenant_id', usuario.tenantId)
-    .eq('status', 'resolvido')
-    .order('criado_em', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const ctx = await contextoDeVerificacao(usuario.tenantId);
 
   let verificadoEm: string | null = null;
-  let falhouEm: string | null = null;
+  const falhouEm: string | null = null;
   let aviso: string | null = null;
 
-  if (!tenant?.chatwoot_account_id || !tenant.chatwoot_url || !cred?.chatwoot_token) {
-    aviso = 'Time salvo sem verificar: este cliente ainda não está conectado ao Chatwoot.';
-  } else if (!conversa) {
-    aviso =
-      'Time salvo sem verificar: não há conversa encerrada para testar. ' +
-      'Depois da primeira conversa, use “Verificar” para confirmar o número.';
+  if (!ctx.ok) {
+    aviso = `Time salvo sem verificar: ${ctx.motivo}.`;
   } else {
-    const r = await verificarTime({
-      url: tenant.chatwoot_url,
-      accountId: tenant.chatwoot_account_id,
-      token: cred.chatwoot_token,
-      conversationId: conversa.conversation_id,
-      teamId,
-    });
+    const r = await verificarTime({ ...ctx, teamId });
     if (r.estado === 'existe') verificadoEm = new Date().toISOString();
     else if (r.estado === 'nao_existe') {
       // NÃO SALVA. É o caso que a validação existe para pegar.
@@ -309,7 +369,6 @@ export async function salvarTime(_estado: EstadoConfig, fd: FormData): Promise<E
         },
       };
     } else {
-      falhouEm = null;
       aviso = `Time salvo sem verificar: ${r.motivo}.`;
     }
   }
@@ -357,36 +416,14 @@ export async function verificarTimeSalvo(_estado: EstadoConfig, fd: FormData): P
     .maybeSingle();
   if (!time) return { erro: 'Time não encontrado.' };
 
-  const { data: tenant } = await supabase
-    .from('tenants')
-    .select('chatwoot_url, chatwoot_account_id')
-    .eq('id', usuario.tenantId)
-    .maybeSingle();
-  const { data: cred } = await supabase
-    .from('tenant_credenciais')
-    .select('chatwoot_token')
-    .eq('tenant_id', usuario.tenantId)
-    .maybeSingle();
-  const { data: conversa } = await supabase
-    .from('conversas')
-    .select('conversation_id')
-    .eq('tenant_id', usuario.tenantId)
-    .eq('status', 'resolvido')
-    .order('criado_em', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  // O MESMO motivo das duas telas. Antes, esta ação dizia "falta conexão com o
+  // Chatwoot OU conversa encerrada" e a outra dizia "não está conectado": duas
+  // mensagens discordando sobre a mesma causa, e a segunda apontando para o
+  // lugar errado.
+  const ctx = await contextoDeVerificacao(usuario.tenantId);
+  if (!ctx.ok) return { erro: `Ainda não dá para verificar: ${ctx.motivo}.` };
 
-  if (!tenant?.chatwoot_account_id || !cred?.chatwoot_token || !conversa) {
-    return { erro: 'Ainda não dá para verificar: falta conexão com o Chatwoot ou conversa encerrada.' };
-  }
-
-  const r = await verificarTime({
-    url: tenant.chatwoot_url as string,
-    accountId: tenant.chatwoot_account_id,
-    token: cred.chatwoot_token,
-    conversationId: conversa.conversation_id,
-    teamId: time.team_id,
-  });
+  const r = await verificarTime({ ...ctx, teamId: time.team_id });
 
   const agora = new Date().toISOString();
   await supabase

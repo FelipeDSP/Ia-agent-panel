@@ -176,6 +176,43 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  console.log('\n-- 5b. O tenant NAO le a propria credencial --\n');
+
+  // POR QUE ESTE TESTE EXISTE. A validacao de time precisa do token do Chatwoot,
+  // e a primeira versao da Server Action leu `tenant_credenciais` com a sessao
+  // do cliente. A unica policy da tabela e `auth_is_super_admin()` (migracao
+  // 21a), entao a leitura voltava NULA sempre e a verificacao nunca rodava —
+  // com a mensagem errada por cima, culpando a conexao do Chatwoot.
+  //
+  // A acao passou a usar `service_role`. Este teste guarda o fato que obriga
+  // isso: se um dia a policy afrouxar, o cliente passa a ler o proprio token e
+  // a segregacao da 21a some sem ninguem notar.
+  await c.query(`insert into public.tenant_credenciais (tenant_id, chatwoot_token) values ($1, $2)`,
+    [B, 'token-de-teste-24-chars']);
+
+  await c.query('savepoint sp_cred');
+  await c.query(`set local role authenticated`);
+  // `set_config(..., true)` e nao `SET LOCAL`: SET nao aceita parametro
+  // vinculado, e interpolar json de tenant na string seria injecao esperando
+  // acontecer.
+  await c.query(`select set_config('request.jwt.claims', $1, true)`,
+    [JSON.stringify({ app_metadata: { tenant_id: B, papel: 'tenant_admin' } })]);
+  const comoTenant = (await c.query(
+    `select count(*)::int n from public.tenant_credenciais where tenant_id = $1`, [B])).rows[0].n;
+  await c.query('reset role');
+  await c.query('rollback to savepoint sp_cred');
+
+  chk('o tenant_admin NAO le a propria credencial (a acao precisa de service_role)',
+    comoTenant === 0, `leu ${comoTenant} linha(s) — a policy da 21a afrouxou`);
+
+  // Contraprova: a linha existe. Sem isso, "0 linhas" seria verdade tambem se
+  // a credencial nunca tivesse sido gravada.
+  const existeMesmo = (await c.query(
+    `select count(*)::int n from public.tenant_credenciais where tenant_id = $1`, [B])).rows[0].n;
+  chk('e a credencial existe de verdade (contraprova)', existeMesmo === 1, String(existeMesmo));
+
+
+  // -------------------------------------------------------------------------
   console.log('\n-- 6. Rollback --\n');
 
   const rb = await tentar(R44);
