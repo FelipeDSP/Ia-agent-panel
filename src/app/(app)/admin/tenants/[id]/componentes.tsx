@@ -157,9 +157,6 @@ export function FormChatwoot({
             placeholder={accountId ? '•••••• (deixe para revalidar)' : ''}
           />
           <ErroCampo msg={estado.errosCampo?.['chatwoot_token']} />
-          <p className="text-xs text-muted-foreground">
-            O token é validado com uma chamada real ao Chatwoot antes de salvar.
-          </p>
         </div>
 
         <label className="flex items-start gap-2 text-sm">
@@ -168,13 +165,7 @@ export function FormChatwoot({
             name="token_bot"
             className="mt-0.5 h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           />
-          <span>
-            É um token de Agent Bot (o robô responde por ele)
-            <span className="mt-0.5 block text-xs text-muted-foreground">
-              Marque se o token veio de um Agent Bot. Esse tipo não é validado pela API de conta
-              (daria 401) — o painel salva sem validar e você confirma com uma mensagem de teste.
-            </span>
-          </span>
+          <span>É um token de Agent Bot (o robô responde por ele)</span>
         </label>
 
         <div>
@@ -194,14 +185,22 @@ export function FormChatwoot({
 /**
  * Desconectar: libera a conta do Chatwoot para outro cliente.
  *
- * Só aparece quando HÁ conta conectada — botão que não tem o que fazer é ruído,
- * e a Server Action recusa esse caso de qualquer forma.
+ * SÓ aparece quando HÁ conta conectada — botão sem o que fazer é ruído, e a
+ * Server Action recusa esse caso de qualquer forma.
  *
- * A confirmação não é cerimônia. "Desconectar" soa destrutivo, e o que a pessoa
- * precisa saber divide-se em três, nesta ordem: o que PARA (o atendimento), o
- * que FICA (o token) e o que NÃO é tocado (o dado do cliente). Sem a terceira,
- * quem precisa trocar a conta hesita — e hesitar aqui significa voltar a fazer
- * por SQL, que é o que motivou este botão.
+ * O TEXTO AQUI É CURTO DE PROPÓSITO, e o critério não é o do painel do
+ * cliente: esta tela é só do super_admin, que é o dono do produto. A versão
+ * anterior explicava que o agente para, que o token fica guardado e que nada é
+ * apagado — três consequências escritas para quem não conhece o sistema, e
+ * essa pessoa não usa esta rota. Ao mexer aqui, não reintroduza.
+ *
+ * AS DUAS SAÍDAS CONTINUAM SEPARADAS, e isso não é verbosidade: uma apaga
+ * segredo e a outra não. Juntá-las numa só significa ir buscar token no
+ * Chatwoot depois. Os rótulos entre parênteses são o que distingue os casos
+ * ("troquei a conta de cliente" x "o bot mudou"), e são o mínimo que sobra.
+ *
+ * O que apagar NÃO faz — revogar o token no Chatwoot — está em
+ * docs/DECISAO-NAO-ROTACIONAR-TOKEN-CHATWOOT.md, não na tela.
  */
 function DesconectarChatwoot({ tenantId, accountId }: { tenantId: string; accountId: number }) {
   const [estado, acao] = useActionState<EstadoAcao, FormData>(desconectarChatwoot, {});
@@ -215,77 +214,40 @@ function DesconectarChatwoot({ tenantId, accountId }: { tenantId: string; accoun
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
 
       {confirmando ? (
-        <Alert variant="warning">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <span>
-                <strong>O agente deste cliente para de responder.</strong> A mensagem continua
-                chegando do Chatwoot, mas morre na checagem de tenant — sem erro visível para
-                quem escreveu.
-              </span>
-              <span>
-                <strong>O token continua guardado.</strong> Reconectar este mesmo cliente não
-                exige gerar token novo no Chatwoot.
-              </span>
-              <span>
-                <strong>Nada é apagado.</strong> Conversas, produtos, base de conhecimento e
-                pedidos ficam como estão.
-              </span>
-            </div>
-            {/*
-              DUAS SAÍDAS, porque são dois casos diferentes — e a diferença não
-              é de grau: guardar o token só ajuda enquanto ele VALE. Se o Agent
-              Bot mudou ou o token foi regenerado no Chatwoot, o guardado virou
-              lixo, e lixo aqui não dá erro ao reconectar: o agente processa o
-              turno e falha no envio, calado.
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium">Desconectar a conta {accountId}?</span>
 
-              A linha entre os botões existe para a escolha ser feita pelo CASO
-              ("troquei de conta" x "o bot mudou") e não pelo grau de medo.
-            */}
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <SubmitButton pendingLabel="Desconectando…">
-                  Desconectar a conta {accountId}
-                </SubmitButton>
-                <SubmitButton
-                  name="apagar_credencial"
-                  value="1"
-                  variant="outline"
-                  pendingLabel="Desconectando…"
-                >
-                  Desconectar e apagar a credencial
-                </SubmitButton>
-                <Button type="button" variant="ghost" onClick={() => setConfirmando(false)}>
-                  Cancelar
-                </Button>
-              </div>
-              <p className="text-xs">
-                A primeira é para <strong>trocar a conta de cliente</strong> — o token continua
-                valendo. A segunda é para quando <strong>o bot mudou ou o token foi
-                regenerado</strong>: aí o guardado só atrapalha, e reconectar vai pedir um novo.
-              </p>
-              {/*
-                O AVISO PRECISA VIR ANTES DO CLIQUE, não depois. "Apagar a
-                credencial" parece definitivo, e quem clica achando que
-                invalidou o token não invalidou nada: o Chatwoot não sabe desta
-                tela. Dizer isso só na mensagem de sucesso chegaria tarde para
-                quem apagou justamente para revogar.
-              */}
-              <p className="text-xs">
-                Apagar limpa <strong>o nosso lado</strong>, não o do Chatwoot: o token continua
-                válido lá até alguém regenerá-lo por lá.
-              </p>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <SubmitButton size="sm" pendingLabel="Desconectando…">
+              Liberar a conta
+            </SubmitButton>
+            <span className="text-xs text-muted-foreground">token fica guardado</span>
           </div>
-        </Alert>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <SubmitButton
+              name="apagar_credencial"
+              value="1"
+              variant="outline"
+              size="sm"
+              pendingLabel="Desconectando…"
+            >
+              Liberar e apagar token
+            </SubmitButton>
+            <span className="text-xs text-muted-foreground">para bot novo</span>
+          </div>
+
+          <div>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmando(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-3">
+        <div>
           <Button type="button" variant="outline" onClick={() => setConfirmando(true)}>
-            Desconectar Chatwoot
+            Desconectar
           </Button>
-          <span className="text-xs text-muted-foreground">
-            Libera a conta {accountId} para outro cliente. O token fica guardado.
-          </span>
         </div>
       )}
     </form>
@@ -331,10 +293,6 @@ export function FormTransferirHumano({
           defaultValue={sessao}
           placeholder="ex.: acquaariquemes (vazio = sem aviso)"
         />
-        <p className="text-xs text-muted-foreground">
-          Por qual sessão do WAHA sai o aviso. Vazio = o cliente não consegue ligar o aviso, mas a
-          transferência (nota + pausa) funciona mesmo assim.
-        </p>
       </div>
 
       <div>
@@ -376,8 +334,7 @@ export function FormConvite({ tenantId }: { tenantId: string }) {
       {estado.linkConvite ? (
         <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/50 p-3">
           <p className="text-xs text-muted-foreground">
-            SMTP ainda não configurado — envie este link ao cliente para ele
-            definir a senha:
+            Envie este link ao cliente para ele definir a senha:
           </p>
           <div className="flex items-center gap-2">
             <Input readOnly value={estado.linkConvite} className="font-mono text-xs" />
@@ -417,11 +374,6 @@ export function BotaoSuspensao({ tenantId, ativo }: { tenantId: string; ativo: b
           {ativo ? 'Suspender cliente' : 'Reativar cliente'}
         </SubmitButton>
       </div>
-      <p className="text-xs text-muted-foreground">
-        {ativo
-          ? 'Suspenso, o agente para de responder (api_n8n filtra por ativo).'
-          : 'Reativar volta a permitir que o agente responda.'}
-      </p>
     </form>
   );
 }
@@ -567,12 +519,6 @@ export function ZonaPerigoExcluir({ tenantId, nome }: { tenantId: string; nome: 
       <input type="hidden" name="tenant_id" value={tenantId} />
 
       {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
-
-      <p className="text-sm text-muted-foreground">
-        Excluir remove o cliente da lista e desliga o agente. É reversível
-        (soft delete — o dado fica no banco), mas a restauração é feita pela
-        agência sob demanda. Não apaga conversas nem documentos.
-      </p>
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="confirmacao">

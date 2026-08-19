@@ -72,3 +72,27 @@ decisão antes de assumir que ela continua válida.
 
 Ver também `docs/DIAGNOSTICO-CREDENCIAL-CHATWOOT.md` para confirmar se um token
 segue válido no Chatwoot sem precisar de acesso administrativo.
+
+## Apagar a credencial no painel não revoga nada no Chatwoot
+
+O botão **"Liberar e apagar token"** em `/admin/tenants/[id]` apaga
+`tenant_credenciais.chatwoot_token` do tenant — o **nosso** lado. O token
+continua valendo no Chatwoot até alguém regenerá-lo por lá.
+
+Isso importa em dois momentos opostos:
+
+- **Trocar a conta de cliente:** use "Liberar a conta". O token guardado
+  continua servindo, e reconectar o mesmo cliente não exige gerar outro.
+- **Suspeita de acesso indevido:** apagar aqui **não** basta. É preciso
+  regenerar o Agent Bot token no Chatwoot — é a rotação que a seção anterior
+  dispensou por falta de exposição, e que volta a ser obrigatória se a premissa
+  cair.
+
+Há um terceiro caso, e é ele que justifica o botão existir: quando o Agent Bot
+mudou ou o token foi regenerado no Chatwoot, o guardado virou lixo — e lixo aqui
+**não dá erro ao reconectar**. O agente processa o turno e falha no envio,
+calado. Apagar força o próximo cadastro a pedir um token novo.
+
+Este texto morava na tela de desconectar. Saiu de lá porque a tela é só do
+super_admin, que é o dono do produto — explicar consequência para ele é ruído.
+Aqui continua consultável.
