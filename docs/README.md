@@ -50,6 +50,12 @@ documentação e material de referência.
   de `outgoing` (nao um), as notas para colar em cada no quando o JSON destravar, o
   desenho da sondagem na conexao, a retomada por expiracao preguicosa (sem job novo) e
   o incidente do `fortalize` desconectado.
+- [`VAZAMENTO-USED-TOOLS.md`](VAZAMENTO-USED-TOOLS.md) — **medido, filtro NAO
+  implementado.** O modelo fabrica `[Used tools: ...]` e cola o resultado cru da KB
+  antes da resposta: 2 em 165 saidas, dois tenants, e nenhum caso de trecho de KB
+  vazando sozinho. Traz o desenho do filtro de saida e a prova de que reusar o
+  `sanitizar` do `filtro-texto.js` **piora** o caso — ele deixa passar justamente a
+  instrucao interna, sem marca nenhuma de que e lixo.
 - [`PENDENCIA-CATEGORIA-PRODUTO.md`](PENDENCIA-CATEGORIA-PRODUTO.md) — **próxima fatia
   de vendas.** A pergunta aberta ("o que vocês têm?") ainda é respondida por
   `order by nome`, e no Empório sai `1, 10, 11, 12, 13`: não parece amostra, parece
