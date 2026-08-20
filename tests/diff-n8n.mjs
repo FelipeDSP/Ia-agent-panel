@@ -17,7 +17,7 @@
  * Uso: npm run teste:diff-n8n
  */
 
-import { achatar, classificar, compararWorkflow, mesmaPasta, normalizarNo, CAMPOS_NO_VOLATEIS }
+import { achatar, classificar, compararConexoes, compararWorkflow, mesmaPasta, normalizarNo, CAMPOS_NO_VOLATEIS }
   from '../scripts/diff-n8n-instancia.mjs';
 
 let ok = 0;
@@ -84,7 +84,52 @@ chk('parâmetro aninhado diferente aparece',
   compararWorkflow(repo, outraTemp).some((d) => d.campo === 'parameters.options.temperature'));
 
 chk('conexões diferentes aparecem',
-  compararWorkflow(repo, wf([noBase()], { a: [['x']] })).some((d) => d.campo === 'connections'));
+  compararWorkflow(repo, wf([noBase()], { a: [['x']] })).some((d) => d.no === '(conexões)'));
+
+/*
+ * O FALSO POSITIVO DE 2026-08-20, e os limites do conserto.
+ *
+ * O script dizia "(conexões) diverge" num export cujas 64 arestas eram
+ * idênticas às do repo. A causa era ramo vazio no FIM: o repo escreve a saída
+ * falsa de um IF sem destino como `[[...], []]`, o export escreve `[[...]]`.
+ * Falso positivo em detector ensina a ignorar o detector — por isso vale um
+ * caso próprio, junto com os dois que provam que ele não ignorou demais.
+ */
+const conexao = (destino) => [{ node: destino, type: 'main', index: 0 }];
+const comRamoVazio = wf([noBase()], { IF: { main: [conexao('Segue'), []] } });
+const semRamoVazio = wf([noBase()], { IF: { main: [conexao('Segue')] } });
+
+chk('ramo vazio no FIM não é divergência (repo x export do mesmo IF)',
+  compararConexoes(comRamoVazio.connections, semRamoVazio.connections).length === 0,
+  JSON.stringify(compararConexoes(comRamoVazio.connections, semRamoVazio.connections)));
+
+const falsoLigado = wf([noBase()], { IF: { main: [conexao('Segue'), conexao('Ignora')] } });
+const difLigado = compararConexoes(semRamoVazio.connections, falsoLigado.connections);
+chk('mas ramo vazio virando ramo COM destino é divergência', difLigado.length === 1);
+chk('e a divergência diz QUAL aresta, não só "diverge"',
+  difLigado[0]?.campo?.includes('main[1] -> Ignora'), JSON.stringify(difLigado));
+
+// Guarda contra normalizar demais: a ordem dos ramos É semântica (0 = true,
+// 1 = false num IF). Trocar os dois troca o comportamento do workflow.
+const trocado = wf([noBase()], { IF: { main: [conexao('Ignora'), conexao('Segue')] } });
+chk('trocar a ORDEM dos ramos continua sendo divergência',
+  (() => {
+    // 4 linhas, não 2: cada aresta sai de um slot e entra em outro, então some
+    // de um lado e aparece do outro. O que importa é a troca ser VISÍVEL.
+    const d = compararConexoes(falsoLigado.connections, trocado.connections);
+    return d.length === 4 && d.some((x) => x.campo.includes('main[0] -> Ignora') && x.repo === '(ausente)');
+  })());
+
+// Vazio no MEIO desloca o índice de tudo que vem depois: não pode sumir.
+const vazioNoMeio = wf([noBase()], { IF: { main: [[], conexao('Segue')] } });
+chk('ramo vazio no MEIO continua contando (desloca os índices)',
+  compararConexoes(semRamoVazio.connections, vazioNoMeio.connections).length === 2);
+
+chk('formato inesperado não derruba o comparador',
+  (() => {
+    try { return compararConexoes({ a: 'lixo' }, { a: [[null]] }).length >= 0; }
+    catch { return false; }
+  })());
 
 // Objeto vazio x chave ausente: `builtInTools: {}` no repo e ausente na
 // instância É divergência, e tem de aparecer — foi assim que `notice: ""`

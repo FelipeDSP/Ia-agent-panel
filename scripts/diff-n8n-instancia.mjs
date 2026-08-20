@@ -140,8 +140,77 @@ export function compararWorkflow(wfRepo, wfInstancia) {
     }
   }
 
-  if (JSON.stringify(wfRepo.connections) !== JSON.stringify(wfInstancia.connections)) {
-    difs.push({ no: '(conexões)', campo: 'connections', repo: 'ver arquivo', instancia: 'diverge' });
+  difs.push(...compararConexoes(wfRepo.connections, wfInstancia.connections));
+  return difs;
+}
+
+/**
+ * Compara conexões ARESTA A ARESTA, e não por `JSON.stringify` do objeto todo.
+ *
+ * POR QUE MUDOU. A primeira versão comparava os dois objetos serializados e
+ * dizia só "diverge". Em 2026-08-20 ela acusou divergência num export cujas 64
+ * arestas eram idênticas às do repo, uma a uma. A causa não era ordem nem
+ * serialização: era **ramo vazio no fim**. O repo declara a saída falsa de um IF
+ * sem destino como `[[{...}], []]`; o export escreve `[[{...}]]` e para. Mesma
+ * topologia, texto diferente — é a mesma erosão do "export omite o que bate com
+ * o default", agora nas conexões.
+ *
+ * Duas consequências, e a segunda é a que doía:
+ *
+ *  1. falso positivo em detector de divergência ensina a ignorar o detector, e
+ *     um detector ignorado é pior que detector nenhum;
+ *  2. "diverge" sem dizer ONDE obriga quem lê a conferir 64 arestas na mão para
+ *     descobrir que não era nada. Agora cada aresta que sobra ou falta vira uma
+ *     linha própria, com origem, saída e destino.
+ *
+ * O que NÃO é normalizado: a ORDEM dos ramos. O ramo 0 de um IF é o `true` e o
+ * 1 é o `false` — trocar a ordem troca o comportamento. Só o vazio no FIM da
+ * lista some, porque ramo final sem destino e ramo final ausente são a mesma
+ * coisa para o n8n.
+ */
+export function compararConexoes(cRepo = {}, cInst = {}) {
+  // Defensivo de proposito: um comparador que ESTOURA num formato inesperado é
+  // tão ruim quanto um que mente — nos dois casos a conferência não acontece.
+  // Forma canônica do n8n é `{ origem: { main: [ [ {node,type,index} ] ] } }`;
+  // qualquer coisa fora disso vira rótulo em texto e continua comparável.
+  const rotulo = (c) =>
+    c && typeof c === 'object' ? `${c.node}[${c.index ?? 0}]` : JSON.stringify(c);
+
+  const arestas = (conexoes) => {
+    const mapa = new Map();
+    for (const [origem, saidasBrutas] of Object.entries(conexoes || {})) {
+      const saidas = Array.isArray(saidasBrutas) ? { main: saidasBrutas } : saidasBrutas || {};
+      for (const [tipo, ramos] of Object.entries(saidas)) {
+        // corta só os ramos vazios do FIM; um vazio no meio desloca os índices
+        // seguintes e por isso continua contando.
+        const uteis = (Array.isArray(ramos) ? [...ramos] : [ramos]).map((r) =>
+          Array.isArray(r) ? r : [r].filter((x) => x !== undefined && x !== null),
+        );
+        while (uteis.length && uteis[uteis.length - 1].length === 0) uteis.pop();
+        uteis.forEach((ramo, saida) =>
+          ramo.forEach((c) => {
+            const chave = `${origem} · ${tipo}[${saida}] -> ${rotulo(c)}`;
+            mapa.set(chave, (mapa.get(chave) || 0) + 1);
+          }),
+        );
+      }
+    }
+    return mapa;
+  };
+
+  const a = arestas(cRepo);
+  const b = arestas(cInst);
+  const difs = [];
+  for (const chave of new Set([...a.keys(), ...b.keys()])) {
+    const na = a.get(chave) || 0;
+    const nb = b.get(chave) || 0;
+    if (na === nb) continue;
+    difs.push({
+      no: '(conexões)',
+      campo: chave,
+      repo: na ? `${na}x` : '(ausente)',
+      instancia: nb ? `${nb}x` : '(ausente)',
+    });
   }
   return difs;
 }
