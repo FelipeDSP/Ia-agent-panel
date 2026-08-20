@@ -109,6 +109,17 @@ const cortesDaLinha = async (id) => (await c.query(
 const CORTE = [{ tipo: 'used_tools', trecho: '[Used tools: Tool: Busca_Conhecimento, ...]' }];
 
 await c.connect();
+
+/*
+ * Retrato do mundo ANTES de qualquer transação. A propriedade que o teste
+ * garante no fim não é "a coluna não existe" — é "o banco terminou como
+ * começou". As duas coincidiam enquanto a 46 estava por aplicar; depois de
+ * aplicada, só a segunda continua verdadeira.
+ */
+const colunaAntesDeTudo = (await c.query(
+  `select 1 from information_schema.columns
+    where table_name='mensagens_log' and column_name='saida_cortes'`)).rowCount === 1;
+
 await c.query('begin');
 
 try {
@@ -123,22 +134,35 @@ try {
   const CONV = 970046n;
 
   // -------------------------------------------------------------------------
-  console.log('-- 1. Retrato de antes --\n');
+  console.log('-- 1. Arranja o estado de ANTES, em vez de torcer por ele --\n');
+
+  /*
+   * O TESTE ARRANJA O ESTADO QUE VAI MEDIR. A primeira versão deste arquivo
+   * afirmava "a coluna ainda não existe" — estado do mundo, que virou falso no
+   * dia em que a 46 foi aplicada, algumas horas depois de escrita. É a oitava
+   * ocorrência dessa armadilha no repo e a segunda escrita por quem tinha
+   * acabado de anotar a regra.
+   *
+   * A forma que não envelhece: rodar o ROLLBACK primeiro, aqui dentro da
+   * transação abortada. Ele é idempotente (`drop column if exists`), então põe
+   * o banco no estado pré-46 tendo a 46 sido aplicada ou não — e o teste passa
+   * a medir a MIGRAÇÃO, não o calendário.
+   */
+  await c.query(R46);
+  const jaAplicada = (await c.query(
+    `select 1 from supabase_migrations.schema_migrations where version = '20260820160000'`)).rowCount === 1;
+  console.log(`  (46 no ledger: ${jaAplicada ? 'sim — desfeita aqui dentro' : 'ainda não'})`);
 
   const aclAntes = await rolesComExecute();
   const assinaturasAntes = await assinaturas();
-  // Via `tentar`: a query FALHA de propósito (a coluna não existe ainda), e um
-  // `catch` em cima de `c.query` cru deixaria a transação abortada — todo
-  // comando seguinte morreria com 25P02 e o teste reportaria a propriedade
-  // errada. Savepoint é o que torna o erro esperado um valor.
   const antesDaColuna = await tentar(
     `select count(*) n from public.mensagens_log where saida_cortes is not null`);
-  const comCorteAntes = antesDaColuna.erro ? -1 : Number(antesDaColuna.rows[0].n);
 
   console.log(`  ACL antes: ${aclAntes.join(', ')}`);
   console.log(`  assinaturas antes: ${assinaturasAntes.map((a) => a.n).join(', ')}`);
-  chk('a coluna ainda NÃO existe (senão a migração já foi aplicada e o teste mede outra coisa)',
-    comCorteAntes === -1, `contagem devolveu ${comCorteAntes}`);
+  chk('o rollback deixou o banco no estado pré-46 (coluna ausente)',
+    antesDaColuna.erro !== null && /saida_cortes/.test(antesDaColuna.erro),
+    antesDaColuna.erro ?? `a coluna ainda responde: ${JSON.stringify(antesDaColuna.rows)}`);
 
   // -------------------------------------------------------------------------
   console.log('\n-- 2. Aplica a migração --\n');
@@ -271,11 +295,14 @@ try {
   console.log(`  FALHA exceção não prevista — ${e.message}`);
 } finally {
   await c.query('rollback');
-  const sobrou = (await c.query(
+  const colunaDepoisDeTudo = (await c.query(
     `select 1 from information_schema.columns
-      where table_name='mensagens_log' and column_name='saida_cortes'`)).rowCount;
-  console.log(`\n  (transação revertida; coluna em produção: ${sobrou ? 'EXISTE — algo vazou!' : 'não existe, como esperado'})`);
-  if (sobrou) falhas.push('a coluna sobreviveu ao rollback da transação');
+      where table_name='mensagens_log' and column_name='saida_cortes'`)).rowCount === 1;
+  console.log(`\n  (transação revertida; coluna em produção: ${colunaDepoisDeTudo ? 'existe' : 'não existe'}` +
+    ` — igual a antes do teste: ${colunaAntesDeTudo === colunaDepoisDeTudo ? 'sim' : 'NÃO'})`);
+  if (colunaAntesDeTudo !== colunaDepoisDeTudo) {
+    falhas.push(`o teste mudou o schema de produção (coluna antes: ${colunaAntesDeTudo}, depois: ${colunaDepoisDeTudo})`);
+  }
   await c.end();
 }
 

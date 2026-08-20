@@ -50,8 +50,8 @@ documentação e material de referência.
   de `outgoing` (nao um), as notas para colar em cada no quando o JSON destravar, o
   desenho da sondagem na conexao, a retomada por expiracao preguicosa (sem job novo) e
   o incidente do `fortalize` desconectado.
-- [`VAZAMENTO-USED-TOOLS.md`](VAZAMENTO-USED-TOOLS.md) — **medido, filtro NAO
-  implementado.** O modelo fabrica `[Used tools: ...]` e cola o resultado cru da KB
+- [`VAZAMENTO-USED-TOOLS.md`](VAZAMENTO-USED-TOOLS.md) — **migracao 46 APLICADA;
+  filtro escrito, falta colar no no.** O modelo fabrica `[Used tools: ...]` e cola o resultado cru da KB
   antes da resposta: 2 em 165 saidas, dois tenants, e nenhum caso de trecho de KB
   vazando sozinho. Traz o desenho do filtro de saida e a prova de que reusar o
   `sanitizar` do `filtro-texto.js` **piora** o caso — ele deixa passar justamente a

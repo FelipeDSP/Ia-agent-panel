@@ -4,17 +4,17 @@
 
 - **filtro:** escrito e testado em `n8n/estima-tokens.js`, workflow regerado —
   **não colado na instância** (`n8n/importar/estima-tokens-node.js`);
-- **coluna:** migração **46** escrita e exercitada contra produção em transação
-  abortada — **não aplicada**.
+- **coluna:** migração **46** **APLICADA em produção em 2026-08-20**, registrada no
+  ledger com a versão `20260820160000` — a mesma do nome do arquivo, para o
+  `supabase db push` não a replayar. ACL conferido antes × depois (idêntico), uma só
+  assinatura viva, e `n8n_agent` chamando de verdade numa transação revertida.
 
 **Decisão tomada:** opção **(B)** — log fiel ao que o cliente recebeu, mais coluna de
 diagnóstico. A sequência pedida era "filtro primeiro sem migração, coluna depois", com
-a cegueira do intervalo aceita como dívida. Na prática o intervalo **encolheu para
-zero**: como a coluna não exige mudança de assinatura (ver abaixo), a migração ficou
-pronta na mesma leva. Se ainda assim o filtro subir primeiro, a dívida existe e é
-esta: enquanto a 46 não for aplicada, `conteudo` guarda o texto já limpo e a consulta
-de frequência desta página não enxerga vazamento nenhum — o único rastro é o
-`_saida_cortes` no log da execução do n8n, que é podado com o tempo.
+a cegueira do intervalo aceita como dívida. Na prática **não houve intervalo**: como a
+coluna não exige mudança de assinatura (ver abaixo), a migração ficou pronta na mesma
+leva e foi aplicada ANTES de o filtro subir — que é a ordem boa, porque o dia em que o
+filtro começar a cortar é o primeiro dia em que há o que registrar.
 
 ## O que é
 
@@ -83,7 +83,7 @@ com `[` e JSON de ferramenta (`"resultado"`, `"resposta"`) em saídas são **exa
 as mesmas 2 linhas**. Não há um terceiro formato vazando em silêncio — no corpus de
 hoje.
 
-## O filtro de saída — desenho, NÃO implementado
+## O filtro de saída — implementado, aguardando o paste no nó
 
 ### Onde entra
 
@@ -120,16 +120,24 @@ filtrado.
    `/\[Trecho\s+\d+\s*\|\s*relev[âa]ncia\s+[\d.]+\]\n?/gi`. Existe porque um dia pode
    vazar sozinho, mesmo que hoje não vaze.
 
-### Como registra — decidido: (B), em duas etapas
+### Como registra — opção (B), inteira
 
-**Hoje (implementado):** o nó devolve `_saida_cortes` (o que foi cortado) e
-`_saida_so_vazamento`. Nenhum dos dois é gravado — vivem no log da execução do n8n.
-`conteudo` passa a ser o texto limpo, fiel ao que o cliente recebeu.
+`conteudo` guarda o texto limpo, fiel ao que o cliente recebeu, e o que foi cortado vai
+para `mensagens_log.saida_cortes` (jsonb, `null` = nada cortado), com índice parcial
+`(tenant_id, criado_em) where saida_cortes is not null`. A frequência passa a ser:
 
-**Depois (escrito, NÃO aplicado):** migração **46**, coluna `saida_cortes jsonb null`
-em `mensagens_log` mais índice parcial `(tenant_id, criado_em) where saida_cortes is
-not null`. A frequência volta a ser
-`count(*) filter (where saida_cortes is not null)`.
+```sql
+select t.slug, to_char(date_trunc('month', l.criado_em), 'YYYY-MM') as mes,
+       count(*) as saidas,
+       count(*) filter (where l.saida_cortes is not null) as vazou
+  from public.mensagens_log l join public.tenants t on t.id = l.tenant_id
+ where l.direcao = 'saida'
+ group by 1, 2 order by 2, 1;
+```
+
+O corte viaja no `p_componentes` que o nó já monta — o nó devolve `_saida_cortes` e
+`_saida_so_vazamento` no item (visíveis no log da execução) e põe `saida_cortes` dentro
+de `componentes`, que a função extrai para a coluna.
 
 **A 46 não muda a assinatura de `api_n8n_registrar_mensagem`** — e isso não é sorte. A
 migração 42 criou o `p_componentes jsonb` como transporte extensível dizendo, com
