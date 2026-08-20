@@ -392,11 +392,94 @@ const componentes = usoN8n
       fonte: 'estimativa_nossa_com_multiplicidade',
     };
 
+// ============================================================================
+// FILTRO DE SAIDA — o modelo FABRICA `[Used tools: ...]` e cola o resultado
+// cru da ferramenta antes da resposta. Nao e encanamento: `intermediateSteps`
+// e campo separado e ninguem o envia; o que vaza esta dentro do `output`, ou
+// seja, o modelo ESCREVEU aquilo. Medido em 2026-08-20: 2 em 165 saidas, em
+// dois tenants e com duas ferramentas diferentes. Ver docs/VAZAMENTO-USED-TOOLS.md
+//
+// POR QUE VARREDURA DE COLCHETES E NAO REGEX. O bloco tem colchetes ANINHADOS:
+//
+//   [Used tools: ... Result: [{"resposta":"[Trecho 1 | relevancia 0.298]\n..."}]]
+//
+// Uma regex nao-gulosa para no PRIMEIRO `]` e deixa o miolo passar — e o miolo
+// e justamente o texto interno da KB. Testado contra as duas linhas reais:
+// `/\[Used tools:[\s\S]*?\]/` (e o `sanitizar` do filtro-texto.js, que e a
+// mesma coisa com `.` no lugar de `[\s\S]`) devolve
+// "\nPagamento: somente PIX. Voce NAO tem a chave...". Ou seja: o filtro
+// ingenuo nao falha em silencio, ele PIORA — troca um vazamento feio e obvio
+// por um limpo e invisivel, com a instrucao interna entregue ao cliente sem
+// marca nenhuma de que e lixo. A gulosa (`[\s\S]*`) acerta nestes dois casos e
+// erra no primeiro `]` legitimo que aparecer depois do bloco.
+//
+// NAO REUSA o `sanitizar` do `filtro-texto.js` de proposito, e nao e so pela
+// regex: aquele protege a ENTRADA (injecao no texto do cliente) e este protege
+// a SAIDA (vazamento). Compartilhar a funcao faria mexer na blocklist de um
+// mexer no outro.
+function limparVazamento(bruto) {
+  const cortes = [];
+  let t = String(bruto ?? '');
+
+  for (;;) {
+    const i = t.search(/\[\s*Used tools?\s*:/i);
+    if (i === -1) break;
+
+    let profundidade = 0;
+    let fim = -1;
+    for (let j = i; j < t.length; j++) {
+      if (t[j] === '[') profundidade++;
+      else if (t[j] === ']' && --profundidade === 0) { fim = j; break; }
+    }
+
+    // Bloco sem fechamento: corta ate o fim. E a escolha menos ruim — o resto
+    // de um bloco fabricado sem `]` e continuacao da fabricacao, nao resposta.
+    // O `_saida_cortes` mostra o que foi levado, entao o caso nao some.
+    if (fim === -1) {
+      cortes.push({ tipo: 'used_tools_sem_fechamento', trecho: t.slice(i) });
+      t = t.slice(0, i);
+      break;
+    }
+    cortes.push({ tipo: 'used_tools', trecho: t.slice(i, fim + 1) });
+    t = t.slice(0, i) + t.slice(fim + 1);
+  }
+
+  // Cabecalho de trecho da KB. Nao aninha, entao aqui regex serve. Hoje nunca
+  // apareceu sozinho (zero ocorrencias sem `Used tools` junto); esta aqui
+  // porque nada impede que apareca.
+  t = t.replace(/\[Trecho\s+\d+\s*\|\s*relev[aâ]ncia\s+[\d.]+\]\s*/gi, (m) => {
+    cortes.push({ tipo: 'trecho_kb', trecho: m });
+    return '';
+  });
+
+  return { texto: t.replace(/[ \t]+\n/g, '\n').trim(), cortes };
+}
+
+const limpeza = limparVazamento(textoSaida);
+
+// Se o filtro esvaziou a mensagem, o modelo respondeu SO com o bloco fabricado.
+// Mandar vazio deixaria o cliente sem resposta nenhuma — falha silenciosa, que
+// e a pior das duas. Entao volta o bruto: feio e visivel ganha de mudo. O
+// campo abaixo existe para esse dia aparecer no log da execucao.
+const soVazamento = limpeza.cortes.length > 0 && limpeza.texto === '';
+const saidaLimpa = soVazamento ? textoSaida : limpeza.texto;
+
+// ATENCAO ao que NAO muda: `tokens_saida` continua medido sobre `textoSaida`,
+// o texto BRUTO. O modelo gerou aqueles tokens e a OpenAI cobrou por eles;
+// estimar sobre o texto ja limpo faria o rateio subestimar exatamente nas
+// mensagens defeituosas.
 return [{
   json: {
-    output: textoSaida,
+    output: saidaLimpa,
     tokens_entrada,
     tokens_saida,
+    // Vazio e o esperado. Com algo dentro, houve vazamento nesta mensagem.
+    // ENQUANTO NAO EXISTIR COLUNA EM `mensagens_log`, este campo so vive no log
+    // da execucao do n8n — o banco passa a gravar o texto ja limpo e a consulta
+    // de frequencia (docs/VAZAMENTO-USED-TOOLS.md) fica cega. E divida
+    // consciente, nao esquecimento.
+    _saida_cortes: limpeza.cortes,
+    _saida_so_vazamento: soVazamento,
     // String, e nao objeto: o no Postgres manda o valor como parametro, e
     // `$10::jsonb` espera texto JSON. Passar objeto depende de como o driver
     // resolve serializacao — dependencia que nao precisa existir.

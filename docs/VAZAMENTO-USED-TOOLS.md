@@ -1,7 +1,16 @@
 # Vazamento de `[Used tools: …]` na resposta ao cliente
 
-**Estado em 2026-08-20:** medido; filtro **desenhado, NÃO implementado**. Nenhuma
-alteração de workflow, nenhuma migração.
+**Estado em 2026-08-20:** medido; filtro **escrito e testado** em
+`n8n/estima-tokens.js`, com o workflow regerado — **NÃO importado** na instância.
+Nenhuma migração.
+
+**Decisão tomada:** o destino é a opção **(B)** (log fiel ao que o cliente recebeu +
+coluna de diagnóstico), mas em duas etapas: **filtro primeiro, sem migração; coluna
+depois.** A consequência é conhecida e aceita: da hora do import até a coluna existir,
+`mensagens_log.conteudo` guarda o texto **já limpo**, e a consulta de frequência desta
+página deixa de enxergar vazamento. O único rastro nesse intervalo é o
+`_saida_cortes` no log da execução do n8n, que é podado com o tempo. **É dívida
+consciente, não esquecimento** — e a janela dela é o tempo até a migração.
 
 ## O que é
 
@@ -107,20 +116,35 @@ filtrado.
    `/\[Trecho\s+\d+\s*\|\s*relev[âa]ncia\s+[\d.]+\]\n?/gi`. Existe porque um dia pode
    vazar sozinho, mesmo que hoje não vaze.
 
-### Como registra
+### Como registra — decidido: (B), em duas etapas
 
-O contrário do que parece natural: **o log fica com o texto bruto e o cliente recebe o
-limpo**, OU se paga uma migração. As duas saídas, e a recomendação:
+**Hoje (implementado):** o nó devolve `_saida_cortes` (o que foi cortado) e
+`_saida_so_vazamento`. Nenhum dos dois é gravado — vivem no log da execução do n8n.
+`conteudo` passa a ser o texto limpo, fiel ao que o cliente recebeu.
+
+**Depois (a fazer):** coluna `saida_cortes jsonb null` em `mensagens_log`, e a
+frequência volta a ser `count(*) filter (where saida_cortes is not null)`.
+
+As duas saídas que estavam em aberto, para registro de por que a (A) foi descartada:
 
 - **(A) sem migração:** `Envia Mensagem Chatwoot` passa a mandar `output` (limpo) e
   `Registra Mensagem` continua gravando o bruto num campo novo do item. Custo zero de
   schema, a consulta desta página continua valendo para sempre. **Preço:** `conteudo`
   deixa de ser o que o cliente recebeu, e quem lê o histórico no painel vê texto que
   ninguém leu.
-- **(B) recomendada:** `conteudo` passa a ser o texto limpo (fiel ao que o cliente
+- **(B) escolhida:** `conteudo` passa a ser o texto limpo (fiel ao que o cliente
   recebeu) e entra uma coluna `saida_cortes jsonb null` em `mensagens_log` com os
   pedaços cortados. `null` = nada cortado, então a frequência sai de um
   `count(*) filter (where saida_cortes is not null)`.
+
+### O caso "só vazamento", que o desenho não previa
+
+Se o filtro esvaziar a mensagem — o modelo respondeu SÓ com o bloco fabricado —
+mandar o vazio deixaria o cliente sem resposta nenhuma. Isso é falha silenciosa, e a
+regra do projeto é preferir a visível: nesse caso **volta o texto bruto**, com
+`_saida_so_vazamento: true`. Vale também para bloco sem `]` de fechamento que ocupe a
+mensagem inteira. Feio e visível ganha de mudo — e se um dia isso acontecer com
+frequência, a decisão de trocar por uma mensagem-padrão é de copy, não de código.
 
 **Se for a (B), a armadilha é conhecida e é a quinta da família:**
 `api_n8n_registrar_mensagem` ganha parâmetro, e parâmetro novo com DEFAULT **exige

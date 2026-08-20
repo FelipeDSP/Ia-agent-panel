@@ -572,7 +572,14 @@ function injetarFiltro(corpoNo, nomeArquivo) {
 // 7. Estima Tokens: corpo do arquivo, com os wrappers e os S por perfil
 // ---------------------------------------------------------------------------
 const est = no('Estima Tokens');
-const corpo = fs.readFileSync(path.join(RAIZ, 'n8n', 'estima-tokens.js'), 'utf8');
+// `\r\n` -> `\n` de proposito: no Windows o git entrega a copia de trabalho com
+// CRLF, e sem esta linha o JSON gerado depende de QUEM rodou o gerador. O diff
+// vira 500 linhas de fim de linha, o mesmo comando produz arquivos diferentes em
+// maquinas diferentes, e o proximo a rodar desfaz o do anterior. (O n8n aceita
+// os dois; o problema e o repositorio, nao a execucao.)
+const corpo = fs
+  .readFileSync(path.join(RAIZ, 'n8n', 'estima-tokens.js'), 'utf8')
+  .replace(/\r\n/g, '\n');
 for (const marca of ['__WRAPPERS__', '__PERFIS_S__']) {
   if (!corpo.includes(marca)) throw new Error(`n8n/estima-tokens.js sem o marcador ${marca}`);
 }
