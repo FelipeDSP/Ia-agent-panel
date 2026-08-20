@@ -58,7 +58,8 @@
     "teste:mutacao-sem-erro": "node tests/mutacao-sem-erro.mjs",
     "teste:times-chatwoot": "node --import ./tests/lib/ts.mjs tests/times-chatwoot.mjs",
     "teste:pausa": "node tests/pausa-roteamento.mjs",
-    "teste:filtro-saida": "node tests/filtro-saida.mjs"
+    "teste:filtro-saida": "node tests/filtro-saida.mjs",
+    "teste:saida-cortes": "node --env-file=.env.local tests/migracao-saida-cortes.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

@@ -39,11 +39,32 @@ o nome do binário que a transcrição consome) — `scripts/n8n-validar.mjs` ba
 export cru por causa disso, e o script de conserto os repõe. Ver `n8n/README.md`,
 seção "O export do n8n OMITE parâmetro em default".
 
+## `Import from File...` SOMA nós, não substitui o workflow (2026-08-20)
+
+Descoberto tentando importar o `agente-principal.json` inteiro sobre o workflow
+aberto: em vez de trocar o conteúdo, o n8n **acrescentou** os 57 nós aos 57 que já
+estavam lá. O canvas dobrou e apareceu um `Webhook1` — o mesmo sufixo de colisão que o
+`n8n/README.md` conta ter rodado meses em produção como nó órfão. A ação foi
+descartada sem salvar (o `Save` fica vermelho e nada persiste até alguém clicar).
+
+Consequência prática: **para mudança de UM nó, não importe o workflow inteiro.** Abra
+o nó, substitua o corpo e salve. É por isso que existe o `estima-tokens-node.js` aqui.
+
+Para mudança estrutural (nó novo, conexão nova), o import continua sendo o caminho —
+mas então é preciso partir de um workflow VAZIO ou limpar o canvas antes, e conferir a
+contagem de nós depois de recarregar a página.
+
 ## Conteúdo
 
 | arquivo | o que muda | estado |
 |---|---|---|
 | `agente-principal-pausa.json` | roteamento da pausa automática: remove a `ev7`, renomeia `E Humano ou Dispositivo?` para `Fala com o Cliente?`, dá destino à saída falsa, protege o payload sem `sender` | **importado em 2026-08-20** e confirmado em execução real (conta 1); ciclo fechado |
+| `estima-tokens-node.js` | corpo do nó `Estima Tokens` já com os marcadores substituídos: leva o filtro de saída do `[Used tools: …]` **e** a correção de comentário de 18/08 que a instância nunca recebeu | **não colado** |
+
+Para o `estima-tokens-node.js`: abrir o nó `Estima Tokens`, selecionar tudo no editor
+de código, colar o arquivo, **clicar em Save** (o `Ctrl+S` não salva nesta instância) e
+**recarregar a página** para conferir. Depois disso, `npm run n8n:diff` fecha — restam
+só os nove campos de default omitido, que são ruído do lado do export.
 
 Arquivo com o ciclo fechado pode ser apagado — ele já não é a versão corrente de
 nada. Fica aqui só enquanto for útil como referência do que foi importado.

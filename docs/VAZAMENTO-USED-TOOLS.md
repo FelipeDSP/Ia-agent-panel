@@ -1,16 +1,20 @@
 # Vazamento de `[Used tools: …]` na resposta ao cliente
 
-**Estado em 2026-08-20:** medido; filtro **escrito e testado** em
-`n8n/estima-tokens.js`, com o workflow regerado — **NÃO importado** na instância.
-Nenhuma migração.
+**Estado em 2026-08-20:**
 
-**Decisão tomada:** o destino é a opção **(B)** (log fiel ao que o cliente recebeu +
-coluna de diagnóstico), mas em duas etapas: **filtro primeiro, sem migração; coluna
-depois.** A consequência é conhecida e aceita: da hora do import até a coluna existir,
-`mensagens_log.conteudo` guarda o texto **já limpo**, e a consulta de frequência desta
-página deixa de enxergar vazamento. O único rastro nesse intervalo é o
-`_saida_cortes` no log da execução do n8n, que é podado com o tempo. **É dívida
-consciente, não esquecimento** — e a janela dela é o tempo até a migração.
+- **filtro:** escrito e testado em `n8n/estima-tokens.js`, workflow regerado —
+  **não colado na instância** (`n8n/importar/estima-tokens-node.js`);
+- **coluna:** migração **46** escrita e exercitada contra produção em transação
+  abortada — **não aplicada**.
+
+**Decisão tomada:** opção **(B)** — log fiel ao que o cliente recebeu, mais coluna de
+diagnóstico. A sequência pedida era "filtro primeiro sem migração, coluna depois", com
+a cegueira do intervalo aceita como dívida. Na prática o intervalo **encolheu para
+zero**: como a coluna não exige mudança de assinatura (ver abaixo), a migração ficou
+pronta na mesma leva. Se ainda assim o filtro subir primeiro, a dívida existe e é
+esta: enquanto a 46 não for aplicada, `conteudo` guarda o texto já limpo e a consulta
+de frequência desta página não enxerga vazamento nenhum — o único rastro é o
+`_saida_cortes` no log da execução do n8n, que é podado com o tempo.
 
 ## O que é
 
@@ -122,8 +126,26 @@ filtrado.
 `_saida_so_vazamento`. Nenhum dos dois é gravado — vivem no log da execução do n8n.
 `conteudo` passa a ser o texto limpo, fiel ao que o cliente recebeu.
 
-**Depois (a fazer):** coluna `saida_cortes jsonb null` em `mensagens_log`, e a
-frequência volta a ser `count(*) filter (where saida_cortes is not null)`.
+**Depois (escrito, NÃO aplicado):** migração **46**, coluna `saida_cortes jsonb null`
+em `mensagens_log` mais índice parcial `(tenant_id, criado_em) where saida_cortes is
+not null`. A frequência volta a ser
+`count(*) filter (where saida_cortes is not null)`.
+
+**A 46 não muda a assinatura de `api_n8n_registrar_mensagem`** — e isso não é sorte. A
+migração 42 criou o `p_componentes jsonb` como transporte extensível dizendo, com
+todas as letras, que "componente novo depois vira coluna + uma linha no insert, sem
+tocar em assinatura". É o que se usa: o corte viaja dentro do jsonb que o nó já monta.
+Consequências, uma a uma:
+
+- sem `drop function`, não há aridade ambígua (28, 32, 37);
+- sem `drop function`, nenhum grant é apagado e não há nada para reconceder (40, 41).
+  `npm run teste:saida-cortes` compara o ACL **antes e depois**, em vez de conferir
+  contra a lista esperada — que foi exatamente como a 41 passou verde sem `n8n_agent`;
+- `create or replace` de mesma aridade é reexecutável.
+
+**A ordem de implantação não importa.** Nó antes da migração: a função ignora a chave
+que não conhece. Migração antes do nó: a coluna fica nula até o nó subir. Não existe
+janela de quebra — o que é raro nesta família e vale usar.
 
 As duas saídas que estavam em aberto, para registro de por que a (A) foi descartada:
 
