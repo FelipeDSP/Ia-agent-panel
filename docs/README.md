@@ -43,9 +43,9 @@ documentação e material de referência.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da
   demonstracao do emporio.** `'resolvido'` nunca e escrito em `conversas` (73 linhas, zero),
   entao o painel mostra conversa encerrada ha meses como `ativo`.
-- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **diagnostico fechado, conserto NAO
-  aplicado.** Nenhuma mensagem humana pausa o bot, por nenhum caminho, para nenhum
-  tenant — e nunca pausou. A medicao que bloqueava o conserto esta feita: os dois
+- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **conserto APLICADO; falta a
+  retomada.** Nenhuma mensagem humana pausava o bot, por nenhum caminho, para nenhum
+  tenant — e nunca pausou ate 20/08. A medicao que bloqueava o conserto esta feita: os dois
   tokens conectados sao de Agent Bot, entao a ev6 protege. Traz os **sete** produtores
   de `outgoing` (nao um), as notas para colar em cada no quando o JSON destravar, o
   desenho da sondagem na conexao, a retomada por expiracao preguicosa (sem job novo) e
