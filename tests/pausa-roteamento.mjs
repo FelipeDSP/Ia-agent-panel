@@ -29,7 +29,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RAIZ = fileURLToPath(new URL('../', import.meta.url));
-const ARQ = process.argv[2] || path.join(RAIZ, 'n8n', 'importar', 'agente-principal-pausa.json');
+// O padrão é o arquivo VERSIONADO, não o de import: o de `n8n/importar/` é
+// transitório e some depois que o ciclo fecha. Para conferir um JSON de import
+// antes de subir, passe o caminho como argumento.
+const ARQ = process.argv[2] || path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json');
 
 const NO_SWITCH = 'Roteia Evento';
 const NO_IF = 'Fala com o Cliente?';

@@ -262,10 +262,18 @@ if (problemas.length) falhar(problemas.join('\n         '));
 // so poluem o diff — alem de `pinData` poder conter telefone e nome de contato.
 // Fica aqui dentro (e nao num passo separado) para o script ser deterministico:
 // rodar duas vezes sobre o mesmo export tem de dar o mesmo arquivo.
-for (const campo of ['pinData', 'staticData', 'versionId', 'triggerCount', 'shared', 'tags']) {
-  delete wf[campo];
+//
+// `--repo` PULA esta parte, e nao e desleixo: quando a entrada e o proprio
+// `n8n/workflows/agente-principal.json`, quem manda na serializacao dele e o
+// `gerar-principal.mjs` — que grava `meta.instanceId`. Limpar aqui criaria
+// churn que a proxima rodada do gerador desfaz, e diff que vai e volta sozinho
+// e a forma mais rapida de ninguem mais ler diff.
+if (!process.argv.includes('--repo')) {
+  for (const campo of ['pinData', 'staticData', 'versionId', 'triggerCount', 'shared', 'tags']) {
+    delete wf[campo];
+  }
+  if (wf.meta?.instanceId) delete wf.meta.instanceId;
 }
-if (wf.meta?.instanceId) delete wf.meta.instanceId;
 
 fs.mkdirSync(path.dirname(SAIDA), { recursive: true });
 fs.writeFileSync(SAIDA, `${JSON.stringify(wf, null, 2)}\n`);

@@ -1,11 +1,14 @@
 # Pausa automática — diagnóstico fechado, conserto descrito, NADA aplicado
 
-**Estado em 2026-08-20:** diagnóstico fechado com payload real; medição feita; JSON de
-import **escrito e testado, ainda NÃO importado** —
-`n8n/importar/agente-principal-pausa.json`, gerado do export da instância por
-`scripts/aplicar-conserto-pausa.mjs` e exercitado por `npm run teste:pausa`. A
-retomada (seção própria) continua **não implementada**, e sem ela este import troca um
-bug visível por um silencioso.
+**Estado em 2026-08-20:** diagnóstico fechado com payload real; medição feita; conserto
+**importado e funcionando** — confirmado em execução real na conta 1 — e
+`n8n/workflows/agente-principal.json` já sincronizado com a instância (a menos do
+`Estima Tokens`, divergência antiga e item próprio). `npm run teste:pausa` roda contra
+o arquivo versionado.
+
+**A retomada continua NÃO implementada**, e é o que falta: hoje, toda conversa em que
+o dono escrever pelo celular fica pausada até alguém abrir o painel. Falta uma decisão
+(pausa manual expira junto ou entra `motivo_pausa`) — ver a seção "Retomada".
 
 Este arquivo é o lugar onde o conserto mora até virar JSON. Cada nota marcada
 **[nota do nó]** é texto para colar no campo `notes` do nó correspondente quando o

@@ -43,4 +43,25 @@ seção "O export do n8n OMITE parâmetro em default".
 
 | arquivo | o que muda | estado |
 |---|---|---|
-| `agente-principal-pausa.json` | roteamento da pausa automática: remove a `ev7`, renomeia `E Humano ou Dispositivo?` para `Fala com o Cliente?`, dá destino à saída falsa, protege o payload sem `sender` | **não importado** |
+| `agente-principal-pausa.json` | roteamento da pausa automática: remove a `ev7`, renomeia `E Humano ou Dispositivo?` para `Fala com o Cliente?`, dá destino à saída falsa, protege o payload sem `sender` | **importado em 2026-08-20** e confirmado em execução real (conta 1); ciclo fechado |
+
+Arquivo com o ciclo fechado pode ser apagado — ele já não é a versão corrente de
+nada. Fica aqui só enquanto for útil como referência do que foi importado.
+
+## Como o passo 6 foi feito desta vez, e por que não foi um "colar o export"
+
+Substituir `n8n/workflows/agente-principal.json` pelo export cru faria **duas**
+coisas erradas de uma vez: apagaria do repo os três parâmetros que o export omite
+por baterem com o default (e o `n8n-validar.mjs` passaria a reprovar o próprio
+arquivo versionado), e reverteria o `Estima Tokens` do repo para a versão mais
+velha que roda na instância.
+
+O que foi feito: rodar a MESMA transformação sobre o arquivo do repo —
+`node scripts/aplicar-conserto-pausa.mjs --repo --export n8n/workflows/agente-principal.json
+--saida n8n/workflows/agente-principal.json`. A flag `--repo` pula a higiene de
+export (o `meta.instanceId` do arquivo versionado é escrito pelo
+`gerar-principal.mjs`; tirá-lo aqui criaria churn que o gerador desfaz).
+
+Isso deixa repo e instância iguais **a menos do `Estima Tokens`**, que segue
+divergente de propósito e é item próprio. `npm run n8n:diff` continua acusando
+essa linha — e deve mesmo, porque a instância REALMENTE está atrasada nela.

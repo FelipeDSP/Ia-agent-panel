@@ -93,7 +93,7 @@
                   },
                   {
                     "id": "ev6",
-                    "leftValue": "={{ $json.body.sender.type }}",
+                    "leftValue": "={{ $json.body.sender?.type ?? '' }}",
                     "rightValue": "agent_bot",
                     "operator": {
                       "type": "string",
@@ -101,12 +101,12 @@
                     }
                   },
                   {
-                    "id": "ev7",
-                    "leftValue": "={{ $json.body.private }}",
-                    "rightValue": false,
+                    "id": "ev8",
+                    "leftValue": "={{ $json.body.sender?.type ?? '' }}",
+                    "rightValue": "",
                     "operator": {
-                      "type": "boolean",
-                      "operation": "false",
+                      "type": "string",
+                      "operation": "notEmpty",
                       "singleValue": true
                     }
                   }
@@ -129,7 +129,9 @@
         5136
       ],
       "id": "8226f014-73a9-4aca-9035-c4040d5d7938",
-      "name": "Roteia Evento"
+      "name": "Roteia Evento",
+      "notes": "A ev6 (sender.type != agent_bot) e o UNICO guarda-corpo contra o bot se pausar sozinho.\nEla NAO e protecao independente: a Tool - Transferir para Humano escreve com o MESMO\ntoken de tenant_credenciais que o Envia Mensagem Chatwoot, entao ela e o bot caem ou\npassam juntos. Medido em 2026-08-20: os tokens de emporio (59) e estudyou-sendbox (8)\nsao de Agent Bot (401 \"not authorized for bots\" em /profile, /teams e /agents). Token de\ntenant NOVO nao e medido por ninguem — se vier um que nao seja de bot, os SETE produtores\nde outgoing (5 no principal + a foto + a nota da transferencia) se auto-pausam.\n\nA ev7 (private = false) foi REMOVIDA: o WAHA registra mensagem do celular do dono como\nnota privada, e a ev7 excluia exatamente o caso que este ramo existe para pegar.\n\nA ev8 existe para o payload sem sender: sender?.type ?? \"\" evita o estouro da expressao,\ne exigir nao-vazio faz esse payload NAO pausar. Sem identidade nao da para distinguir o\nproprio bot, e pausar por engano e a falha silenciosa.",
+      "notesInFlow": false
     },
     {
       "parameters": {
@@ -825,10 +827,20 @@
           "options": {
             "caseSensitive": false,
             "leftValue": "",
-            "typeValidation": "strict",
+            "typeValidation": "loose",
             "version": 2
           },
           "conditions": [
+            {
+              "id": "h0",
+              "leftValue": "={{ $json.body.private }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            },
             {
               "id": "h1",
               "leftValue": "={{ $json.body.content }}",
@@ -850,6 +862,7 @@
           ],
           "combinator": "or"
         },
+        "looseTypeValidation": true,
         "options": {}
       },
       "type": "n8n-nodes-base.if",
@@ -859,7 +872,9 @@
         5984
       ],
       "id": "e7281755-3b1b-4946-9d1f-a806b585fc48",
-      "name": "E Humano ou Dispositivo?"
+      "name": "Fala com o Cliente?",
+      "notes": "Dois marcadores, nao um: \"Enviado do WhatsApp\" E \"Enviado do Instagram\", caseSensitive false.\nA ponte de Instagram produz a mesma forma que a do WhatsApp.\n\nA saida FALSA tem destino (Nota Interna (ignora)) DE PROPOSITO: a versao anterior deste no\nnao tinha, e por isso nenhuma mensagem digitada dentro do Chatwoot pausou o bot durante\nmeses — a execucao ficava verde e parava aqui. Saida solta aqui e o modo de falha conhecido.\n\nA Nota Privada da Tool - Transferir para Humano (\"Resumo do atendimento via bot:\") passa a\nENTRAR neste ramo depois da remocao da ev7. Ela e inofensiva porque nao tem marcador e cai\nno FALSO — a seguranca dela depende inteiramente deste teste dar falso. Se alguem puser um\nmarcador no texto do resumo, quebra aqui.",
+      "notesInFlow": false
     },
     {
       "parameters": {
@@ -2003,6 +2018,19 @@
       "id": "49800f94-1a05-4d31-9bd5-0bb25f79bc8a",
       "notes": "Ponto de convergencia: o Acumula Mensagem le daqui, venha o texto do teclado ou da transcricao. FALHA ALTO se nao houver mensagem — emitir vazio gravaria acumulo vazio e chamaria o agente sem prompt.",
       "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2864,
+        6208
+      ],
+      "id": "b7c1f0d2-4a55-4b9e-9c3a-2f6e8d10a4c7",
+      "name": "Nota Interna (ignora)",
+      "notes": "Nota privada SEM marcador e anotacao interna do atendente: nao e fala com o cliente e nao\npausa o agente. Este no nao faz nada de proposito — ele existe para o ramo ter destino em\nvez de morrer em silencio, que foi como o bug original passou meses sem aparecer.",
+      "notesInFlow": false
     }
   ],
   "connections": {
@@ -2028,7 +2056,7 @@
         ],
         [
           {
-            "node": "E Humano ou Dispositivo?",
+            "node": "Fala com o Cliente?",
             "type": "main",
             "index": 0
           }
@@ -2268,17 +2296,6 @@
         [
           {
             "node": "Registra Mensagem",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "E Humano ou Dispositivo?": {
-      "main": [
-        [
-          {
-            "node": "Resolve Tenant (pausa)",
             "type": "main",
             "index": 0
           }
@@ -2636,6 +2653,29 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "Fala com o Cliente?": {
+      "main": [
+        [
+          {
+            "node": "Resolve Tenant (pausa)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nota Interna (ignora)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nota Interna (ignora)": {
+      "main": [
+        []
       ]
     }
   },
