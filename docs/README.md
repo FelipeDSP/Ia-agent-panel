@@ -43,6 +43,13 @@ documentação e material de referência.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da
   demonstracao do emporio.** `'resolvido'` nunca e escrito em `conversas` (73 linhas, zero),
   entao o painel mostra conversa encerrada ha meses como `ativo`.
+- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **diagnostico fechado, conserto NAO
+  aplicado.** Nenhuma mensagem humana pausa o bot, por nenhum caminho, para nenhum
+  tenant — e nunca pausou. A medicao que bloqueava o conserto esta feita: os dois
+  tokens conectados sao de Agent Bot, entao a ev6 protege. Traz os **sete** produtores
+  de `outgoing` (nao um), as notas para colar em cada no quando o JSON destravar, o
+  desenho da sondagem na conexao, a retomada por expiracao preguicosa (sem job novo) e
+  o incidente do `fortalize` desconectado.
 - [`PENDENCIA-CATEGORIA-PRODUTO.md`](PENDENCIA-CATEGORIA-PRODUTO.md) — **próxima fatia
   de vendas.** A pergunta aberta ("o que vocês têm?") ainda é respondida por
   `order by nome`, e no Empório sai `1, 10, 11, 12, 13`: não parece amostra, parece
