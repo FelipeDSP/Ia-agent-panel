@@ -1,9 +1,22 @@
 -- Migracao 51 — a view `conversas_painel`, e o fim da mentira da tela
 --
--- NAO APLICADA EM PRODUCAO. Ao aplicar fora do CLI: escolha a versao ANTES,
--- renomeie ESTE arquivo e o rollback para ela, e grave a linha do ledger na
--- MESMA transacao — procedimento das 47, 48, 49 e 50. O topo do ledger e
--- `20260821200500` (50).
+-- APLICADA EM PRODUCAO em 2026-08-21, ledger `20260821205000`, name
+-- `51_conversas_painel` — nome dos dois arquivos batendo, pelo procedimento das
+-- 47, 48, 49 e 50: versao escolhida ANTES, arquivos renomeados, linha do ledger
+-- na MESMA transacao, e o verificador tirando as linhas de comentario antes de
+-- testar (disciplina que a 49 adotou depois de se auto-reprovar).
+--
+-- CONFERIDO, lendo o CATALOGO e nao a migracao: `reloptions` =
+-- `["security_invoker=true"]`; ACL = `{postgres=arwdDxtm, authenticated=r,
+-- service_role=r}` — `anon` FORA, e recusado com `42501` na chamada real; as 13
+-- colunas com `status_bruto` e sem `status`; e o teste das duas views repetido
+-- contra producao: SEM a opcao 89 linhas de 5 tenants, COM ela 16 de 1, igual a
+-- tabela direta.
+--
+-- E o efeito medido: das 10 conversas do `emporio` com `status_bruto =
+-- 'pausado'`, NOVE aparecem como `status_efetivo = 'ativo'` — a mentira que a
+-- tela mostrava. A que segue pausada e a conv 6 (Karen, `manual`), sem hora de
+-- volta, porque pausa manual nao caduca.
 --
 -- Numero pego LIVRE na hora de escrever, sem reserva: reservar a 48 para esta
 -- view e o que produziu a disputa 48/49 e depois 49/50. Migracao nao escrita nao

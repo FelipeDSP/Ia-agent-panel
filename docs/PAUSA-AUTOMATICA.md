@@ -33,10 +33,15 @@ existe e responde, com `n8n_agent` no ACL e `anon`/`authenticated` fora. As trê
 portas concordam nas 11 conversas pausadas, zero divergência, e a varredura de
 grants passou de 18 para 19 funções sozinha.
 
-**A view do painel esta escrita na migracao 51** (`conversas_painel`, nao
-aplicada) — com os cinco call sites, os tres estados na tela e o teste de RLS
-com sabotagem do `security_invoker`. Ate ela entrar, o painel mostra `pausado`
-em conversa ja caducada: medido em 21/08, **9 das 10 do `emporio`**.
+**Migração 51 APLICADA** em 21/08, ledger `20260821205000` — a view
+`conversas_painel`, com `security_invoker` confirmado no catálogo e `anon`
+recusado com `42501`. Lida da view, das 10 conversas do `emporio` com
+`status_bruto = 'pausado'`, **nove aparecem como `status_efetivo = 'ativo'`** — a
+mentira que a tela mostrava. Segue pausada só a conv 6 (Karen, `manual`), sem
+hora de volta.
+
+**Falta o deploy do código** com os seis call sites — até ele, a tela continua
+lendo a tabela e mentindo.
 
 **FALTA O IMPORT.** A religação do workflow (o `Consulta Pausa` que chama esta
 função) está no gerador e não foi importada, então **os dois vazamentos — mídia e

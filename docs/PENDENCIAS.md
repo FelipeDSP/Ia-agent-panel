@@ -20,6 +20,7 @@ já não é pendência.
 | [Seed dos testes](PENDENCIA-SEED-DOS-TESTES.md) | **parcial** — os cinco de isolamento fecharam; outros nove ainda resolvem seed por slug | antes de apagar qualquer seed |
 | [Exclusão atômica](PENDENCIA-EXCLUSAO-ATOMICA.md) | excluir cliente são duas escritas PostgREST e não uma transação; a ordem foi invertida para o resto possível ser visível, mas resto ainda existe | depois da demonstração do `emporio`, ou ao excluir cliente com credencial real |
 | [Carrinho multi-item](PENDENCIA-CARRINHO-MULTI-ITEM.md) | a IA relata falha que nao houve ao somar 3 itens numa mensagem, re-adiciona, e o `on conflict` SOMA em vez de definir — cobrou R$ 30 a mais num pedido real (dado JA corrigido; o defeito NAO) | antes de qualquer cliente novo de vendas — e a §2b mostra que prompt sozinho nao resolve |
+| `podcast_vagas` sem `security_invoker` | a view roda como `postgres` (BYPASSRLS) e so nao vaza porque expoe agregado; acrescentar `a.nome` ao select entregaria nome/empresa/whatsapp a `anon` sem erro nenhum | antes de qualquer mudanca naquela view, ou quando o podcast voltar a ser mexido |
 | [Margem](PENDENCIA-MARGEM.md) | **decidido não fazer** — margem por cliente em `/admin/consumo` | planos diferentes entre clientes |
 
 Duas que **não** são pendência e vivem aqui perto, para não se procurar no lugar

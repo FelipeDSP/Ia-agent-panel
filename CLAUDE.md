@@ -185,6 +185,21 @@ perde trabalho de cadastro que ninguém consegue devolver.
   é leitura só; `authenticated=arwdDxtm/postgres` é o default disfarçado de
   intenção.
 
+  **Varrido em 2026-08-21**, os 21 objetos de `public`: nenhuma tabela vaza —
+  todas têm RLS com policy, e `anon` lê **0 linhas** em 19 delas. Duas exceções,
+  nenhuma delas incidente:
+
+  - `podcast_agendamentos` tem RLS **sem policy nenhuma**, o que nega tudo:
+    `anon` e `authenticated` leem 0, só `service_role` vê as 14 linhas. Negação
+    implícita funciona, mas não está declarada em lugar nenhum;
+  - `podcast_vagas` é view **sem `security_invoker`** e `anon` lê 9 linhas dela.
+    **Não é vazamento**: ela expõe só agregado (`dia`, `ocupadas`,
+    `vagas_restantes`), e a base com `nome`/`empresa`/`whatsapp` fica trancada.
+    Mas **a proteção é a lista de colunas, não a permissão** — sem
+    `security_invoker` ela roda como `postgres` (BYPASSRLS), então acrescentar
+    `a.nome` ao `select` vazaria PII para `anon` na hora, sem erro. Ver
+    docs/PENDENCIAS.md.
+
 - **View sobre tabela com RLS PRECISA de `security_invoker = true`.** Sem ela a
   view roda com os privilégios do DONO, que é `postgres` — e `postgres` tem
   `rolbypassrls = true` neste projeto (não é superusuário, mas tem o atributo).
