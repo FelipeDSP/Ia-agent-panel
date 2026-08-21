@@ -1,9 +1,22 @@
 -- Migracao 50 — busca de catalogo sem acento, e proximidade como SUGESTAO
 --
--- NAO APLICADA EM PRODUCAO. Ao aplicar fora do CLI: escolha a versao ANTES,
--- renomeie ESTE arquivo e o rollback para ela, e grave a linha do ledger na
--- MESMA transacao — procedimento das 47, 48 e 49. O topo do ledger e
--- `20260821191500` (49).
+-- APLICADA EM PRODUCAO em 2026-08-21, ledger `20260821200500`, name
+-- `50_busca_sem_acento` — e o nome dos dois arquivos bate com a versao gravada,
+-- pelo procedimento das 47, 48 e 49: versao escolhida ANTES, arquivos
+-- renomeados, e a linha do ledger na MESMA transacao da migracao.
+--
+-- A verificacao rodou DENTRO da transacao, antes do commit, e sobre o corpo SEM
+-- AS LINHAS DE COMENTARIO — a disciplina que a 49 adotou depois de a propria
+-- migracao se auto-reprovar (o regex casou com a linha `-- Era ...` que ela
+-- escreve para explicar a mudanca). Aqui o risco era maior: este cabecalho cita
+-- `unaccent` dezenas de vezes em prosa.
+--
+-- CONFERIDO: as duas extensoes em `extensions`; ramo ilike com unaccent e ramo
+-- FTS intacto; `idx_produtos_busca` inalterado; diff de ACL contra o retrato de
+-- antes; uma assinatura viva de 2 argumentos; os dois casos reais passando de 0
+-- para 1; os oito termos fora de catalogo em zero e SEM sugestao; o typo
+-- "quejo" com `total_encontrado = 0` e a sugestao rotulada; e `n8n_agent`
+-- chamando.
 --
 -- ###########################################################################
 -- ##  O RISCO DESTA MIGRACAO NAO E O `create or replace`. SAO AS EXTENSOES. ##
