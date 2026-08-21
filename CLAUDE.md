@@ -155,6 +155,50 @@ perde trabalho de cadastro que ninguém consegue devolver.
   o teste que aplica em transação abortada para de rodar assim que ela entra em
   produção.
 
+- **Toda tabela ou view nova em `public` nasce com TUDO liberado para `anon`.**
+  Não é hipótese: `ALTER DEFAULT PRIVILEGES` deste projeto concede
+  **`arwdDxtm`** (select, insert, update, delete, truncate, references, trigger)
+  a `anon`, `authenticated` e `service_role` em todo objeto novo do schema —
+  medido em 2026-08-21 criando uma view sem nenhum `grant` e lendo o `relacl`.
+
+  A consequência é que **escrever `grant select ... to authenticated` não
+  restringe nada** — o objeto já nasceu legível e gravável por `anon`, e o
+  `grant` só reafirma o que já estava lá. Uma migração que "conceda com
+  cuidado" e não revogue está fazendo decoração.
+
+  O que segura hoje é a RLS: `anon` sem JWT tem `auth_tenant_id()` nulo e vê
+  zero linhas. **Isso é a segunda camada fazendo o trabalho da primeira**, e a
+  regra 6 já diz que não é assim que se faz.
+
+  Então, em objeto novo com `tenant_id`:
+
+  ```sql
+  revoke all on public.<obj> from public;
+  revoke all on public.<obj> from anon;
+  revoke all on public.<obj> from authenticated;
+  revoke all on public.<obj> from service_role;
+  grant  select on public.<obj> to authenticated;   -- só o que precisa
+  grant  select on public.<obj> to service_role;
+  ```
+
+  E confira pelo `relacl`, não pelo que você escreveu: `authenticated=r/postgres`
+  é leitura só; `authenticated=arwdDxtm/postgres` é o default disfarçado de
+  intenção.
+
+- **View sobre tabela com RLS PRECISA de `security_invoker = true`.** Sem ela a
+  view roda com os privilégios do DONO, que é `postgres` — e `postgres` tem
+  `rolbypassrls = true` neste projeto (não é superusuário, mas tem o atributo).
+  Medido com duas views idênticas lidas por `authenticated` com claims de um
+  tenant: **sem a opção, 89 linhas de 5 tenants; com ela, 16 de 1.**
+
+  E `FORCE ROW LEVEL SECURITY` na tabela **não salva**: FORCE sujeita o dono à
+  policy, não vence `BYPASSRLS`. `conversas` tem FORCE ligado e vazou assim
+  mesmo na sabotagem.
+
+  Toda view nova sobre tabela escopada por tenant leva a opção, e o teste dela
+  tem de ter a **sabotagem que a remove** — se tirar `security_invoker` não
+  deixar o teste vermelho, ele não está medindo isolamento.
+
 - **Nenhuma função plpgsql tem dependência registrada com as extensões que usa.**
   Vale para qualquer coisa em `extensions` — `unaccent`, `pg_trgm`, `pgcrypto`,
   `vector` —, não só para a que motivou a nota. plpgsql é late-binding: o corpo é

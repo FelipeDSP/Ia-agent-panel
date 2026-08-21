@@ -7,6 +7,10 @@ import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 import { ControlePausa, LimparMemoria } from './controles';
+// O MESMO badge da lista, e nao uma copia: os tres estados (ativo / pausado
+// manual / em atendimento humano) tem de dizer a mesma coisa nas duas telas.
+// Duas copias divergem, e divergiriam justamente no rotulo que a 51 introduziu.
+import { StatusBadge } from '../lista';
 
 function dataHora(iso: string): string {
   try {
@@ -33,8 +37,9 @@ export default async function PaginaConversa({
   // A funcao devolve so direcao/conteudo/tempo, escopada ao proprio tenant.
   const [{ data: conversa }, { data: mensagensRaw }] = await Promise.all([
     supabase
-      .from('conversas')
-      .select('conversation_id, contact_name, phone, status')
+      // View, nao tabela (migracao 51): `status` cru e lapide. Ver page.tsx da lista.
+      .from('conversas_painel')
+      .select('conversation_id, contact_name, phone, status_efetivo, motivo_pausa, pausa_expira_em')
       .eq('tenant_id', usuario.tenantId)
       .eq('conversation_id', idNum)
       .maybeSingle(),
@@ -67,10 +72,18 @@ export default async function PaginaConversa({
           ) : null}
         </div>
         <div className="flex flex-col items-end gap-2">
-          <Badge variant={conversa.status === 'pausado' ? 'warning' : conversa.status === 'resolvido' ? 'secondary' : 'success'}>
-            {conversa.status}
-          </Badge>
-          <ControlePausa conversationId={idNum} statusInicial={conversa.status} />
+          <StatusBadge
+            status_efetivo={conversa.status_efetivo}
+            motivo_pausa={conversa.motivo_pausa}
+            pausa_expira_em={conversa.pausa_expira_em}
+          />
+          {/*
+            O TOGGLE TAMBEM LE O EFETIVO. Com o `status` cru, uma pausa ja
+            vencida mostraria "Retomar agente" para uma conversa em que o agente
+            JA esta respondendo — o botao ofereceria desfazer algo que nao esta
+            acontecendo. A escrita dele continua indo para a TABELA.
+          */}
+          <ControlePausa conversationId={idNum} statusInicial={conversa.status_efetivo} />
           <LimparMemoria conversationId={idNum} />
         </div>
       </header>

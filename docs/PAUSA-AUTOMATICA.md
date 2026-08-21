@@ -33,6 +33,11 @@ existe e responde, com `n8n_agent` no ACL e `anon`/`authenticated` fora. As trê
 portas concordam nas 11 conversas pausadas, zero divergência, e a varredura de
 grants passou de 18 para 19 funções sozinha.
 
+**A view do painel esta escrita na migracao 51** (`conversas_painel`, nao
+aplicada) — com os cinco call sites, os tres estados na tela e o teste de RLS
+com sabotagem do `security_invoker`. Ate ela entrar, o painel mostra `pausado`
+em conversa ja caducada: medido em 21/08, **9 das 10 do `emporio`**.
+
 **FALTA O IMPORT.** A religação do workflow (o `Consulta Pausa` que chama esta
 função) está no gerador e não foi importada, então **os dois vazamentos — mídia e
 bloqueado — continuam abertos em produção**. A função não tem chamador até lá; foi

@@ -62,7 +62,8 @@
     "teste:saida-cortes": "node --env-file=.env.local tests/migracao-saida-cortes.mjs",
     "teste:retomada-pausa": "node --env-file=.env.local tests/migracao-retomada-pausa.mjs",
     "teste:conversa-pausada": "node --env-file=.env.local tests/migracao-conversa-pausada.mjs",
-    "teste:busca-sem-acento": "node --env-file=.env.local tests/migracao-busca-sem-acento.mjs"
+    "teste:busca-sem-acento": "node --env-file=.env.local tests/migracao-busca-sem-acento.mjs",
+    "teste:conversas-painel": "node --env-file=.env.local tests/migracao-conversas-painel.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

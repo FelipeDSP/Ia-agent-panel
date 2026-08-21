@@ -309,3 +309,22 @@ migração escreve para explicar a mudança (*"Era `pedido_itens.quantidade +
 excluded.quantidade`"*). É a armadilha que o CLAUDE.md registra — regex casando
 com comentário em vez de código —, desta vez do lado de quem confere. Nada foi
 comitado; o verificador passou a remover as linhas `--` antes de testar.
+
+## 9. Uma observacao de campo sobre a 50, com o peso de UMA observacao
+
+Teste pelo WhatsApp em 21/08, depois da migracao 50: "queijo nózinho" achou o
+item, e "quejo" veio pelo ramo de sugestao. A Bia respondeu *"Você quis dizer
+queijo nózinho? Se for, posso adicionar"* — **sem adicionar nada, perguntando
+antes**. O formato do texto segurou: o rotulo "SUGESTÃO, não resultado" produziu
+uma pergunta em vez de uma oferta.
+
+**E uma observacao, nao prova.** Uma conversa nao diz que sempre segura, e o
+limiar 0.4 continua sem validacao contra trafego — a janela `(0.25, 0.50]` saiu
+de 16 termos inventados contra os 41 itens do `emporio`. O gatilho para
+recalibrar esta no cabecalho da 50.
+
+Vale registrar porque e o primeiro sinal de que a §2b (o modelo ignorando a tool
+quando ela o contradiz) **nao e universal**: aqui a tool disse "0 encontrados, mas
+talvez isto" e o modelo repassou a duvida em vez de resolve-la sozinho. A
+diferenca pode estar em o texto ter dito explicitamente o que fazer ("confirme
+com o cliente antes de usar") — hipotese, nao conclusao.

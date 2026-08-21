@@ -53,11 +53,17 @@ export default async function PaginaPainel() {
       .from('conversas')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', usuario.tenantId),
+    /*
+     * Da VIEW e por `status_efetivo` (migracao 51). Com o cru, esta contagem
+     * nunca drenava: a lapide mantem 'pausado' gravado depois de a pausa
+     * caducar, e o numero so subia. Agora ela significa "em atendimento humano
+     * agora", que e a pergunta que o dono realmente faz.
+     */
     supabase
-      .from('conversas')
+      .from('conversas_painel')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', usuario.tenantId)
-      .eq('status', 'pausado'),
+      .eq('status_efetivo', 'pausado'),
     supabase
       .from('prompt_versoes')
       .select('id, conteudo, criado_em')

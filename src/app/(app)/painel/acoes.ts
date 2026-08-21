@@ -327,16 +327,20 @@ async function contextoDeVerificacao(tenantId: string): Promise<
    * `public.pausa_vigente` e tem hoje três leitores em SQL; uma quarta cópia em
    * outra linguagem é exatamente o que a migração 47 existe para impedir —
    * predicado duplicado diverge, e diverge entre "o painel diz pausada" e "o bot
-   * já respondeu". Quando a view `conversas_painel` chegar, o refinamento é
-   * trocar UMA palavra abaixo: `status` vira `status_efetivo`, e a imprecisão
-   * some sem código novo.
+   * já respondeu".
+   *
+   * A VIEW CHEGOU (migração 51), e o refinamento prometido foi feito: lemos
+   * `conversas_painel` e filtramos por `status_efetivo`. A imprecisão sumiu — as
+   * conversas cuja pausa já caducou voltaram a ser candidatas, que é o certo:
+   * ninguém está atendendo nelas. No `emporio` isso são 9 das 10 que o filtro
+   * antigo descartava.
    */
   const selecao = 'conversation_id';
   const naoPausadas = await supabase
-    .from('conversas')
+    .from('conversas_painel')
     .select(selecao)
     .eq('tenant_id', tenantId)
-    .neq('status', 'pausado')
+    .neq('status_efetivo', 'pausado')
     .order('atualizado_em', { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -347,7 +351,7 @@ async function contextoDeVerificacao(tenantId: string): Promise<
   if (!conversa) {
     // Só chega aqui quando TODAS estão pausadas — ou quando não há nenhuma.
     const qualquer = await supabase
-      .from('conversas')
+      .from('conversas_painel')
       .select(selecao)
       .eq('tenant_id', tenantId)
       .order('atualizado_em', { ascending: true })

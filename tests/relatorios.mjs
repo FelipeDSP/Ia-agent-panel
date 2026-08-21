@@ -76,15 +76,22 @@ console.log('\n-- 3. "Resolveu sozinho" olha pausado_em, não o status de agora 
 
 const convs = [
   // ATENDIDA POR GENTE e já encerrada: voltou a 'ativo', mas passou por humano.
-  { status: 'ativo', phone: '5569900000001', criado_em: '2026-08-12T18:00:00Z', pausado_em: '2026-08-12T18:05:00Z' },
-  { status: 'pausado', phone: '5569900000002', criado_em: '2026-08-12T19:00:00Z', pausado_em: '2026-08-12T19:01:00Z' },
-  { status: 'ativo', phone: '5569900000003', criado_em: '2026-08-12T20:00:00Z', pausado_em: null },
-  { status: 'ativo', phone: '5569900000003', criado_em: '2026-08-13T20:00:00Z', pausado_em: null },
+  { status_efetivo: 'ativo', phone: '5569900000001', criado_em: '2026-08-12T18:00:00Z', pausado_em: '2026-08-12T18:05:00Z' },
+  { status_efetivo: 'pausado', phone: '5569900000002', criado_em: '2026-08-12T19:00:00Z', pausado_em: '2026-08-12T19:01:00Z' },
+  { status_efetivo: 'ativo', phone: '5569900000003', criado_em: '2026-08-12T20:00:00Z', pausado_em: null },
+  { status_efetivo: 'ativo', phone: '5569900000003', criado_em: '2026-08-13T20:00:00Z', pausado_em: null },
 ];
 
 const at = atendimento(convs);
 chk('duas passaram por gente (uma delas já voltou a ativo)', at.comHumano === 2, String(at.comHumano));
 chk('o agente levou duas sozinho', at.soAgente === 2, String(at.soAgente));
+/*
+ * `status_efetivo`, não `status` — as fixtures acompanham a view
+ * `conversas_painel` (migração 51), que é de onde os Relatórios passaram a ler.
+ * Com o cru, `pausadasAgora` contava a LÁPIDE: pausa vencida seguia gravada como
+ * 'pausado' e o número nunca drenava. A pergunta que ele responde continua sendo
+ * "quantas estão em atendimento humano AGORA" — mudou a fonte, não a pergunta.
+ */
 chk('só UMA está pausada agora — é outra pergunta', at.pausadasAgora === 1, String(at.pausadasAgora));
 chk('50% resolvidas sozinho', at.pctSoAgente === 50, String(at.pctSoAgente));
 
@@ -97,7 +104,7 @@ const volta = clientesQueVoltaram(convs);
 chk('três pessoas distintas', volta.pessoas === 3, String(volta.pessoas));
 chk('uma voltou', volta.voltaram === 1, String(volta.voltaram));
 chk('telefone nulo não vira pessoa',
-  clientesQueVoltaram([{ status: 'ativo', phone: null, criado_em: '2026-08-12T18:00:00Z', pausado_em: null }]).pessoas === 0);
+  clientesQueVoltaram([{ status_efetivo: 'ativo', phone: null, criado_em: '2026-08-12T18:00:00Z', pausado_em: null }]).pessoas === 0);
 
 const dias = conversasPorDia(convs, RO);
 chk('agrupa por dia LOCAL (2 dias, não 1)', dias.length === 2, JSON.stringify(dias));
@@ -142,8 +149,16 @@ chk('sabotagem: contar saída junto dobraria o histograma',
   msgs.length !== 3 && msgs.filter((m) => m.direcao === 'entrada').length === 3,
   'o cenário precisa ter saída para a asserção da soma significar algo');
 
-chk('sabotagem: usar `status` no lugar de `pausado_em` daria 1 e não 2',
-  convs.filter((c) => c.status === 'pausado').length === 1 && at.comHumano === 2,
+/*
+ * O campo virou `status_efetivo` quando os Relatórios passaram a ler a view
+ * `conversas_painel` (migração 51). A sabotagem continua medindo a MESMA coisa:
+ * `comHumano` conta quem JÁ passou por gente (marca em `pausado_em`, inclusive
+ * quem voltou a ativo), e o status conta quem está pausada AGORA. São perguntas
+ * diferentes, e o cenário precisa fazê-las divergir — senão trocar uma pela
+ * outra passaria despercebido.
+ */
+chk('sabotagem: usar `status_efetivo` no lugar de `pausado_em` daria 1 e não 2',
+  convs.filter((c) => c.status_efetivo === 'pausado').length === 1 && at.comHumano === 2,
   'as duas contagens precisam divergir no cenário, senão a asserção não mede nada');
 
 chk('sabotagem: média no lugar de mediana daria 23 e não 20',

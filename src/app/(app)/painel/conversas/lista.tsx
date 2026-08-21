@@ -13,14 +13,49 @@ export type ConversaResumo = {
   conversation_id: number;
   contact_name: string | null;
   phone: string | null;
-  status: string;
+  /** Vem da view `conversas_painel`: a pausa JA resolvida. Nunca o `status` cru. */
+  status_efetivo: string;
+  motivo_pausa: string | null;
+  pausa_expira_em: string | null;
   atualizado_em: string | null;
 };
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === 'pausado') return <Badge variant="warning">pausado</Badge>;
-  if (status === 'resolvido') return <Badge variant="secondary">resolvido</Badge>;
-  return <Badge variant="success">ativo</Badge>;
+/** HH:MM local, para "o agente volta às". */
+function hora(iso: string | null): string | null {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return null;
+  }
+}
+
+/*
+ * TRES estados, nao dois — e o terceiro e o que a migracao 51 tornou possivel
+ * dizer.
+ *
+ * Pausa MANUAL e pausa por MENSAGEM HUMANA sao fatos diferentes e o rotulo
+ * acompanha: no primeiro alguem clicou e so sai clicando; no segundo NINGUEM
+ * pausou, alguem respondeu — e o agente volta sozinho na hora mostrada.
+ * Chamar os dois de "pausado" faria o dono procurar um botao que nao existe.
+ */
+export function StatusBadge({
+  status_efetivo,
+  motivo_pausa,
+  pausa_expira_em,
+}: Pick<ConversaResumo, 'status_efetivo' | 'motivo_pausa' | 'pausa_expira_em'>) {
+  if (status_efetivo === 'resolvido') return <Badge variant="secondary">resolvido</Badge>;
+  if (status_efetivo !== 'pausado') return <Badge variant="success">ativo</Badge>;
+
+  if (motivo_pausa === 'manual') {
+    return <Badge variant="warning" title="Alguém pausou pelo painel. Só sai clicando em Retomar.">pausado</Badge>;
+  }
+  const volta = hora(pausa_expira_em);
+  return (
+    <Badge variant="warning" title="Alguém respondeu esta conversa. O agente volta sozinho.">
+      em atendimento humano{volta ? ` · volta às ${volta}` : ''}
+    </Badge>
+  );
 }
 
 function dataCurta(iso: string | null): string {
@@ -169,7 +204,7 @@ export function ListaConversas({ conversas }: { conversas: ConversaResumo[] }) {
               {c.phone ? <span className="ml-2 text-muted-foreground">{c.phone}</span> : null}
             </span>
             <span className="w-20">
-              <StatusBadge status={c.status} />
+              <StatusBadge status_efetivo={c.status_efetivo} motivo_pausa={c.motivo_pausa} pausa_expira_em={c.pausa_expira_em} />
             </span>
             <span className="w-32 text-right text-muted-foreground">
               {dataCurta(c.atualizado_em)}

@@ -65,8 +65,10 @@ export default async function PaginaDetalheTenant({
       .order('criado_em', { ascending: false }),
     supabase.from('usuarios_painel').select('id, nome, email').eq('tenant_id', id),
     supabase
-      .from('conversas')
-      .select('conversation_id, contact_name, phone, status, atualizado_em')
+      // View (migracao 51). O super_admin passa pela mesma policy — a diferenca
+      // e que `auth_is_super_admin()` a satisfaz para qualquer tenant.
+      .from('conversas_painel')
+      .select('conversation_id, contact_name, phone, status_efetivo, atualizado_em')
       .eq('tenant_id', id)
       .order('atualizado_em', { ascending: false })
       .limit(30),
@@ -300,10 +302,14 @@ export default async function PaginaDetalheTenant({
                 </span>
                 <Badge
                   variant={
-                    c.status === 'pausado' ? 'warning' : c.status === 'resolvido' ? 'secondary' : 'success'
+                    c.status_efetivo === 'pausado'
+                      ? 'warning'
+                      : c.status_efetivo === 'resolvido'
+                        ? 'secondary'
+                        : 'success'
                   }
                 >
-                  {c.status}
+                  {c.status_efetivo}
                 </Badge>
                 <span className="text-right text-xs text-muted-foreground">
                   {c.atualizado_em

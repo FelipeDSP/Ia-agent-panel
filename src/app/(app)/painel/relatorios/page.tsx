@@ -99,8 +99,9 @@ export default async function PaginaRelatorios() {
       .eq('tenant_id', usuario.tenantId)
       .gte('criado_em', desde),
     supabase
-      .from('conversas')
-      .select('status, phone, criado_em, pausado_em')
+      // View (migracao 51): `pausadasAgora` contava a lapide e nunca drenava.
+      .from('conversas_painel')
+      .select('status_efetivo, phone, criado_em, pausado_em')
       .eq('tenant_id', usuario.tenantId)
       .gte('criado_em', desde),
   ]);

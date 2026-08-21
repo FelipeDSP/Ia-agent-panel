@@ -14,10 +14,20 @@ export default async function PaginaConversas() {
   const usuario = await exigirTenantAdmin();
   const supabase = await criarClienteServidor();
 
-  // RLS ja escopa por tenant; filtro explicito por tenant_id como segunda camada.
+  /*
+   * LE DA VIEW `conversas_painel`, nao da tabela (migracao 51). A tabela guarda
+   * `status` CRU, que e lapide desde a 47: pausa vencida segue gravada como
+   * 'pausado' ate a proxima escrita. Em 21/08 isso eram 9 conversas do emporio
+   * mostradas como pausadas com o bot atendendo nelas.
+   *
+   * A view nao tem coluna `status` — chama-se `status_bruto` — entao pedir a
+   * antiga aqui estoura em vez de voltar a mentir.
+   *
+   * A ESCRITA continua na tabela (ver `acoes.ts`): a view e so leitura.
+   */
   const { data: conversas } = await supabase
-    .from('conversas')
-    .select('conversation_id, contact_name, phone, status, atualizado_em')
+    .from('conversas_painel')
+    .select('conversation_id, contact_name, phone, status_efetivo, motivo_pausa, pausa_expira_em, atualizado_em')
     .eq('tenant_id', usuario.tenantId)
     .order('atualizado_em', { ascending: false })
     .limit(200);

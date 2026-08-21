@@ -20,7 +20,8 @@ export type LinhaMensagem = {
 };
 
 export type LinhaConversa = {
-  status: string;
+  /** Da view `conversas_painel`: a pausa já resolvida. Nunca o `status` cru. */
+  status_efetivo: string;
   phone: string | null;
   criado_em: string;
   pausado_em: string | null;
@@ -103,7 +104,9 @@ export function picos(horas: number[], quantas = 3): { hora: number; n: number }
 export function atendimento(linhas: LinhaConversa[]) {
   const total = linhas.length;
   const comHumano = linhas.filter((l) => l.pausado_em !== null).length;
-  const pausadasAgora = linhas.filter((l) => l.status === 'pausado').length;
+  // `status_efetivo`, não o cru: com a lápide, este número só subia — uma pausa
+  // vencida seguia contada como pausada para sempre (migração 51).
+  const pausadasAgora = linhas.filter((l) => l.status_efetivo === 'pausado').length;
   return {
     total,
     comHumano,
