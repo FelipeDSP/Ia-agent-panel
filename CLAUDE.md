@@ -197,8 +197,10 @@ perde trabalho de cadastro que ninguém consegue devolver.
     `vagas_restantes`), e a base com `nome`/`empresa`/`whatsapp` fica trancada.
     Mas **a proteção é a lista de colunas, não a permissão** — sem
     `security_invoker` ela roda como `postgres` (BYPASSRLS), então acrescentar
-    `a.nome` ao `select` vazaria PII para `anon` na hora, sem erro. Ver
-    docs/PENDENCIAS.md.
+    `a.nome` ao `select` vazaria PII para `anon` na hora — **simulado, e saíram
+    nomes reais**. Virou item próprio: `docs/PENDENCIA-PODCAST-VAGAS.md`, que
+    também mede por que o conserto óbvio (`revoke` + `security_invoker`)
+    **quebra a página em silêncio**.
 
 - **View sobre tabela com RLS PRECISA de `security_invoker = true`.** Sem ela a
   view roda com os privilégios do DONO, que é `postgres` — e `postgres` tem
