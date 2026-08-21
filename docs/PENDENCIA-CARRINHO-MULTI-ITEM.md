@@ -1,11 +1,13 @@
 # Pendência — vários itens numa mensagem: a IA relata falha que não houve, e o conserto dela cobra a mais
 
-**Estado:** levantado em 2026-08-21 contra produção, **nada consertado**. Três
-consertos possíveis e muito diferentes estão em aberto (prompt, atomicidade no
-SQL, ou a tool aceitar lista de itens numa chamada só) — a decisão é do Felipe.
+**Estado:** levantado em 2026-08-21 contra produção. **O DADO ERRADO FOI
+CORRIGIDO** (§7) — o defeito que o produziu, NÃO. Três consertos possíveis e muito
+diferentes estão em aberto (prompt, atomicidade no SQL, ou a tool aceitar lista de
+itens numa chamada só) — a decisão é do Felipe. E a §2b restringe o campo: **prompt
+sozinho não resolve**, porque a instrução que teria evitado o caso já existia.
 
-**Gatilho:** antes de qualquer cliente novo de vendas entrar, ou na primeira
-reclamação de valor de pedido. **Há dinheiro errado em produção agora** (§3).
+**Gatilho:** antes de qualquer cliente novo de vendas entrar. O caso é reprodutível
+— basta um cliente pedir dois itens numa mensagem.
 
 ## O caso
 
@@ -56,8 +58,50 @@ recebe nada pronto. Confirmado no corpo da função. Então a **última** respos
 o modelo recebeu tinha o carrinho completo e correto.
 
 **O modelo tinha a informação certa e relatou errado.** Não houve resposta
-inconsistente: houve três respostas corretas e incrementais, e o texto final
-descreveu a primeira.
+inconsistente: houve três respostas corretas e incrementais.
+
+E não é que ele "descreveu a primeira". É pior, e a §2b mostra.
+
+## 2b. O modelo IGNORA a tool quando ela contradiz o que ele acha que fez
+
+Isto é o achado que muda o conserto, e apareceu na varredura.
+
+Às **13:41:22** o `on conflict` deixou o banco com **6x milho e 2x cenoura**. A
+tool que fez isso devolve `pedido_em_texto`, que lê do banco **depois** da própria
+escrita — ou seja, ela entregou ao modelo um resumo dizendo 6x e 2x.
+
+Três segundos depois, às **13:41:25**, o modelo escreveu ao cliente:
+
+> *"Agora seu pedido está assim: - 3 pedaços de Bolo de Milho com Requeijão —
+> R$ 22,50 - 1 pedaço de Bolo de Cenoura com Cobertura de Chocolate — R$ 7,50"*
+
+Quantidades **e subtotais** do que o cliente pediu, não do que a tool devolveu.
+Ele não descreveu uma resposta antiga: **reescreveu por cima da resposta que
+acabara de receber**, porque ela contradizia o que ele achava que tinha feito.
+
+E às **13:41:54** misturou as duas fontes:
+
+> *"O total ficou R$ 75,00, com 3 pedaços de bolo de milho com requeijão, 1 …"*
+
+**Total do banco, quantidades da memória.** É por isso que o texto não fecha:
+R$ 7,50 × (3+1+2) = R$ 45,00, não R$ 75,00. O cliente teria de fazer a conta para
+notar.
+
+### A regra do prompt já existia, e é mais forte do que "não some"
+
+Linha 23 do `systemMessage` do `AI Agent Vendas`, verbatim:
+
+> `A ferramenta SEMPRE devolve o pedido inteiro com o total. Repita esse resumo ao
+> cliente e confirme antes de fechar. O total vem calculado — nunca some você mesmo.`
+
+Ela manda **repetir o resumo da ferramenta**, não só não somar. Foi violada nas
+duas metades: o modelo não repetiu o resumo (reescreveu as quantidades) e
+apresentou um total que não corresponde às linhas que ele mesmo listou.
+
+**Consequência para o conserto: prompt não resolve sozinho.** A instrução que
+teria evitado o caso já está escrita, no lugar certo, com as palavras certas — e
+não segurou. Qualquer desenho que dependa só de reforçar o texto está apostando
+na mesma coisa que já falhou uma vez em uma oportunidade de uma.
 
 ## 3. O estrago: o conserto do modelo cobrou a mais
 
@@ -143,3 +187,48 @@ diretamente o que a §2 infere dos carimbos. A inferência é forte (os interval
 batem com as durações), mas é inferência.
 
 Link da execução do turno: `/workflow/5rMg40Lagy3OaIo7/executions/3994820`.
+
+## 7. O dado foi corrigido em 2026-08-21 — e como reconhecer isso numa varredura
+
+**As duas linhas deste pedido foram corrigidas.** Esta seção foi escrita **antes**
+do `UPDATE`, de propósito: sem ela, a próxima varredura reencontra as duas linhas
+(ver a armadilha abaixo) e alguém "corrige" de novo, ao contrário.
+
+`cenoura` voltou de 2 para 1
+e `milho` de 6 para 3; o trigger `trg_pedido_itens_total` recalculou
+`total_centavos` de 7500 para **4500**. O status seguiu `aguardando_pagamento` e o
+chocolate não foi tocado.
+
+**A ARMADILHA, e ela é a razão desta seção existir:** o `UPDATE` da correção
+dispara `trg_pedido_itens_upd`, que recarimba `atualizado_em`. Então
+**`atualizado_em <> criado_em` continua verdadeiro nas duas linhas** — a mesma
+assinatura que a varredura da §6 usa para achar o defeito. Uma varredura futura
+vai reencontrá-las.
+
+**O discriminador é `pedidos.metadados`**, não o carimbo:
+
+```json
+"correcao_manual": {
+  "em": "2026-08-21T18:...Z",
+  "antes":  {"cenoura": 2, "milho": 6, "total_centavos": 7500},
+  "depois": {"cenoura": 1, "milho": 3, "total_centavos": 4500},
+  "motivo": "on conflict do update somou quantidade num re-add do modelo; ..."
+}
+```
+
+Pedido com `metadados -> 'correcao_manual'` preenchido **já foi tratado**. Não
+corrija de novo: as quantidades de hoje são as que o cliente pediu, e "desdobrar"
+outra vez levaria milho a 1,5 — ou, mais provavelmente, alguém dobraria ao
+contrário achando que estava consertando.
+
+A varredura de verdade é:
+
+```sql
+i.atualizado_em <> i.criado_em
+  and p.metadados -> 'correcao_manual' is null
+```
+
+Não há tabela de histórico de pedido (as 20 tabelas foram conferidas), e
+`pedidos.metadados` é o único lugar onde o rastro cabia sem migração — o check
+`pedidos_metadados_objeto` exige objeto, e o `||` preservou a chave que já estava
+lá (`{"entrega": "retirada à tarde"}`), verificado no ensaio antes de comitar.
