@@ -1,4 +1,4 @@
-# Pausa automática — conserto, retomada e função do portão APLICADOS (47, 48); falta o import
+# Pausa automática — 47 e 48 APLICADAS; falta o import do workflow e a view (51)
 
 **Estado em 2026-08-20:** diagnóstico fechado com payload real; medição feita; conserto
 **importado e funcionando** — confirmado em execução real na conta 1 — e
@@ -42,10 +42,7 @@ em conversa ja caducada: medido em 21/08, **9 das 10 do `emporio`**.
 função) está no gerador e não foi importada, então **os dois vazamentos — mídia e
 bloqueado — continuam abertos em produção**. A função não tem chamador até lá; foi
 por isso que esta ordem foi escolhida. Falta também o deploy do conserto do alvo de
-`contextoDeVerificacao`. A view `conversas_painel` foi **renumerada para 49** — a
-48 é a que fecha vazamento visto em produção; view é melhoria de tela, e a ordem
-de aplicação decide o número. Até a 49, a tela mostra `pausado` em conversa já
-caducada e a contagem da Visão geral não drena.
+`contextoDeVerificacao`.
 
 Este arquivo é o lugar onde o conserto mora até virar JSON. Cada nota marcada
 **[nota do nó]** é texto para colar no campo `notes` do nó correspondente quando o
