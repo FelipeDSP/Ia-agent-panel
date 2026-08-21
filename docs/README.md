@@ -43,8 +43,8 @@ documentação e material de referência.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da
   demonstracao do emporio.** `'resolvido'` nunca e escrito em `conversas` (73 linhas, zero),
   entao o painel mostra conversa encerrada ha meses como `ativo`.
-- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **conserto APLICADO; retomada
-  APLICADA (migracao 47, ledger `20260821133000`).** Nenhuma mensagem humana pausava o bot, por nenhum
+- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **conserto e retomada APLICADOS (47);
+  portao unico ESCRITO (48), nao aplicado.** Nenhuma mensagem humana pausava o bot, por nenhum
   caminho, para nenhum tenant — e nunca pausou ate 20/08. A medicao que bloqueava o
   conserto esta feita: os dois tokens conectados sao de Agent Bot, entao a ev6 protege.
   Traz os **sete** produtores de `outgoing` (nao um), as notas para colar em cada no
@@ -55,7 +55,10 @@ documentação e material de referência.
   da inatividade; a **lapide** (`status` deixa de responder sozinho); a forense que
   identificou qual das pausadas tinha sido clicada a mao (o numero anda sozinho e por
   isso nao esta escrito aqui); e por que a view do painel
-  ficou para a 48. E a regra que saiu do guard de colunas: **coluna nova em `tenants`
+  ficou para a 49 (renumerada: a 48 e o portao). Traz tambem por que mover o `Sync Conversa`
+  para antes do switch foi DESCARTADO (a acao `ignorar` viraria linha em `conversas`), e a
+  correcao da leitura do `Estima Tokens`: ele SEMPRE esteve no ar, e `saida_cortes` NULL era o
+  valor esperado. E a regra que saiu do guard de colunas: **coluna nova em `tenants`
   nasce agencia-only** — `trg_tenants_guard_colunas` recusa o painel do cliente com
   `42501`, entao virar cliente-editavel exige mexer na lista branca, em migracao
   propria.

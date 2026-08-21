@@ -234,7 +234,15 @@ export async function salvarTransferirHumano(
  * confere a conexão, acha tudo certo, e não sai do lugar.
  */
 async function contextoDeVerificacao(tenantId: string): Promise<
-  | { ok: true; url: string; accountId: number | string; token: string; conversationId: number | string }
+  | {
+      ok: true;
+      url: string;
+      accountId: number | string;
+      token: string;
+      conversationId: number | string;
+      /** O alvo é uma conversa pausada — ver `avisoDeAlvoPausado`. */
+      emAtendimentoHumano: boolean;
+    }
   | { ok: false; motivo: string }
 > {
   const supabase = await criarClienteServidor();
@@ -269,15 +277,14 @@ async function contextoDeVerificacao(tenantId: string): Promise<
   }
 
   /*
-   * A conversa MENOS RECENTEMENTE TOCADA do tenant, qualquer status.
+   * A conversa MENOS RECENTEMENTE TOCADA do tenant, PREFERINDO as não pausadas.
    *
    * Era `status = 'resolvido'` — e isso tornava o motivo 3 INALCANÇÁVEL.
    * Ninguém escreve `'resolvido'` em `public.conversas`: os dois pontos do n8n
    * que chamam `api_n8n_definir_status_conversa` passam `'pausado'` fixo, o
    * painel só alterna ativo/pausado, e não existe webhook de mudança de status
-   * do Chatwoot. Produção tem 73 conversas — 72 `ativo`, 1 `pausado`, nenhuma
-   * `resolvido` desde maio. O CHECK da coluna aceita o valor, o que dá
-   * aparência de estado suportado; é estado morto.
+   * do Chatwoot. O CHECK da coluna aceita o valor, o que dá aparência de estado
+   * suportado; é estado morto.
    *
    * O efeito era o defeito que este arquivo já tinha consertado uma vez:
    * a tela mandava "encerre uma conversa no Chatwoot", o cliente encerrava,
@@ -286,14 +293,69 @@ async function contextoDeVerificacao(tenantId: string): Promise<
    * `atualizado_em` ascendente é a melhor aproximação disponível de "ninguém
    * está olhando esta agora". Não é garantia — é o menos pior sem espelhar o
    * status do Chatwoot (registrado em docs/PENDENCIAS.md).
+   *
+   * ================== POR QUE A PAUSA ENTRA NA ESCOLHA ====================
+   *
+   * `verificarTime` não manda mensagem: faz `POST .../assignments`, ou seja,
+   * MEXE NA ATRIBUIÇÃO de uma conversa real (é o único caminho — o token de bot
+   * não lista times). Escolher uma conversa em atendimento humano arranca a
+   * atribuição debaixo de quem está atendendo.
+   *
+   * ================== DESPRIORIZAR, NUNCA EXCLUIR =========================
+   *
+   * Duas consultas, e a segunda só dispara quando a primeira volta vazia.
+   * Excluir pausadas de vez traria de volta o defeito que este arquivo já
+   * consertou, por outra porta: um cliente com uma ou duas conversas — as duas
+   * atendidas à mão, que é o normal de cliente NOVO, que é justamente quem roda
+   * esta verificação — cairia para zero candidatos e receberia "ainda não
+   * recebeu nenhuma conversa". Isso é falso. Trocaríamos um motivo morto por um
+   * motivo que MENTE, que é pior.
+   *
+   * ================== A LÁPIDE, E O QUE NÃO FAZER COM ELA =================
+   *
+   * `status` é lápide desde a migração 47: a expiração é preguiçosa, então uma
+   * pausa JÁ CADUCADA continua gravada como `'pausado'` até a próxima escrita.
+   * Medido em 21/08: o `emporio` tinha 10 conversas com `status='pausado'` e
+   * apenas 2 pausadas de fato — oito eram lápide.
+   *
+   * Isso deixa o filtro impreciso, e aqui a imprecisão é INOFENSIVA justamente
+   * porque despriorizamos em vez de excluir: no pior caso o alvo sai de um
+   * conjunto menor, e o fallback garante que nada fica inalcançável. Excluir
+   * não toleraria a mesma imprecisão.
+   *
+   * NÃO COMPUTE `pausa_vigente` EM TYPESCRIPT PARA REFINAR ISTO. A regra mora em
+   * `public.pausa_vigente` e tem hoje três leitores em SQL; uma quarta cópia em
+   * outra linguagem é exatamente o que a migração 47 existe para impedir —
+   * predicado duplicado diverge, e diverge entre "o painel diz pausada" e "o bot
+   * já respondeu". Quando a view `conversas_painel` chegar, o refinamento é
+   * trocar UMA palavra abaixo: `status` vira `status_efetivo`, e a imprecisão
+   * some sem código novo.
    */
-  const { data: conversa } = await supabase
+  const selecao = 'conversation_id';
+  const naoPausadas = await supabase
     .from('conversas')
-    .select('conversation_id')
+    .select(selecao)
     .eq('tenant_id', tenantId)
+    .neq('status', 'pausado')
     .order('atualizado_em', { ascending: true })
     .limit(1)
     .maybeSingle();
+
+  let conversa = naoPausadas.data;
+  let emAtendimentoHumano = false;
+
+  if (!conversa) {
+    // Só chega aqui quando TODAS estão pausadas — ou quando não há nenhuma.
+    const qualquer = await supabase
+      .from('conversas')
+      .select(selecao)
+      .eq('tenant_id', tenantId)
+      .order('atualizado_em', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    conversa = qualquer.data;
+    emAtendimentoHumano = Boolean(conversa);
+  }
 
   if (!conversa) {
     return {
@@ -309,7 +371,27 @@ async function contextoDeVerificacao(tenantId: string): Promise<
     accountId: tenant.chatwoot_account_id,
     token: cred.chatwoot_token,
     conversationId: conversa.conversation_id,
+    emAtendimentoHumano,
   };
+}
+
+/**
+ * O aviso que acompanha a verificação feita numa conversa sob atendimento
+ * humano — `null` quando o alvo era uma conversa livre.
+ *
+ * NÃO É CORTESIA, É AVISO DE CONSEQUÊNCIA. `verificarTime` atribui a conversa ao
+ * time e depois manda `{"team_id": null}` para desfazer. Isso **desatribui**;
+ * não restaura. O bot não consegue `GET` na conversa (401), então não tem como
+ * saber a que time ela pertencia antes — se pertencia a algum, aquele vínculo se
+ * perde. Quem estava atendendo vê a conversa sair do time dela, e sem esta frase
+ * não tem como ligar isso ao botão que apertou no painel.
+ */
+function avisoDeAlvoPausado(emAtendimentoHumano: boolean): string | null {
+  return emAtendimentoHumano
+    ? 'A verificação usou a única conversa disponível, e ela está em atendimento humano — ' +
+        'a atribuição de time dessa conversa foi apagada no processo. Se alguém estava ' +
+        'atendendo por um time, refaça a atribuição no Chatwoot.'
+    : null;
 }
 
 /**
@@ -373,13 +455,22 @@ export async function salvarTime(_estado: EstadoConfig, fd: FormData): Promise<E
 
   let verificadoEm: string | null = null;
   let aviso: string | null = null;
+  let avisoAlvo: string | null = null;
 
   if (!ctx.ok) {
     aviso = `Time salvo sem verificar: ${ctx.motivo}.`;
   } else {
     const r = await verificarTime({ ...ctx, teamId });
-    if (r.estado === 'existe') verificadoEm = new Date().toISOString();
-    else if (r.estado === 'nao_existe') {
+    /*
+     * ADITIVO, e não substituto do `aviso`. Aquele diz "salvei sem verificar" e
+     * TROCA a mensagem de sucesso; este relata uma consequência que já
+     * aconteceu, e vale em QUALQUER desfecho — inclusive no sucesso, porque a
+     * atribuição foi mexida antes de sabermos se o time existe.
+     */
+    avisoAlvo = avisoDeAlvoPausado(ctx.emAtendimentoHumano);
+    if (r.estado === 'existe') {
+      verificadoEm = new Date().toISOString();
+    } else if (r.estado === 'nao_existe') {
       // NÃO SALVA. É o caso que a validação existe para pegar.
       return {
         errosCampo: {
@@ -387,6 +478,9 @@ export async function salvarTime(_estado: EstadoConfig, fd: FormData): Promise<E
             `O Chatwoot não tem o time ${teamId} nesta conta. Confira o número no fim da ` +
             'URL, em Configurações → Times → clicar no time.',
         },
+        // O time não foi salvo, mas a atribuição da conversa já foi mexida —
+        // sem esta linha a consequência acontece e ninguém é avisado.
+        ...(avisoAlvo ? { erro: avisoAlvo } : {}),
       };
     } else {
       aviso = `Time salvo sem verificar: ${r.motivo}.`;
@@ -482,7 +576,9 @@ export async function salvarTime(_estado: EstadoConfig, fd: FormData): Promise<E
 
   revalidatePath('/painel/configuracoes');
   return {
-    sucesso: aviso ?? `Time “${nome}” salvo e confirmado no Chatwoot.`,
+    sucesso: [aviso ?? `Time “${nome}” salvo e confirmado no Chatwoot.`, avisoAlvo]
+      .filter(Boolean)
+      .join(' '),
   };
 }
 

@@ -746,17 +746,21 @@ w.nodes.push(ifNo('Audio Contratado?', [
   'Imagem, documento e video seguem para o aviso de sempre — o escopo do modulo e SO audio. ' +
   'file_type "audio" confirmado em webhook real de nota de voz (12/08/2026).'));
 
-w.nodes.push(ifNo('Conversa Ativa?', [
-  {
-    id: 'nao-pausada',
-    leftValue: "={{ $('Config Audio').first().json.conversa_pausada }}",
-    rightValue: false,
-    operator: { type: 'boolean', operation: 'false', singleValue: true },
-  },
-], [-2288, 4288],
-  'Humano assumiu: nao transcreve. E o UNICO desperdicio real do desenho — sem isto, cada audio ' +
-  'que o cliente mandasse durante o atendimento humano seria baixado e transcrito para ser ' +
-  'descartado no "Nao Pausado?". Sem saida no ramo falso: quem responde e a pessoa.'));
+// `Conversa Ativa?` NAO EXISTE MAIS — e a lista acima o remove.
+//
+// POR QUE ELE MORREU. Ele foi escrito como ECONOMIA ("nao desperdicar
+// transcricao quando o humano assumiu"), nao como guarda de pausa, e por isso
+// ficou DEPOIS do `Audio Contratado?`. O resultado: imagem, documento, video e
+// audio de tenant sem transcricao contratada caiam no ramo FALSO daquele IF e
+// disparavam o `Avisa Midia Nao Suportada` sem nunca ver pausa nenhuma. O dono
+// do Emporio viu isso acontecer em producao. Nome dizendo uma coisa, posicao
+// implicando outra.
+//
+// O `Consulta Pausa` + `Nao Pausada?` (secao do portao, abaixo) substituem o
+// papel dele ANTES do `Roteia Acao`, e cobrem tambem o ramo `bloqueado`, que era
+// o segundo vazamento da mesma familia. Como o portao roda antes, audio de
+// conversa pausada nem chega ao `Config Audio` — a economia fica MELHOR do que
+// era, nao pior.
 
 w.nodes.push(ifNo('Audio Curto?', [
   {
@@ -925,9 +929,12 @@ w.connections['Roteia Acao'] = {
   main: [cx('Mensagem Pronta'), cx('Config Audio'), cx('Credencial (bloqueio)')],
 };
 w.connections['Config Audio'] = { main: [cx('Audio Contratado?')] };
-w.connections['Audio Contratado?'] = { main: [cx('Conversa Ativa?'), cx('Avisa Midia Nao Suportada')] };
-// Ramo falso sem saida de proposito: humano esta atendendo.
-w.connections['Conversa Ativa?'] = { main: [cx('Audio Curto?'), []] };
+// Direto ao `Audio Curto?`: a pausa ja foi decidida no portao, antes do
+// `Roteia Acao`. `Audio Curto?` le os DOIS operandos por nome
+// (`$('Extrair e Filtrar').json.anexo.file_size` e
+// `$('Config Audio').json.limite_bytes`), entao tirar o no do meio e invisivel
+// para ele — verificado no export da instancia antes de mexer.
+w.connections['Audio Contratado?'] = { main: [cx('Audio Curto?'), cx('Avisa Midia Nao Suportada')] };
 w.connections['Audio Curto?'] = { main: [cx('Baixa Anexo'), cx('Avisa Audio Longo')] };
 w.connections['Baixa Anexo'] = { main: [cx('Transcreve')] };
 w.connections['Transcreve'] = { main: [cx('Filtra Transcricao')] };
@@ -936,6 +943,129 @@ w.connections['Roteia Transcricao'] = {
   main: [cx('Mensagem Pronta'), cx('Credencial (bloqueio)'), cx('Avisa Audio Falhou'), cx('Avisa Audio Falhou')],
 };
 w.connections['Mensagem Pronta'] = { main: [cx('Sync Conversa')] };
+
+// ---------------------------------------------------------------------------
+// PORTAO DE PAUSA — um so, ANTES do `Roteia Acao`
+// ---------------------------------------------------------------------------
+//
+// O QUE ELE CONSERTA. Ate aqui a pausa era checada SO no ramo `processar`, la no
+// fundo (`Sync Conversa` -> `Nao Pausado?`). Os outros dois ramos vazavam:
+//
+//   midia     -> `Audio Contratado?[false]` -> `Avisa Midia Nao Suportada`
+//   bloqueado -> `Credencial (bloqueio)`    -> `Envia Resposta Bloqueada`
+//
+// Nos dois, o bot falava por cima do atendimento humano. O primeiro foi visto em
+// producao no Emporio: com a conversa pausada, imagem do cliente ainda recebia o
+// aviso de midia nao suportada.
+//
+// POR QUE ANTES DO SWITCH, E NAO DENTRO DE CADA RAMO. Pausa e propriedade da
+// CONVERSA, nao de cada ramo — a mesma escolha que a migracao 47 fez no SQL
+// (um predicado, varios leitores). Dentro dos ramos seriam quatro nos em vez de
+// dois, e o proximo ramo que alguem criar nasceria descoberto de novo.
+//
+// POR QUE NAO MOVER O `Sync Conversa` PARA CA (a alternativa obvia). Porque o
+// `Extrair e Filtrar` produz QUATRO acoes, e a quarta e `ignorar` — grupo de
+// WhatsApp (`@g.us`), o contato tecnico "Integracao WhatsApp", story mention,
+// midia sem texto e sem anexo, e mensagem que ficou vazia pos-sanitizacao. O
+// `Roteia Acao` tem tres saidas e `fallbackOutput: none`, entao `ignorar` morre
+// no switch DE PROPOSITO. Com o `Sync Conversa` antes do switch, todas essas
+// virariam linha em `public.conversas`: o filtro passaria a descartar da
+// RESPOSTA e nao do REGISTRO, e grupo de WhatsApp apareceria na lista de
+// conversas do cliente, com nome e telefone, alem de entrar no denominador do
+// `pctSoAgente`. Desfazer seria script de limpeza em dado de producao.
+//
+// CUSTO, MEDIDO: 2,1 ms de banco (index scan em
+// `conversas_tenant_id_conversation_id_key` + seq scan em `tenants`, que tem 10
+// linhas). O `Sync Conversa` que ja roda a cada mensagem custa 6,9 ms. O preco
+// real e UMA ida e volta a mais — 33,8 ms daqui, contra 33,6 ms de qualquer
+// outra consulta do workflow.
+//
+// EFEITO COLATERAL ACEITO: conversa pausada nao chega mais ao `Sync Conversa`,
+// entao o `atualizado_em` dela para de subir durante o atendimento humano. Isso
+// faz a conversa DERIVAR PARA A FRENTE da fila de `contextoDeVerificacao`, que
+// escolhe por `atualizado_em` ascendente — por isso a mesma entrega despriorizou
+// pausadas la. Sem aquele conserto, este portao faria o painel tender a escolher
+// justamente a conversa em atendimento para testar time.
+
+const PORTAO_NOS = ['Consulta Pausa', 'Nao Pausada?', 'Humano Atende (ignora)'];
+for (const nome of [...PORTAO_NOS, 'Nao Pausado?']) {
+  w.nodes = w.nodes.filter((n) => n.name !== nome);
+  delete w.connections[nome];
+}
+
+// A funcao e da migracao 48. Nome dizendo o que faz: `api_n8n_pode_transcrever`
+// tambem devolve `conversa_pausada` e ate respeita a janela, mas uma funcao
+// chamada "pode transcrever" respondendo "a conversa esta pausada?" e a mentira
+// de nome que este repo vem limpando.
+w.nodes.push({
+  parameters: {
+    operation: 'executeQuery',
+    query: 'SELECT public.api_n8n_conversa_pausada($1::uuid, $2::bigint) AS pausada;',
+    options: {
+      queryReplacement:
+        "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id ] }}",
+    },
+  },
+  type: 'n8n-nodes-base.postgres',
+  typeVersion: 2.6,
+  position: [3136, 4720],
+  name: 'Consulta Pausa',
+  id: idDe('consulta-pausa'),
+  notes:
+    'Portao unico de pausa, antes do Roteia Acao. Ate 21/08 so o ramo processar era protegido, e ' +
+    'midia e bloqueado falavam por cima do atendimento humano. A regra NAO esta aqui: a funcao ' +
+    'delega a public.pausa_vigente (migracao 47), que tem os outros leitores.',
+  notesInFlow: true,
+});
+
+w.nodes.push(ifNo('Nao Pausada?', [
+  {
+    id: 'nao-pausada',
+    leftValue: '={{ $json.pausada }}',
+    rightValue: false,
+    operator: { type: 'boolean', operation: 'false', singleValue: true },
+  },
+], [3136, 4944],
+  'Le a coluna `pausada` do Consulta Pausa, POSICIONALMENTE — os dois andam juntos e nao pode ' +
+  'entrar no entre eles. A saida FALSA tem destino de proposito: o no que hoje se chama ' +
+  '"Fala com o Cliente?" passou meses com a saida falsa solta, e por isso nenhuma mensagem ' +
+  'digitada no Chatwoot pausava o bot. Saida solta e o modo de falha conhecido deste workflow.'));
+
+// O NoOp existe para a execucao mostrar ONDE parou. Sem ele a execucao termina
+// sem nome e "o bot nao respondeu" vira investigacao; com ele, a lista de
+// execucoes do n8n ja diz o motivo. Mesmo papel do `Nota Interna (ignora)`.
+w.nodes.push({
+  parameters: {},
+  type: 'n8n-nodes-base.noOp',
+  typeVersion: 1,
+  position: [3360, 5088],
+  name: 'Humano Atende (ignora)',
+  id: idDe('humano-atende-ignora'),
+  notes:
+    'Fim de linha esperado: alguem esta atendendo esta conversa. Nao e erro. A pausa caduca sozinha ' +
+    'pela janela do tenant (tenants.pausa_expira_minutos) e a proxima mensagem volta a passar.',
+  notesInFlow: true,
+});
+
+w.connections['Tenant Valido?'] = { main: [cx('Consulta Pausa'), []] };
+w.connections['Consulta Pausa'] = { main: [cx('Nao Pausada?')] };
+w.connections['Nao Pausada?'] = { main: [cx('Roteia Acao'), cx('Humano Atende (ignora)')] };
+
+// O `Nao Pausado?` morreu com o portao: era o mesmo teste, tarde demais e so
+// para um ramo. O `Sync Conversa` passa a ligar direto no `Acumula Mensagem`.
+//
+// NADA lia daquele no — nem por nome nem posicionalmente (conferido no export da
+// instancia). E o `Acumula Mensagem` le `$('Mensagem Pronta')`, `$('Resolve
+// Tenant')` e `$('Extrair e Filtrar')`, todos POR NOME, entao nao importa que
+// item chega nele.
+//
+// O `Sync Conversa` continua indispensavel, e por dois motivos que nao sao o
+// status: e ele quem faz o upsert da conversa (contact_name, phone,
+// atualizado_em) e quem calcula `historico_chars`, que o `Estima Tokens` le por
+// nome. As colunas `status` e `pausado_em` do SELECT dele viram vestigiais —
+// NAO as tire, ou o `historico_chars` vai junto e o rateio de token quebra sem
+// sintoma.
+w.connections['Sync Conversa'] = { main: [cx('Acumula Mensagem')] };
 w.connections['Enviar Foto do Produto'] = {
   ai_tool: [[{ node: 'AI Agent Vendas', type: 'ai_tool', index: 0 }]],
 };

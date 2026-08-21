@@ -419,40 +419,6 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "p1",
-              "leftValue": "={{ $json.status }}",
-              "rightValue": "pausado",
-              "operator": {
-                "type": "string",
-                "operation": "notEquals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "looseTypeValidation": true,
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        4224,
-        4208
-      ],
-      "id": "813a107e-999c-48da-af2f-c449636bd3a2",
-      "name": "Nao Pausado?"
-    },
-    {
-      "parameters": {
         "operation": "push",
         "list": "=tenant_{{ $('Resolve Tenant').first().json.tenant_id }}_conv_{{ $('Extrair e Filtrar').first().json.conversation_id }}_acumulo",
         "messageData": "={{ $('Mensagem Pronta').first().json.mensagem }}",
@@ -1712,42 +1678,6 @@
           },
           "conditions": [
             {
-              "id": "nao-pausada",
-              "leftValue": "={{ $('Config Audio').first().json.conversa_pausada }}",
-              "rightValue": false,
-              "operator": {
-                "type": "boolean",
-                "operation": "false",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        4176,
-        5088
-      ],
-      "name": "Conversa Ativa?",
-      "id": "6b01ea60-c730-465f-bf21-f810d12d6e80",
-      "notes": "Humano assumiu: nao transcreve. E o UNICO desperdicio real do desenho — sem isto, cada audio que o cliente mandasse durante o atendimento humano seria baixado e transcrito para ser descartado no \"Nao Pausado?\". Sem saida no ramo falso: quem responde e a pessoa.",
-      "notesInFlow": true
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
               "id": "curto",
               "leftValue": "={{ $('Extrair e Filtrar').first().json.anexo.file_size }}",
               "rightValue": "={{ $('Config Audio').first().json.limite_bytes }}",
@@ -2031,6 +1961,74 @@
       "id": "49800f94-1a05-4d31-9bd5-0bb25f79bc8a",
       "notes": "Ponto de convergencia: o Acumula Mensagem le daqui, venha o texto do teclado ou da transcricao. FALHA ALTO se nao houver mensagem — emitir vazio gravaria acumulo vazio e chamaria o agente sem prompt.",
       "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_conversa_pausada($1::uuid, $2::bigint) AS pausada;",
+        "options": {
+          "queryReplacement": "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3136,
+        4720
+      ],
+      "name": "Consulta Pausa",
+      "id": "consulta-pausa0000000000000000000000",
+      "notes": "Portao unico de pausa, antes do Roteia Acao. Ate 21/08 so o ramo processar era protegido, e midia e bloqueado falavam por cima do atendimento humano. A regra NAO esta aqui: a funcao delega a public.pausa_vigente (migracao 47), que tem os outros leitores.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "nao-pausada",
+              "leftValue": "={{ $json.pausada }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3136,
+        4944
+      ],
+      "name": "Nao Pausada?",
+      "id": "nao-pausada-000000000000000000000000",
+      "notes": "Le a coluna `pausada` do Consulta Pausa, POSICIONALMENTE — os dois andam juntos e nao pode entrar no entre eles. A saida FALSA tem destino de proposito: o no que hoje se chama \"Fala com o Cliente?\" passou meses com a saida falsa solta, e por isso nenhuma mensagem digitada no Chatwoot pausava o bot. Saida solta e o modo de falha conhecido deste workflow.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3360,
+        5088
+      ],
+      "name": "Humano Atende (ignora)",
+      "id": "humano-atende-ignora0000000000000000",
+      "notes": "Fim de linha esperado: alguem esta atendendo esta conversa. Nao e erro. A pausa caduca sozinha pela janela do tenant (tenants.pausa_expira_minutos) e a proxima mensagem volta a passar.",
+      "notesInFlow": true
     }
   ],
   "connections": {
@@ -2089,11 +2087,12 @@
       "main": [
         [
           {
-            "node": "Roteia Acao",
+            "node": "Consulta Pausa",
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        []
       ]
     },
     "Roteia Acao": {
@@ -2133,17 +2132,6 @@
       ]
     },
     "Sync Conversa": {
-      "main": [
-        [
-          {
-            "node": "Nao Pausado?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Nao Pausado?": {
       "main": [
         [
           {
@@ -2558,7 +2546,7 @@
       "main": [
         [
           {
-            "node": "Conversa Ativa?",
+            "node": "Audio Curto?",
             "type": "main",
             "index": 0
           }
@@ -2570,18 +2558,6 @@
             "index": 0
           }
         ]
-      ]
-    },
-    "Conversa Ativa?": {
-      "main": [
-        [
-          {
-            "node": "Audio Curto?",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
       ]
     },
     "Audio Curto?": {
@@ -2672,6 +2648,35 @@
         [
           {
             "node": "Sync Conversa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta Pausa": {
+      "main": [
+        [
+          {
+            "node": "Nao Pausada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nao Pausada?": {
+      "main": [
+        [
+          {
+            "node": "Roteia Acao",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Humano Atende (ignora)",
             "type": "main",
             "index": 0
           }

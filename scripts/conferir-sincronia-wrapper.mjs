@@ -337,15 +337,34 @@ console.log('\n  -- 10. modulo de audio: convergencia e travas --');
 
   // Confirma a premissa da checagem acima em vez de assumi-la: se um dia o
   // `Resolve Tenant` sair do caminho, a regra muda e isto avisa.
-  const paisDoRoteia = Object.entries(w.connections)
-    .filter(([, v]) => (v.main ?? []).some((s) => (s ?? []).some((d) => d.node === 'Roteia Acao')))
-    .map(([k]) => k);
-  const substituiItem = paisDoRoteia.some((p) => {
+  //
+  // SOBE A CADEIA INTEIRA, e nao so o pai direto. A primeira versao olhava um
+  // salto e reprovou em 21/08 quando o portao de pausa entrou entre
+  // `Tenant Valido?` e `Roteia Acao`: o pai virou um IF, e o teste leu isso como
+  // "ninguem substitui mais o item". A premissa estava MAIS verdadeira, nao
+  // menos — quem chega no `Roteia Acao` agora e a linha do `Consulta Pausa`,
+  // que e Postgres. Um salto e frageil a qualquer no inserido no meio, e no
+  // dia em que reprova o reflexo e afrouxar a regra em vez de consertar a
+  // medida.
+  const ancestrais = (() => {
+    const vistos = new Set();
+    const fila = ['Roteia Acao'];
+    while (fila.length) {
+      const atual = fila.shift();
+      for (const [origem, v] of Object.entries(w.connections)) {
+        const aponta = Object.values(v ?? {}).some((saidas) =>
+          (saidas ?? []).some((s) => (s ?? []).some((d) => d.node === atual)));
+        if (aponta && !vistos.has(origem)) { vistos.add(origem); fila.push(origem); }
+      }
+    }
+    return [...vistos];
+  })();
+  const substituiItem = ancestrais.some((p) => {
     const n = no(p);
     return (n?.type ?? '').includes('postgres') || (n?.type ?? '').includes('httpRequest');
-  }) || paisDoRoteia.includes('Tenant Valido?');
+  });
   checar('o caminho de texto ainda passa por no que substitui o item', substituiItem,
-    `pais do Roteia Acao: ${paisDoRoteia.join(', ')} — se nenhum substitui, a regra acima virou desnecessaria`);
+    `ancestrais do Roteia Acao: ${ancestrais.join(', ')} — se nenhum substitui, a regra acima virou desnecessaria`);
 
   // Os dois caminhos precisam chegar la; se um deles perder a ligacao, aquele
   // tipo de mensagem some do fluxo sem erro.

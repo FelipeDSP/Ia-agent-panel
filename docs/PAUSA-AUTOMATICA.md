@@ -1,4 +1,4 @@
-# Pausa automática — conserto APLICADO; retomada APLICADA (migração 47)
+# Pausa automática — conserto e retomada APLICADOS (47); portão único ESCRITO (48)
 
 **Estado em 2026-08-20:** diagnóstico fechado com payload real; medição feita; conserto
 **importado e funcionando** — confirmado em execução real na conta 1 — e
@@ -28,7 +28,12 @@ A regra: **pausa manual NÃO caduca, pausa por mensagem humana caduca por
 O `emporio` recuperou 10 conversas no instante do commit. A Karen segue pausada — por
 ser `manual`, não por relógio, que é o resultado correto.
 
-**Falta a 48** (view do painel). Até ela, a tela mostra `pausado` em conversa já
+**Escrito e NÃO aplicado, nesta ordem:** migração **48**
+(`api_n8n_conversa_pausada`) + a religação do workflow que fecha os dois
+vazamentos restantes (mídia e bloqueado), + o conserto do alvo de
+`contextoDeVerificacao`. A view `conversas_painel` foi **renumerada para 49** — a
+48 é a que fecha vazamento visto em produção; view é melhoria de tela, e a ordem
+de aplicação decide o número. Até a 49, a tela mostra `pausado` em conversa já
 caducada e a contagem da Visão geral não drena.
 
 Este arquivo é o lugar onde o conserto mora até virar JSON. Cada nota marcada
@@ -513,6 +518,113 @@ já respondida.
 Não bloqueia nada, e a mensagem seguinte do dono re-pausa. Mas é o **formato real
 do constrangimento** que a regra aceita quando escolhe falha alta em vez de falha
 calada, e por isso está escrito aqui, ao lado da regra, e não em outro arquivo.
+
+### O portão único — migração 48 e a religação do workflow (ESCRITAS, não aplicadas)
+
+A 47 fez a pausa caducar e **não mudou quem a consulta**. Só o ramo `processar`
+era protegido; os outros dois vazavam, e o primeiro foi visto em produção pelo
+dono do Empório — conversa pausada e o bot ainda mandando o aviso de mídia não
+suportada:
+
+```
+Roteia Acao [1] midia     -> Audio Contratado?[false] -> Avisa Midia Nao Suportada   VAZA
+Roteia Acao [2] bloqueado -> Credencial (bloqueio)    -> Envia Resposta Bloqueada    VAZA
+```
+
+Imagem, documento, vídeo e áudio de quem não contratou transcrição caíam no ramo
+falso e nunca viam o `Conversa Ativa?`. **A origem explica os dois:** aquele nó
+foi escrito como *economia* ("não desperdiçar transcrição quando o humano
+assumiu"), não como guarda de pausa, e por isso ficou fundo demais no ramo. Nome
+dizendo uma coisa, posição implicando outra.
+
+**O desenho: portão só-leitura antes do `Roteia Acao`.**
+
+```
+Tenant Valido? -> Consulta Pausa -> Nao Pausada? [0] -> Roteia Acao
+                                                 [1] -> Humano Atende (ignora)
+```
+
+`Consulta Pausa` chama `api_n8n_conversa_pausada` (migração 48), invólucro fino
+sobre `pausa_vigente`. `Conversa Ativa?` e `Nao Pausado?` **morrem** — era o
+mesmo teste, tarde demais e só para um ramo. Continua sendo um portão só, e a
+regra segue morando em `pausa_vigente`, agora com quatro leitores.
+
+**Por que função nova e não reuso.** `api_n8n_pode_transcrever` já devolve
+`conversa_pausada` e já respeita a janela, mas uma função chamada "pode
+transcrever" respondendo "a conversa está pausada?" é a mentira de nome que este
+repo vem limpando. Estender `api_n8n_credencial_chatwoot` ou
+`api_n8n_tenant_por_chatwoot` custaria mudança de **aridade** — e a de 1
+argumento do `tenant_por_chatwoot` é exatamente a que o `Resolve Tenant (pausa)`
+faz, então ficaria ambígua.
+
+**Por que NÃO mover o `Sync Conversa` para antes do switch** — a alternativa
+óbvia, e o que a matou. `Extrair e Filtrar` produz **quatro** ações, e a quarta é
+`ignorar`, em cinco origens: grupo de WhatsApp (`@g.us`), o contato técnico
+"Integração WhatsApp", story mention, mídia sem texto e sem anexo, e mensagem
+que ficou vazia pós-sanitização. `Roteia Acao` tem três saídas e
+`fallbackOutput: none`, então `ignorar` morre no switch **de propósito**. Com o
+`Sync Conversa` antes, todas virariam linha em `conversas`: o filtro passaria a
+descartar da *resposta* e não do *registro*, e grupo de WhatsApp apareceria na
+lista do cliente, com nome e telefone, além de entrar no denominador do
+`pctSoAgente`. Desfazer seria script de limpeza em dado de produção.
+
+**Custo, medido:** 2,1 ms de banco (index scan em
+`conversas_tenant_id_conversation_id_key` + seq scan em `tenants`, 10 linhas).
+O `Sync Conversa` que já roda a cada mensagem custa 6,9 ms. Ida e volta: 33,8 ms,
+contra 33,6 ms de qualquer outra consulta do workflow — ou seja, **o preço é uma
+volta a mais**, não mais banco.
+
+**Efeito colateral aceito:** conversa pausada não chega mais ao `Sync Conversa`,
+então o `atualizado_em` dela para de subir durante o atendimento. Isso faz a
+conversa derivar para a **frente** da fila de `contextoDeVerificacao`, que
+escolhe por `atualizado_em` ascendente — por isso o conserto do alvo vai na mesma
+entrega.
+
+### O alvo da verificação — despriorizar, nunca excluir
+
+`verificarTime` não manda mensagem: faz `POST .../assignments`, **mexe na
+atribuição** de uma conversa real. E o desfazer manda `{"team_id": null}`, que
+**desatribui e não restaura** — o bot não consegue `GET` na conversa (401), então
+não sabe a que time ela pertencia. Verificar um time numa conversa que já tinha
+time **tira o time dela**, em silêncio. É a oitava instância da série de
+comentário que descreve a intenção e não o comportamento (o comentário diz
+"devolve ao estado anterior").
+
+Duas consultas, a segunda só quando a primeira volta vazia. **Excluir pausadas
+faria o motivo 3 mentir:** um cliente com uma ou duas conversas — as duas
+atendidas à mão, que é o normal de cliente novo, que é quem roda a verificação —
+cairia para zero e receberia "ainda não recebeu nenhuma conversa". Trocaríamos um
+motivo morto por um motivo enganoso.
+
+**A lápide medida (21/08):** o `emporio` tinha 10 conversas com `status='pausado'`
+e **2 pausadas de fato** — oito eram lápide. A imprecisão é inofensiva porque
+despriorizamos em vez de excluir; **excluir não toleraria a mesma imprecisão**.
+Quando a view chegar, o refinamento é trocar uma palavra: `status` vira
+`status_efetivo`. **Ninguém deve computar `pausa_vigente` em TypeScript** para
+antecipar isso — seria a quarta cópia da regra, em outra linguagem, que é o que a
+47 existe para impedir.
+
+Quando o fallback dispara, a tela avisa — e não por cortesia: a atribuição de
+time daquela conversa **foi apagada**, e quem estava atendendo precisa refazê-la.
+
+### O `Estima Tokens` JÁ ESTAVA no ar — a leitura anterior estava errada
+
+Export da instância de 21/08 conferido: o `Estima Tokens` é **byte a byte
+idêntico** ao do repo (597 linhas, 32.417 bytes), com o filtro de colchetes
+balanceados dentro. O workflow inteiro bate: 57 nós e 65 arestas dos dois lados,
+zero divergência de nó ou aresta; as 10 diferenças do `n8n:diff` são campos que a
+UI omite por baterem com o default.
+
+`saida_cortes` NULL **não era sintoma de filtro ausente.** O paste foi às 13:59
+de 20/08; depois dele saíram **27** mensagens, não as 113 que eu tinha citado (o
+resto precede o paste). À taxa medida antes do conserto (2 em 165 = 1,21%), o
+esperado nessa janela é **0,33 corte** — e P(zero | filtro funcionando) = **72%**.
+Somado a **zero `[Used tools:` em `conteudo` depois do paste** (o último vazamento
+é de 20/08 13:06, antes), a leitura é: **nada vazou desde o paste**. Bom sinal.
+
+A lição: `saida_cortes` NULL é o valor *esperado* quando nada foi cortado. Afirmar
+"o filtro não está no ar" a partir dele foi concluir ausência de evidência sem
+calcular o denominador nem olhar o `conteudo`.
 
 ### Fica para migração própria: `transferencia`
 

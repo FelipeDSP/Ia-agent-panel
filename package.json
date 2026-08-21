@@ -60,7 +60,8 @@
     "teste:pausa": "node tests/pausa-roteamento.mjs",
     "teste:filtro-saida": "node tests/filtro-saida.mjs",
     "teste:saida-cortes": "node --env-file=.env.local tests/migracao-saida-cortes.mjs",
-    "teste:retomada-pausa": "node --env-file=.env.local tests/migracao-retomada-pausa.mjs"
+    "teste:retomada-pausa": "node --env-file=.env.local tests/migracao-retomada-pausa.mjs",
+    "teste:conversa-pausada": "node --env-file=.env.local tests/migracao-conversa-pausada.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
