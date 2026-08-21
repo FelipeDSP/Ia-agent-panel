@@ -84,7 +84,23 @@ está lotado. Ninguém receberia erro; alguém agendaria numa vaga que não exis
 É exatamente a falha silenciosa que a gente vem trocando por barulhenta — e o
 conserto a introduziria.
 
-## As saídas reais, em ordem de preferência
+## As saídas reais — recomendo a A
+
+**RECOMENDAÇÃO: A (privilégio de coluna na base + policy + `security_invoker`).**
+O motivo de ela ganhar é um só: **põe a proteção na permissão em vez da lista do
+`select`**, e por isso **sobrevive a alguém acrescentar coluna**. Hoje a segurança
+da view é propriedade do texto dela; com A passa a ser propriedade do banco. Quem
+editar a view amanhã não precisa saber de `BYPASSRLS` para não vazar — o
+privilégio recusa.
+
+B e C ficam como fallback declarado: B torna a intenção legível sem mudar o que
+protege; C fecha só a camada de permissão. As duas mantêm a dependência do
+`select`.
+
+**Nenhuma entra sem falar antes com quem mantém a aplicação do podcast** — o repo
+não tem o código da página.
+
+### As três, em detalhe
 
 **A. Privilégio de COLUNA na base + policy para `anon` + `security_invoker`.**
 É a única que faz o modelo de permissão carregar a proteção:

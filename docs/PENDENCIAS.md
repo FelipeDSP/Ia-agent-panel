@@ -14,6 +14,7 @@ já não é pendência.
 | [Pergunta sem resposta](PENDENCIA-PERGUNTA-SEM-RESPOSTA.md) | não há como saber o que perguntaram e o agente não soube responder — a única métrica que diria **o que fazer** | quando alguém pedir, ou quando uma base parar de crescer |
 | [Fatura da OpenAI](PENDENCIA-FATURA-OPENAI.md) | como a fatura entra no sistema todo mês; inclui a discussão em aberto sobre cobrar o prompt do cliente | quando a cobrança por consumo for faturar de verdade |
 | [Piso de similaridade](PENDENCIA-PISO-SIMILARIDADE.md) | a busca sempre devolve algo, nunca "não tenho isso" — e as faixas de relevante e irrelevante se sobrepõem | cliente com base grande **e** resposta fora de contexto |
+| [Relogio da expiracao de pedido](PENDENCIA-EXPIRACAO-PEDIDO.md) | qualquer `update` em `pedidos` reseta as 24h — uma correcao de dado ressuscitou um pedido ja vencido em 21/08; e a expiracao e preguicosa: cliente que nao volta deixa `aguardando_pagamento` para sempre | primeira reclamacao de pedido que sumiu ou ficou pendente para sempre; ou ao mexer em algo que escreva em `pedidos` |
 | [Expirar rascunho](PENDENCIA-EXPIRAR-RASCUNHO.md) | carrinho abandonado reaparece na conversa seguinte | reclamação de pedido velho, ou volume |
 | [Categoria de produto](PENDENCIA-CATEGORIA-PRODUTO.md) | "o que vocês têm?" responde por `order by nome` | próxima fatia de vendas |
 | [Guarda do Storage](PENDENCIA-GUARDA-STORAGE.md) | a guarda de dado alheio cobre 14 tabelas e não o Storage | primeiro cliente além do `restaurante-teste` com foto |
