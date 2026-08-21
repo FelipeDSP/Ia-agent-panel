@@ -52,8 +52,8 @@ const M41 = mig('20260817120000_41_buscar_produtos_total.sql');
  *   grep -l "function public.api_n8n_adicionar_item" supabase/migrations/*.sql
  */
 const M38 = mig('20260814160000_38_expirar_pedido_nao_pago.sql');
-const M49 = mig('20260821190000_49_adicionar_item_define.sql');
-const R49 = mig('20260821190000_49_adicionar_item_define_rollback.sql');
+const M49 = mig('20260821191500_49_adicionar_item_define.sql');
+const R49 = mig('20260821191500_49_adicionar_item_define_rollback.sql');
 const R25 = mig('20260811185334_25_pedidos_rollback.sql');
 const R26 = mig('20260811185432_26_api_n8n_vendas_rollback.sql');
 

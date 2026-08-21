@@ -1,9 +1,11 @@
 # Pendência — vários itens numa mensagem: a IA relata falha que não houve, e o conserto dela cobra a mais
 
 **Estado:** levantado em 2026-08-21 contra produção. O dado errado foi corrigido
-(§7). O **conserto A** — `adicionar_item` DEFINIR em vez de somar — está escrito
-na **migração 49**, `20260821190000_49_adicionar_item_define.sql`, **não aplicada**
-(§8). Três consertos possíveis e muito
+(§7). O **conserto A** — `adicionar_item` DEFINIR em vez de somar — foi **APLICADO** em
+21/08 (migração 49, ledger `20260821191500`), §8. O que continua aberto é o
+comportamento do modelo (§2b): ele ignora a resposta da tool quando ela o
+contradiz, e a migração 49 não conserta isso — só faz o erro dele parar de custar
+dinheiro. Três consertos possíveis e muito
 diferentes estão em aberto (prompt, atomicidade no SQL, ou a tool aceitar lista de
 itens numa chamada só) — a decisão é do Felipe. E a §2b restringe o campo: **prompt
 sozinho não resolve**, porque a instrução que teria evitado o caso já existia.
@@ -235,7 +237,7 @@ Não há tabela de histórico de pedido (as 20 tabelas foram conferidas), e
 `pedidos_metadados_objeto` exige objeto, e o `||` preservou a chave que já estava
 lá (`{"entrega": "retirada à tarde"}`), verificado no ensaio antes de comitar.
 
-## 8. Conserto A — migração 49, escrita e NÃO aplicada
+## 8. Conserto A — migração 49, APLICADA em 2026-08-21
 
 ```sql
 do update set quantidade = public.pedido_itens.quantidade + excluded.quantidade   -- antes
@@ -286,3 +288,24 @@ custando **verde** em vez de vermelho. A cadeia agora é 25 → 26 → 38 → 41
 na ordem em que produção a viu, e a busca por quem redefine ficou escrita como
 comando (`grep -l "function public.api_n8n_adicionar_item" supabase/migrations/*.sql`)
 em vez de memória.
+
+**Conferido no apply** (ledger `20260821191500`, nome dos arquivos batendo):
+
+| | resultado |
+|---|---|
+| corpo em produção | `set quantidade = excluded.quantidade`; soma ausente; `observacao` ainda preservada |
+| ACL | **idêntico** ao retrato de antes; 1 assinatura viva de 5 args |
+| teste real no `emporio`, como `n8n_agent` | 2 chamadas de qtd 3 → **3, não 6**, uma linha, total coerente |
+| contraprova | 3ª chamada com qtd 5 → **5** (sob a soma seria 8) |
+
+O teste real rodou em **transação revertida**, de propósito: um pedido de sonda
+comitado apareceria na lista do cliente e nos Relatórios, e o índice de "um pedido
+aberto por conversa" o deixaria pendurado. `pedido_itens` seguiu com 7 linhas e
+soma 45, igual a antes.
+
+**Uma tentativa de apply abortou sozinha, e o defeito era do verificador.** O
+regex `/quantidade \+ excluded/` casou com a linha de **comentário** que a própria
+migração escreve para explicar a mudança (*"Era `pedido_itens.quantidade +
+excluded.quantidade`"*). É a armadilha que o CLAUDE.md registra — regex casando
+com comentário em vez de código —, desta vez do lado de quem confere. Nada foi
+comitado; o verificador passou a remover as linhas `--` antes de testar.

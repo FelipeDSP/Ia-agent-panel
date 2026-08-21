@@ -1,10 +1,22 @@
 -- Migracao 49 — `api_n8n_adicionar_item` DEFINE a quantidade, nao soma
 --
--- NAO APLICADA EM PRODUCAO. Ao aplicar fora do CLI: escolha a versao ANTES,
--- renomeie ESTE arquivo e o rollback para ela, e grave a linha do ledger na
--- MESMA transacao — foi assim que a 47 e a 48 entraram, e por isso o nome delas
--- bate com `supabase_migrations.schema_migrations` (CLAUDE.md, Migracoes). O
--- topo do ledger e `20260821180500` (48).
+-- APLICADA EM PRODUCAO em 2026-08-21, ledger `20260821191500`, name
+-- `49_adicionar_item_define` — e o nome dos dois arquivos bate com a versao
+-- gravada, pelo procedimento das 47 e 48: versao escolhida ANTES, arquivos
+-- renomeados, e a linha do ledger na MESMA transacao da migracao.
+--
+-- A verificacao rodou DENTRO da transacao, antes do commit: corpo com
+-- `= excluded.quantidade`, observacao ainda preservada, diff de ACL contra o
+-- retrato de antes, uma unica assinatura de 5 argumentos, contagens de
+-- `pedidos` e `pedido_itens` inalteradas, e `n8n_agent` chamando duas vezes com
+-- a mesma quantidade sem dobrar.
+--
+-- UMA TENTATIVA ABORTOU SOZINHA e nada foi comitado — e o defeito era do
+-- VERIFICADOR, nao da migracao: o regex `/quantidade \+ excluded/` casou com a
+-- linha de COMENTARIO logo abaixo, que cita a forma antiga para explicar a
+-- mudanca. E a armadilha que o CLAUDE.md registra (regex casando com comentario
+-- em vez de codigo), desta vez do lado de quem confere. O verificador passou a
+-- tirar as linhas `--` antes de testar.
 --
 -- ============================== A MUDANCA, INTEIRA =========================
 --
