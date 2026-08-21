@@ -36,6 +36,24 @@ const M26 = mig('20260811185432_26_api_n8n_vendas.sql');
 // A 41 e aplicada em seguida a 26 porque REDEFINE buscar_produtos. Replay de
 // um elo so ressuscitaria a assinatura antiga -- a armadilha da 32/37.
 const M41 = mig('20260817120000_41_buscar_produtos_total.sql');
+
+/*
+ * A CADEIA de `api_n8n_adicionar_item` e 26 -> 38 -> 49, e ate 21/08 este teste
+ * PULAVA A 38: aplicava 25 -> 26 -> 41 e exercitava um corpo que a producao ja
+ * nao rodava havia uma semana (a 38 acrescentou `expirar_pedidos_vencidos` e
+ * redefiniu `pedido_aberto_da_conversa` e `api_n8n_tem_pedido_pendente`).
+ *
+ * E a mesma armadilha que deixou `tests/migracao-audio.mjs` tres dias vermelho,
+ * com a diferenca de que aqui ela custava VERDE: o teste passava sobre uma
+ * funcao que ninguem chama. CLAUDE.md ja tinha a regra — "se o teste replaya
+ * migracao, replaye a CADEIA, na ordem em que producao a viu".
+ *
+ * A busca por quem redefine e mecanica, nao de memoria:
+ *   grep -l "function public.api_n8n_adicionar_item" supabase/migrations/*.sql
+ */
+const M38 = mig('20260814160000_38_expirar_pedido_nao_pago.sql');
+const M49 = mig('20260821190000_49_adicionar_item_define.sql');
+const R49 = mig('20260821190000_49_adicionar_item_define_rollback.sql');
 const R25 = mig('20260811185334_25_pedidos_rollback.sql');
 const R26 = mig('20260811185432_26_api_n8n_vendas_rollback.sql');
 
@@ -65,7 +83,25 @@ try {
    * comeca do estado que um ambiente novo teria -- sem a funcao.
    */
   await c.query('drop function if exists public.api_n8n_buscar_produtos(uuid, text)');
-  await c.query(M25); await c.query(M26); await c.query(M41);
+  // Ordem em que producao viu: 25, 26, 38, 41, 49.
+  await c.query(M25); await c.query(M26); await c.query(M38); await c.query(M41);
+
+  /*
+   * O ACL de `api_n8n_adicionar_item` e fotografado ANTES da 49 e comparado
+   * CONSIGO MESMO depois — nao contra uma lista escrita a mao, que foi como a
+   * migracao 41 passou verde sem `n8n_agent` e derrubou o catalogo do emporio.
+   * A 49 nao tem `drop function` (assinatura identica), entao a afirmacao a
+   * provar e "nada mudou".
+   */
+  const aclAdicionar = async () => {
+    const r = await um(`select coalesce(p.proacl::text[], array[]::text[]) a
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname='public' and p.proname='api_n8n_adicionar_item'`);
+    return (r?.a ?? []).map((e) => (e.split('=')[0] === '' ? 'PUBLIC' : e.split('=')[0])).sort().join(',');
+  };
+  const aclAntes49 = await aclAdicionar();
+
+  await c.query(M49);
   console.log('migracoes 25 e 26 aplicadas\n');
 
   // produtos reais do catalogo cadastrado na fatia 1
@@ -105,11 +141,115 @@ try {
   chk('status inicial rascunho', ped.status === 'rascunho');
   chk('numero ainda nulo antes de fechar', ped.numero === null);
 
-  console.log('\n--- dois adicionar_item do mesmo produto SOMAM ---');
+  /*
+   * ------------------------------------------------------------------------
+   * MIGRACAO 49: DEFINE, nao soma. A INVERSAO E DELIBERADA.
+   * ------------------------------------------------------------------------
+   * Ate 21/08 este bloco afirmava o CONTRARIO — "dois adicionar_item do mesmo
+   * produto SOMAM", com `q === 5`. Somar era decisao de desenho e estava
+   * TESTADA; nao foi defeito que passou despercebido.
+   *
+   * O que mudou nao foi a opiniao sobre somar: foi a descoberta de que o
+   * RE-ENVIO acontece. Em 20/08 o modelo inventou uma falha que nao houve,
+   * re-adicionou dois itens no turno seguinte, e a soma DOBROU um pedido real —
+   * o cliente pediu R$ 45,00 e o pedido fechou em R$ 75,00, em
+   * `aguardando_pagamento`, com um texto que nao permitia notar. Ver
+   * docs/PENDENCIA-CARRINHO-MULTI-ITEM.md.
+   *
+   * Somar faz re-envio DOBRAR; definir faz re-envio virar NO-OP.
+   *
+   * NAO "CONSERTE" ISTO DE VOLTA. Se voce chegou aqui porque uma quantidade
+   * caiu quando devia subir, esse e o custo ACEITO: a falha barulhenta (o
+   * carrinho volta menor e o cliente ve) no lugar da silenciosa (o pedido dobra
+   * e ninguem ve). O conserto certo e o modelo mandar o total novo, nao a
+   * funcao voltar a somar.
+   */
+  console.log('\n--- migracao 49: adicionar_item DEFINE a quantidade ---');
   await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4)', [A, CONV_A, pA1.id, 3]);
   const linhas = await um(`select count(*)::int n, max(quantidade) q from public.pedido_itens i
                            join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1 and p.conversation_id=$2`, [A, CONV_A]);
-  chk('uma linha so, quantidade somada', linhas.n === 1 && linhas.q === 5, `linhas=${linhas.n} qtd=${linhas.q}`);
+  chk('uma linha so, quantidade DEFINIDA pela ultima chamada (2 -> 3, nao 5)',
+      linhas.n === 1 && linhas.q === 3, `linhas=${linhas.n} qtd=${linhas.q}`);
+
+  // A PROPRIEDADE NOVA, e a razao de a mudanca existir. Sem ela o teste so
+  // registraria que o numero mudou de 5 para 3.
+  await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4)', [A, CONV_A, pA1.id, 3]);
+  const idem = await um(`select count(*)::int n, max(quantidade) q from public.pedido_itens i
+                         join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1 and p.conversation_id=$2`, [A, CONV_A]);
+  chk('IDEMPOTENTE: a mesma chamada repetida nao muda nada (3 -> 3)',
+      idem.n === 1 && idem.q === 3, `linhas=${idem.n} qtd=${idem.q}`);
+  const totIdem = await um(`select total_centavos t from public.pedidos where tenant_id=$1 and conversation_id=$2`, [A, CONV_A]);
+  chk('e o total acompanha a quantidade definida', totIdem.t === pA1.preco_centavos * 3, `total=${totIdem.t}`);
+
+  // A ASSIMETRIA DELIBERADA: quantidade e declarativa, observacao e preservada.
+  // Sob `definir`, toda correcao de quantidade re-envia a linha — se a
+  // observacao tambem fosse definida, um "na verdade sao 5" apagaria o
+  // "sem cebola" do cliente. Testado para ninguem "consertar" a assimetria.
+  await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4,$5)', [A, CONV_A, pA1.id, 4, 'sem cebola']);
+  await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4)', [A, CONV_A, pA1.id, 5]);
+  const obs = await um(`select quantidade q, observacao o from public.pedido_itens i
+                        join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1 and p.conversation_id=$2`, [A, CONV_A]);
+  chk('quantidade DEFINE mas observacao PRESERVA quando a nova e nula',
+      obs.q === 5 && obs.o === 'sem cebola', `qtd=${obs.q} obs=${JSON.stringify(obs.o)}`);
+
+  // --- a 49 nao mexe em assinatura nem em grant ---
+  const aclDepois49 = await aclAdicionar();
+  chk('ACL de adicionar_item IDENTICO antes x depois da 49 (sem drop, nada a reconceder)',
+      aclAntes49 === aclDepois49, `antes=${aclAntes49} depois=${aclDepois49}`);
+  chk('`n8n_agent` continua no ACL', aclDepois49.includes('n8n_agent'), aclDepois49);
+  const assinaturas = (await c.query(`select p.pronargs::int n from pg_proc p
+      join pg_namespace ns on ns.oid=p.pronamespace
+     where ns.nspname='public' and p.proname='api_n8n_adicionar_item'`)).rows;
+  chk('existe EXATAMENTE UMA assinatura viva, de 5 argumentos',
+      assinaturas.length === 1 && assinaturas[0].n === 5,
+      assinaturas.map((x) => x.n).join(','));
+
+  /*
+   * SABOTAGEM. Devolve o `+` e exige que as duas propriedades novas caiam. Sem
+   * isto, o bloco acima so registra numeros que passaram — e ja houve neste
+   * repo sabotagem que nao mutou nada e imprimiu verde.
+   */
+  {
+    const DE = 'set quantidade = excluded.quantidade,';
+    const PARA = 'set quantidade = public.pedido_itens.quantidade + excluded.quantidade,';
+    const sabotado = M49.replace(DE, PARA);
+    chk('sabotagem: a mutacao entrou (o `+` voltou ao SQL)',
+        sabotado !== M49 && !sabotado.includes(DE) && sabotado.includes(PARA));
+
+    await c.query(sabotado);
+    await c.query(`delete from public.pedido_itens i using public.pedidos p
+                   where p.id = i.pedido_id and p.tenant_id=$1 and p.conversation_id=$2`, [A, CONV_A]);
+    await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4)', [A, CONV_A, pA1.id, 3]);
+    await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4)', [A, CONV_A, pA1.id, 3]);
+    const sab = await um(`select max(quantidade) q from public.pedido_itens i
+                          join public.pedidos p on p.id=i.pedido_id
+                         where p.tenant_id=$1 and p.conversation_id=$2`, [A, CONV_A]);
+    chk('sabotagem: com o `+`, a chamada repetida DOBRA (3 -> 6) e o teste reprova',
+        sab.q === 6, `qtd=${sab.q} (esperado 6 sob a soma)`);
+
+    // Restaura a 49 e o estado que o resto do arquivo espera.
+    await c.query(M49);
+    await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4,$5)', [A, CONV_A, pA1.id, 5, 'sem cebola']);
+  }
+
+  // --- o rollback pareado devolve a soma, e so isso ---
+  {
+    await c.query(R49);
+    await c.query(`delete from public.pedido_itens i using public.pedidos p
+                   where p.id = i.pedido_id and p.tenant_id=$1 and p.conversation_id=$2`, [A, CONV_A]);
+    await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4)', [A, CONV_A, pA1.id, 2]);
+    await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4)', [A, CONV_A, pA1.id, 3]);
+    const rb = await um(`select max(quantidade) q from public.pedido_itens i
+                         join public.pedidos p on p.id=i.pedido_id
+                        where p.tenant_id=$1 and p.conversation_id=$2`, [A, CONV_A]);
+    chk('o rollback da 49 devolve a SOMA (2 + 3 = 5)', rb.q === 5, `qtd=${rb.q}`);
+    chk('e o ACL atravessa o rollback intacto', (await aclAdicionar()) === aclAntes49,
+        `${await aclAdicionar()} vs ${aclAntes49}`);
+
+    // Volta para a 49, que e o estado que esta entrega entrega.
+    await c.query(M49);
+    await c.query('select public.api_n8n_adicionar_item($1,$2,$3,$4,$5)', [A, CONV_A, pA1.id, 5, 'sem cebola']);
+  }
 
   console.log('\n--- produto de OUTRO tenant e recusado ---');
   r = await um('select public.api_n8n_adicionar_item($1,$2,$3,$4) v', [A, CONV_A, pB.id, 1]);

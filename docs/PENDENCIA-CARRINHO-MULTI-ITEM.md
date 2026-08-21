@@ -1,7 +1,9 @@
 # Pendência — vários itens numa mensagem: a IA relata falha que não houve, e o conserto dela cobra a mais
 
-**Estado:** levantado em 2026-08-21 contra produção. **O DADO ERRADO FOI
-CORRIGIDO** (§7) — o defeito que o produziu, NÃO. Três consertos possíveis e muito
+**Estado:** levantado em 2026-08-21 contra produção. O dado errado foi corrigido
+(§7). O **conserto A** — `adicionar_item` DEFINIR em vez de somar — está escrito
+na **migração 49**, `20260821190000_49_adicionar_item_define.sql`, **não aplicada**
+(§8). Três consertos possíveis e muito
 diferentes estão em aberto (prompt, atomicidade no SQL, ou a tool aceitar lista de
 itens numa chamada só) — a decisão é do Felipe. E a §2b restringe o campo: **prompt
 sozinho não resolve**, porque a instrução que teria evitado o caso já existia.
@@ -232,3 +234,55 @@ Não há tabela de histórico de pedido (as 20 tabelas foram conferidas), e
 `pedidos.metadados` é o único lugar onde o rastro cabia sem migração — o check
 `pedidos_metadados_objeto` exige objeto, e o `||` preservou a chave que já estava
 lá (`{"entrega": "retirada à tarde"}`), verificado no ensaio antes de comitar.
+
+## 8. Conserto A — migração 49, escrita e NÃO aplicada
+
+```sql
+do update set quantidade = public.pedido_itens.quantidade + excluded.quantidade   -- antes
+do update set quantidade = excluded.quantidade                                    -- agora
+```
+
+**O motivo é idempotência, não "somar estava errado".** Somar era decisão de
+desenho e estava **testada**. O que mudou foi a descoberta de que o re-envio
+acontece: somar faz re-envio **dobrar**, definir faz re-envio virar **no-op**.
+
+**Vai sozinho.** Sem tocar em workflow, prompt ou painel — o único consumidor em
+runtime é o nó `Adiciona Item` do `tool-gerenciar-pedido`, e ele não muda: a
+mesma chamada passa a ter outro significado. Não há janela de quebra em nenhuma
+ordem.
+
+E o conserto de lista **não teria evitado** este caso: a dobra não aconteceu
+dentro do lote de três chamadas, aconteceu no turno seguinte (13:41:22), quando o
+modelo re-adicionou.
+
+**O custo aceito, com um agravante que só apareceu ao conferir o nó:** se o
+cliente diz "mais um" e o modelo manda `1` em vez de `4`, o carrinho **cai** para
+1 — erro visível, o cliente vê. O agravante é que o nó passa
+`coalesce(nullif(btrim($4::text), '')::int, 1)`: **modelo que OMITE a quantidade
+manda 1**, e sob `definir` isso derruba a linha inteira. Omitir parâmetro é mais
+fácil que errar número, então a falha aceita é mais provável do que parecia — e
+continua sendo a barulhenta, que é o lado certo do balanço.
+
+**A `observacao` NÃO muda**, e é assimetria deliberada:
+`coalesce(excluded.observacao, pedido_itens.observacao)` fica. Sob `definir`,
+toda correção de quantidade re-envia a linha, e o modelo não repete a observação
+a cada ajuste — trocar por `excluded.observacao` apagaria o "sem cebola" do
+cliente **a cada mudança de quantidade**, uma falha nova e de alta frequência. A
+que sobra é a inversa (observação velha sobrevive quando o cliente quer tirá-la),
+mais rara e com saída: `remover` e `adicionar` de novo. Há teste para a
+assimetria, para ninguém "consertar" a inconsistência.
+
+### O teste que isso inverteu, e a cadeia que ele pulava
+
+`tests/migracao-vendas.mjs` afirmava *"dois adicionar_item do mesmo produto
+SOMAM"* (`q === 5`). A asserção foi invertida **com o motivo escrito ao lado** e
+com a propriedade nova junto: *chamar duas vezes com a mesma quantidade não muda
+nada*.
+
+E ao mexer nele apareceu um defeito próprio: **o teste aplicava 25 → 26 → 41 e
+pulava a 38**, que redefiniu `adicionar_item` uma semana antes. Ele exercitava um
+corpo que a produção já não rodava — a armadilha do `migracao-audio.mjs`, só que
+custando **verde** em vez de vermelho. A cadeia agora é 25 → 26 → 38 → 41 → 49,
+na ordem em que produção a viu, e a busca por quem redefine ficou escrita como
+comando (`grep -l "function public.api_n8n_adicionar_item" supabase/migrations/*.sql`)
+em vez de memória.
