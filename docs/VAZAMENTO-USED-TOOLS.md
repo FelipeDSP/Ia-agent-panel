@@ -3,7 +3,7 @@
 **Estado em 2026-08-20:**
 
 - **filtro:** escrito e testado em `n8n/estima-tokens.js`, workflow regerado —
-  **não colado na instância** (`n8n/importar/estima-tokens-node.js`);
+  **colado e confirmado na instância** — o export de 21/08 mostra o `Estima Tokens` byte a byte igual ao do repo (597 linhas, 32.417 bytes), e `n8n/importar/estima-tokens-node.js` foi apagado por já não ser a versão corrente de nada;
 - **coluna:** migração **46** **APLICADA em produção em 2026-08-20**, registrada no
   ledger com a versão `20260820160000` — a mesma do nome do arquivo, para o
   `supabase db push` não a replayar. ACL conferido antes × depois (idêntico), uma só

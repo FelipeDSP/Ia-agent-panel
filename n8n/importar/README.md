@@ -1,25 +1,58 @@
-# `n8n/importar/` — JSON pronto para importar, e NÃO a fonte da verdade
+# `n8n/importar/` — VAZIA de propósito. Importe de `n8n/workflows/`.
 
-A fonte versionada dos workflows é `n8n/workflows/`. **Esta pasta é outra coisa:**
-cada arquivo aqui é o resultado de aplicar UMA mudança estrutural sobre um EXPORT
+> **Se você veio aqui procurando o que importar: não é aqui.** O arquivo é
+> **`n8n/workflows/agente-principal.json`** — e leia a seção "Como importar" no
+> fim, porque `Import from File...` SOMA nós em vez de substituir.
+
+A fonte versionada dos workflows é `n8n/workflows/`. **Esta pasta era outra coisa:**
+cada arquivo aqui era o resultado de aplicar UMA mudança estrutural sobre um EXPORT
 recente da instância, para ser importado e depois descartado.
 
-## Por que não sai de `n8n/workflows/`
+## Por que ficou vazia (2026-08-21)
 
-Porque o repositório e a instância divergem em coisas que **não** são a mudança que
-se quer entregar. Em 2026-08-20, o `Estima Tokens` do repo estava 30 linhas à frente
-da instância (correção de comentário de 18/08 gerada e nunca importada). Gerar o JSON
-a partir do repo faria a importação mudar **duas** coisas — o roteamento da pausa e o
-comentário do `Estima Tokens` — e um rollback teria de desfazer as duas juntas.
+**A premissa que justificava a pasta deixou de valer, e o arquivo velho virou
+armadilha.**
 
-Partindo do export, o import muda exatamente uma coisa e o rollback é reimportar o
-export.
+Em 21/08 o `agente-principal-pausa.json` daqui estava com **57 nós e sem o
+`Consulta Pausa`** — era o arquivo do conserto de 20/08, já importado, ciclo
+fechado. Quem fosse importar o portão de pausa e pegasse este por estar numa pasta
+chamada "importar" **desfaria o portão e ressuscitaria o `Conversa Ativa?` e o
+`Nao Pausado?`**, que a religação matou. Faltou pouco para acontecer.
 
-## O ciclo
+E a razão de a pasta existir era esta: *"o repositório e a instância divergem em
+coisas que não são a mudança que se quer entregar"* — concretamente, o
+`Estima Tokens` do repo estava 30 linhas à frente da instância. **Isso acabou.** O
+export de 21/08 foi conferido contra o repo:
+
+| | instância | repo |
+|---|---|---|
+| nós | 57 | 57 |
+| arestas | 65 | 65 |
+| `Estima Tokens` | 597 linhas, 32.417 bytes | **idêntico byte a byte** |
+
+Zero divergência de nó ou de aresta. As 10 que o `npm run n8n:diff` acusa são
+campos que a UI **omite** por baterem com o default — e ali o repo é a fonte mais
+rica, não a mais pobre.
+
+Com repo e instância iguais, gerar um intermediário aqui não isola mudança
+nenhuma: ele seria uma cópia do `n8n/workflows/agente-principal.json` com um nome
+diferente e uma data de validade que ninguém lembra de checar. Duas fontes para o
+mesmo fato, que é o defeito que este projeto vem removendo em todo lugar.
+
+**Quando voltar a fazer sentido:** se um dia o `n8n:diff` acusar divergência REAL
+(não campo de default) entre repo e instância, e for preciso entregar uma mudança
+sem carregar a divergência junto. Aí o ciclo abaixo volta a valer — e o arquivo
+gerado sai daqui **assim que o passo 6 fechar**, em vez de ficar de lembrança.
+
+## O ciclo (para quando a pasta voltar a ser usada)
 
 ```
 1. exportar o workflow pela UI do n8n            (... -> Download)
-2. node scripts/aplicar-conserto-pausa.mjs --export <arquivo baixado>
+2. node scripts/aplicar-conserto-pausa.mjs --export <arquivo baixado> --saida <nome novo>
+   ^ PASSE `--saida`. O padrao dele e `n8n/importar/agente-principal-pausa.json`,
+     que e o nome do conserto de 20/08 — ja aplicado. Sem `--saida`, o script
+     RECRIA o arquivo que foi apagado por ser armadilha, com o nome de uma
+     mudanca que ja aconteceu.
 3. node scripts/n8n-validar.mjs n8n/importar/<saida>.json
 4. npm run teste:pausa
 5. importar o JSON no n8n, conferir RECARREGANDO a pagina
@@ -56,18 +89,29 @@ contagem de nós depois de recarregar a página.
 
 ## Conteúdo
 
-| arquivo | o que muda | estado |
-|---|---|---|
-| `agente-principal-pausa.json` | roteamento da pausa automática: remove a `ev7`, renomeia `E Humano ou Dispositivo?` para `Fala com o Cliente?`, dá destino à saída falsa, protege o payload sem `sender` | **importado em 2026-08-20** e confirmado em execução real (conta 1); ciclo fechado |
-| `estima-tokens-node.js` | corpo do nó `Estima Tokens` já com os marcadores substituídos: leva o filtro de saída do `[Used tools: …]` **e** a correção de comentário de 18/08 que a instância nunca recebeu | **não colado** |
+**Nenhum arquivo além deste README.** Os dois que existiam foram apagados em
+21/08, os dois com o ciclo fechado:
 
-Para o `estima-tokens-node.js`: abrir o nó `Estima Tokens`, selecionar tudo no editor
-de código, colar o arquivo, **clicar em Save** (o `Ctrl+S` não salva nesta instância) e
-**recarregar a página** para conferir. Depois disso, `npm run n8n:diff` fecha — restam
-só os nove campos de default omitido, que são ruído do lado do export.
+| arquivo | por que saiu |
+|---|---|
+| `agente-principal-pausa.json` | importado em 20/08 e confirmado em execução real; ficou desatualizado no dia seguinte e virou armadilha (57 nós, sem o portão) |
+| `estima-tokens-node.js` | dizia "não colado", e **estava colado** — o export de 21/08 mostra o `Estima Tokens` da instância byte a byte igual ao do repo |
 
-Arquivo com o ciclo fechado pode ser apagado — ele já não é a versão corrente de
-nada. Fica aqui só enquanto for útil como referência do que foi importado.
+O histórico dos dois está no git; o README guarda o que eles ensinaram.
+
+## Como importar o `agente-principal` (o que você provavelmente veio fazer)
+
+Arquivo: **`n8n/workflows/agente-principal.json`**. Confira antes:
+
+```
+node scripts/n8n-validar.mjs n8n/workflows/agente-principal.json
+npm run n8n:sincronia
+```
+
+E **não** use `Import from File...` sobre o workflow aberto — ver a seção acima:
+ele SOMA. Para mudança estrutural, o canvas tem de estar vazio antes. Depois de
+importar, **recarregue a página** e confira a contagem de nós; se der o dobro,
+foi soma e o `Save` ainda não foi clicado.
 
 ## Como o passo 6 foi feito desta vez, e por que não foi um "colar o export"
 
