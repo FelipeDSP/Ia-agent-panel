@@ -155,6 +155,37 @@ perde trabalho de cadastro que ninguém consegue devolver.
   o teste que aplica em transação abortada para de rodar assim que ela entra em
   produção.
 
+- **Nenhuma função plpgsql tem dependência registrada com as extensões que usa.**
+  Vale para qualquer coisa em `extensions` — `unaccent`, `pg_trgm`, `pgcrypto`,
+  `vector` —, não só para a que motivou a nota. plpgsql é late-binding: o corpo é
+  uma string, resolvida na execução, e `pg_depend` fica **vazio** (contagem
+  medida: 0).
+
+  O efeito é que **`DROP EXTENSION` passa sem reclamar** de nenhuma função que a
+  chame. Nada avisa. A função continua existindo e passa a falhar por dentro com
+  `42883: function extensions.<f>(...) does not exist`, no caminho quente, para
+  todo tenant. Medido em transação abortada antes de a migração 50 ser escrita —
+  ninguém tinha olhado até então.
+
+  Consequências práticas:
+
+  - **rollback não dropa extensão.** Quem roda um rollback já está num momento
+    ruim; trocar "rollback incompleto" por "catálogo de todos os clientes fora do
+    ar" não é conserto. Extensão instalada e sem uso custa quase nada. Se um dia
+    remover for mesmo necessário, é passo **manual e separado**, na ordem
+    inversa: restaurar os corpos primeiro, conferir, depois dropar;
+  - **a conferência não pode ser por memória nem por `pg_depend`.** O único lugar
+    onde a dependência existe é o texto do corpo:
+
+    ```sql
+    select p.proname, n.nspname
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where p.prosrc ilike '%<nome_da_funcao_da_extensao>%';
+    ```
+
+    É a mesma disciplina do `grep -rn "<coluna>" tests/ src/ supabase/ n8n/` antes
+    de dropar coluna: a varredura tem de alcançar onde a referência de fato mora.
+
 - **`DROP FUNCTION` APAGA TODOS OS GRANTS. Recriar restaura só o que o script
   listar.** É a quinta armadilha da mesma família (28, 32, 37, 40, 41) e a
   primeira cujo modo de falha **não** é ambiguidade de aridade: a chamada resolve
