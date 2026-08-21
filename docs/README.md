@@ -43,8 +43,8 @@ documentação e material de referência.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da
   demonstracao do emporio.** `'resolvido'` nunca e escrito em `conversas` (73 linhas, zero),
   entao o painel mostra conversa encerrada ha meses como `ativo`.
-- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **conserto e retomada APLICADOS (47);
-  portao unico ESCRITO (48), nao aplicado.** Nenhuma mensagem humana pausava o bot, por nenhum
+- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **conserto, retomada e funcao do portao
+  APLICADOS (47, 48); FALTA O IMPORT do workflow — midia e bloqueado seguem vazando.** Nenhuma mensagem humana pausava o bot, por nenhum
   caminho, para nenhum tenant — e nunca pausou ate 20/08. A medicao que bloqueava o
   conserto esta feita: os dois tokens conectados sao de Agent Bot, entao a ev6 protege.
   Traz os **sete** produtores de `outgoing` (nao um), as notas para colar em cada no

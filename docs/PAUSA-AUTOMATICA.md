@@ -1,4 +1,4 @@
-# Pausa automática — conserto e retomada APLICADOS (47); portão único ESCRITO (48)
+# Pausa automática — conserto, retomada e função do portão APLICADOS (47, 48); falta o import
 
 **Estado em 2026-08-20:** diagnóstico fechado com payload real; medição feita; conserto
 **importado e funcionando** — confirmado em execução real na conta 1 — e
@@ -28,9 +28,15 @@ A regra: **pausa manual NÃO caduca, pausa por mensagem humana caduca por
 O `emporio` recuperou 10 conversas no instante do commit. A Karen segue pausada — por
 ser `manual`, não por relógio, que é o resultado correto.
 
-**Escrito e NÃO aplicado, nesta ordem:** migração **48**
-(`api_n8n_conversa_pausada`) + a religação do workflow que fecha os dois
-vazamentos restantes (mídia e bloqueado), + o conserto do alvo de
+**Migração 48 APLICADA** em 21/08, ledger `20260821180500` — `api_n8n_conversa_pausada`
+existe e responde, com `n8n_agent` no ACL e `anon`/`authenticated` fora. As três
+portas concordam nas 11 conversas pausadas, zero divergência, e a varredura de
+grants passou de 18 para 19 funções sozinha.
+
+**FALTA O IMPORT.** A religação do workflow (o `Consulta Pausa` que chama esta
+função) está no gerador e não foi importada, então **os dois vazamentos — mídia e
+bloqueado — continuam abertos em produção**. A função não tem chamador até lá; foi
+por isso que esta ordem foi escolhida. Falta também o deploy do conserto do alvo de
 `contextoDeVerificacao`. A view `conversas_painel` foi **renumerada para 49** — a
 48 é a que fecha vazamento visto em produção; view é melhoria de tela, e a ordem
 de aplicação decide o número. Até a 49, a tela mostra `pausado` em conversa já

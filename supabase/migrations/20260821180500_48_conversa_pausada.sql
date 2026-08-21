@@ -1,9 +1,25 @@
 -- Migracao 48 — `api_n8n_conversa_pausada`, a porta do portao unico de pausa
 --
--- NAO APLICADA EM PRODUCAO. Ao aplicar fora do CLI, escolha a versao ANTES,
--- renomeie ESTE arquivo e o rollback para ela, e grave a linha do ledger na
--- MESMA transacao da migracao — foi assim que a 47 entrou e por isso o nome dela
--- bate com `supabase_migrations.schema_migrations` (ver CLAUDE.md, Migracoes).
+-- APLICADA EM PRODUCAO em 2026-08-21, ledger `20260821180500`, name
+-- `48_conversa_pausada` — e o nome dos dois arquivos bate com a versao gravada,
+-- pelo mesmo procedimento da 47: versao escolhida ANTES, arquivos renomeados, e
+-- a linha do ledger gravada na MESMA transacao da migracao. O par casa por
+-- construcao, nao por conferencia depois (CLAUDE.md, Migracoes).
+--
+-- A verificacao rodou DENTRO da transacao, antes do commit: assinatura, STABLE,
+-- SECURITY DEFINER, ACL da funcao nova, diff de ACL das tres funcoes da 47
+-- contra o retrato de antes, contagem por status e por motivo inalteradas, e
+-- `n8n_agent` CHAMANDO — mais `anon` e `authenticated` recusados.
+--
+-- CONFERIDO DEPOIS: as tres portas (`api_n8n_conversa_pausada`,
+-- `api_n8n_pode_transcrever`, `api_n8n_conversa_sync`) concordam nas 11
+-- conversas pausadas, ZERO divergencia. E `npm run teste:grants-n8n` passou a
+-- varrer 19 funcoes em vez de 18: a funcao nova entrou na varredura sozinha,
+-- como este cabecalho afirmava.
+--
+-- O CHAMADOR AINDA NAO EXISTE. O `Consulta Pausa` do `agente-principal` esta
+-- escrito no gerador e NAO foi importado. Ate o import, esta funcao nao e
+-- chamada por ninguem — que e exatamente por que esta ordem foi escolhida.
 --
 -- ============================== POR QUE ELA EXISTE =========================
 --
