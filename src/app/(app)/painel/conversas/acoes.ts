@@ -37,6 +37,22 @@ export async function definirStatusConversa(
     .update({
       status: novoStatus,
       pausado_em: novoStatus === 'pausado' ? new Date().toISOString() : null,
+      // Migração 47. `manual` NUNCA caduca — é o que separa este clique da pausa
+      // que o n8n grava (`mensagem_humana`, que caduca por
+      // `tenants.pausa_expira_minutos`). O sistema desfazer sozinho uma decisão
+      // explícita de gente é a pior categoria de surpresa.
+      //
+      // Obrigatório, não decorativo: a constraint `conversas_pausa_tem_motivo`
+      // recusa `status = 'pausado'` sem motivo. Por isso este arquivo tem de
+      // subir DEPOIS do SQL da 47 — na ordem inversa o toggle quebra em `column
+      // motivo_pausa does not exist`, que é opaco, em vez de na violação de
+      // constraint, que se explica.
+      //
+      // O carimbo continua vindo do JS enquanto `pausado_em` do n8n vem do
+      // `now()` do banco. Não incomoda aqui: pausa manual não é medida contra a
+      // janela. (E é essa diferença de origem que permitiu identificar, no
+      // backfill da 47, qual das 11 conversas paradas tinha sido clicada.)
+      motivo_pausa: novoStatus === 'pausado' ? 'manual' : null,
     })
     .eq('tenant_id', usuario.tenantId)
     .eq('conversation_id', conversationId)

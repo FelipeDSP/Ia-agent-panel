@@ -43,13 +43,18 @@ documentação e material de referência.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da
   demonstracao do emporio.** `'resolvido'` nunca e escrito em `conversas` (73 linhas, zero),
   entao o painel mostra conversa encerrada ha meses como `ativo`.
-- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **conserto APLICADO; falta a
-  retomada.** Nenhuma mensagem humana pausava o bot, por nenhum caminho, para nenhum
-  tenant — e nunca pausou ate 20/08. A medicao que bloqueava o conserto esta feita: os dois
-  tokens conectados sao de Agent Bot, entao a ev6 protege. Traz os **sete** produtores
-  de `outgoing` (nao um), as notas para colar em cada no quando o JSON destravar, o
-  desenho da sondagem na conexao, a retomada por expiracao preguicosa (sem job novo) e
-  o incidente do `fortalize` desconectado.
+- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **conserto APLICADO; retomada escrita
+  na migracao 47, NAO aplicada.** Nenhuma mensagem humana pausava o bot, por nenhum
+  caminho, para nenhum tenant — e nunca pausou ate 20/08. A medicao que bloqueava o
+  conserto esta feita: os dois tokens conectados sao de Agent Bot, entao a ev6 protege.
+  Traz os **sete** produtores de `outgoing` (nao um), as notas para colar em cada no
+  quando o JSON destravar, o desenho da sondagem na conexao e o incidente do
+  `fortalize` desconectado. A secao **Retomada** e a maior: pausa manual NAO caduca,
+  pausa por mensagem humana caduca por `tenants.pausa_expira_minutos`; expiracao
+  preguicosa (sem job novo) com predicado unico; por que a ultima fala do humano ganha
+  da inatividade; a **lapide** (`status` deixa de responder sozinho); a forense que
+  identificou qual das 12 pausadas tinha sido clicada a mao; e por que a view do painel
+  ficou para a 48.
 - [`VAZAMENTO-USED-TOOLS.md`](VAZAMENTO-USED-TOOLS.md) — **migracao 46 APLICADA;
   filtro escrito, falta colar no no.** O modelo fabrica `[Used tools: ...]` e cola o resultado cru da KB
   antes da resposta: 2 em 165 saidas, dois tenants, e nenhum caso de trecho de KB
