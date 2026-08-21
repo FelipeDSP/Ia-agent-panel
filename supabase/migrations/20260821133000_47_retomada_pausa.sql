@@ -1,9 +1,18 @@
 -- Migracao 47 — retomada da pausa: janela por ultima fala do humano
 --
--- NAO APLICADA EM PRODUCAO. Ao aplicar fora do CLI, confira a versao gravada em
--- `supabase_migrations.schema_migrations` e renomeie ESTE arquivo e o rollback
--- para bater com ela (ver CLAUDE.md, secao Migracoes). A 46 ficou em
--- `20260820160000`.
+-- APLICADA EM PRODUCAO em 2026-08-21, ledger `20260821133000`, name
+-- `47_retomada_pausa` — e o nome dos dois arquivos bate com a versao gravada.
+-- Nao houve adivinhacao: a versao foi ESCOLHIDA, os arquivos renomeados, e a
+-- linha do ledger gravada DENTRO da mesma transacao da migracao. E o jeito de o
+-- par casar por construcao, em vez de por conferencia depois (CLAUDE.md, secao
+-- Migracoes: ate 2026-08-05 nenhum arquivo batia com o ledger).
+--
+-- O apply rodou migracao + ledger em UMA transacao, com verificacao antes do
+-- commit: colunas, constraints, predicados, diff de ACL contra o retrato de
+-- antes, contagem por status inalterada, e `n8n_agent` CHAMANDO as funcoes. Uma
+-- primeira tentativa abortou sozinha (defeito da verificacao, nao da migracao:
+-- ela buscava a conversa-alvo ja com `set role n8n_agent`, que nao tem
+-- privilegio de tabela) e nada foi comitado.
 --
 -- ============================== O QUE ELA FAZ ==============================
 --

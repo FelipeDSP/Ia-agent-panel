@@ -249,8 +249,11 @@ try {
    * MIGRAÇÃO, não o calendário.
    */
   await c.query(R47);
+  // Por NOME, não por prefixo de versão: a versão muda no rename que o ledger
+  // obriga (CLAUDE.md), e a primeira forma disto já nasceu errada — dizia
+  // "ainda não" com a 47 aplicada, meia hora depois de aplicada.
   const jaAplicada = (await c.query(
-    `select 1 from supabase_migrations.schema_migrations where version like '2026082114%'`)).rowCount === 1;
+    `select 1 from supabase_migrations.schema_migrations where name = '47_retomada_pausa'`)).rowCount === 1;
   console.log(`  (47 no ledger: ${jaAplicada ? 'sim — desfeita aqui dentro' : 'ainda não'})`);
 
   const semColuna = await tentar(`select motivo_pausa from public.conversas limit 1`);

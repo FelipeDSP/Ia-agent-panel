@@ -1,4 +1,4 @@
-# Pausa automática — conserto APLICADO; retomada escrita na migração 47, não aplicada
+# Pausa automática — conserto APLICADO; retomada APLICADA (migração 47)
 
 **Estado em 2026-08-20:** diagnóstico fechado com payload real; medição feita; conserto
 **importado e funcionando** — confirmado em execução real na conta 1 — e
@@ -6,15 +6,30 @@
 `Estima Tokens`, divergência antiga e item próprio). `npm run teste:pausa` roda contra
 o arquivo versionado.
 
-**Estado em 2026-08-21:** a retomada está **decidida e escrita** — migração 47 e
-rollback pareado em `supabase/migrations/*_47_retomada_pausa*.sql`, com
-`npm run teste:retomada-pausa` (80 asserções, 7 sabotagens, transação abortada).
-**Não aplicada.** Enquanto não for, toda conversa em que o dono escrever pelo celular
-fica pausada até alguém abrir o painel: eram **12** em 21/08, e a contagem subiu de 11
-para 12 durante a sessão em que a 47 foi escrita.
+**Estado em 2026-08-21:** a retomada está **APLICADA**. Migração 47 em produção,
+ledger `20260821133000`, name `47_retomada_pausa` — e o nome dos dois arquivos bate
+com a versão gravada, porque a versão foi escolhida antes e a linha do ledger entrou
+na mesma transação da migração. `npm run teste:retomada-pausa`: 84 asserções (63 por
+motivo próprio, 21 de sustentação), 8 sabotagens, transação abortada.
 
-A decisão que faltava está tomada: **pausa manual NÃO caduca, pausa por mensagem
-humana caduca por janela do tenant** — ver a seção "Retomada".
+A regra: **pausa manual NÃO caduca, pausa por mensagem humana caduca por
+`tenants.pausa_expira_minutos`** (30 min) — ver a seção "Retomada".
+
+**Conferência no apply**, cada item como consulta e não como placar:
+
+| | resultado |
+|---|---|
+| pausada sem motivo | **0** |
+| `manual` no banco inteiro | **1** — `emporio/6` (Karen), pausada e vigente |
+| vencidas caducaram | **as 10 `mensagem_humana`**, `status_efetivo = ativo` |
+| `pode_transcrever` × `conversa_sync` | **0 divergências** nas 11 |
+| ACL das três funções | **idêntico** ao retrato de antes do apply |
+
+O `emporio` recuperou 10 conversas no instante do commit. A Karen segue pausada — por
+ser `manual`, não por relógio, que é o resultado correto.
+
+**Falta a 48** (view do painel). Até ela, a tela mostra `pausado` em conversa já
+caducada e a contagem da Visão geral não drena.
 
 Este arquivo é o lugar onde o conserto mora até virar JSON. Cada nota marcada
 **[nota do nó]** é texto para colar no campo `notes` do nó correspondente quando o
@@ -190,7 +205,7 @@ apenas onde `sondado_em is null`, e a migração não contrata nem conecta nada 
 propriedade a testar é *aplicar a migração não muda contagem de conectados*.
 `fortalize` não tem linha: quando reconectar, nasce sondado.
 
-## Retomada — migração 47 ESCRITA, não aplicada
+## Retomada — migração 47 APLICADA em 2026-08-21
 
 Consertar a pausa sem resolver a retomada troca um bug visível por um silencioso:
 até a 47 entrar, **nada** volta a `'ativo'` a não ser o toggle em
@@ -324,11 +339,14 @@ efêmeros — e com a claim ligada a migração aplicava numa condição que o a
 real não tem. Hoje o teste aplica com a claim resetada e tem contraprova de que o
 guard está vivo, mais a sabotagem **S8**, que devolve o `update` e exige `42501`.
 
-**Consequência que fica:** com `pausa_expira_minutos` fora da lista branca, a
-janela é **da agência**, não do cliente — o painel do cliente não consegue
-alterá-la nem que a tela ofereça. É o default certo enquanto o número for
-palpite; se um dia o cliente for regulá-lo, a coluna precisa entrar na lista
-branca de `tenants_guard_colunas`, em migração própria.
+**Consequência que fica, e é regra para toda coluna nova em `tenants`:** a
+janela é **DA AGÊNCIA, NÃO DO CLIENTE**. O guard impede o painel do cliente de
+alterar `pausa_expira_minutos` mesmo que uma tela ofereça o campo — e o erro
+seria `42501` no clique, não um campo que não aparece. É o default certo
+enquanto o número for palpite. **Se um dia isso virar configuração do cliente,
+mexa na lista branca de `tenants_guard_colunas` ANTES — não basta criar o
+campo, nem basta pôr o input na tela.** Vale igual para qualquer coluna futura
+de `tenants`: nasce agência-only, e virar cliente-editável é migração própria.
 
 ### `motivo_pausa`: coluna simples, e um check de tabela
 

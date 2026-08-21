@@ -43,8 +43,8 @@ documentação e material de referência.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da
   demonstracao do emporio.** `'resolvido'` nunca e escrito em `conversas` (73 linhas, zero),
   entao o painel mostra conversa encerrada ha meses como `ativo`.
-- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **conserto APLICADO; retomada escrita
-  na migracao 47, NAO aplicada.** Nenhuma mensagem humana pausava o bot, por nenhum
+- [`PAUSA-AUTOMATICA.md`](PAUSA-AUTOMATICA.md) — **conserto APLICADO; retomada
+  APLICADA (migracao 47, ledger `20260821133000`).** Nenhuma mensagem humana pausava o bot, por nenhum
   caminho, para nenhum tenant — e nunca pausou ate 20/08. A medicao que bloqueava o
   conserto esta feita: os dois tokens conectados sao de Agent Bot, entao a ev6 protege.
   Traz os **sete** produtores de `outgoing` (nao um), as notas para colar em cada no
@@ -53,8 +53,12 @@ documentação e material de referência.
   pausa por mensagem humana caduca por `tenants.pausa_expira_minutos`; expiracao
   preguicosa (sem job novo) com predicado unico; por que a ultima fala do humano ganha
   da inatividade; a **lapide** (`status` deixa de responder sozinho); a forense que
-  identificou qual das 12 pausadas tinha sido clicada a mao; e por que a view do painel
-  ficou para a 48.
+  identificou qual das pausadas tinha sido clicada a mao (o numero anda sozinho e por
+  isso nao esta escrito aqui); e por que a view do painel
+  ficou para a 48. E a regra que saiu do guard de colunas: **coluna nova em `tenants`
+  nasce agencia-only** — `trg_tenants_guard_colunas` recusa o painel do cliente com
+  `42501`, entao virar cliente-editavel exige mexer na lista branca, em migracao
+  propria.
 - [`VAZAMENTO-USED-TOOLS.md`](VAZAMENTO-USED-TOOLS.md) — **migracao 46 APLICADA;
   filtro escrito, falta colar no no.** O modelo fabrica `[Used tools: ...]` e cola o resultado cru da KB
   antes da resposta: 2 em 165 saidas, dois tenants, e nenhum caso de trecho de KB
