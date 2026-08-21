@@ -19,6 +19,7 @@ já não é pendência.
 | [Guarda do Storage](PENDENCIA-GUARDA-STORAGE.md) | a guarda de dado alheio cobre 14 tabelas e não o Storage | primeiro cliente além do `restaurante-teste` com foto |
 | [Seed dos testes](PENDENCIA-SEED-DOS-TESTES.md) | **parcial** — os cinco de isolamento fecharam; outros nove ainda resolvem seed por slug | antes de apagar qualquer seed |
 | [Exclusão atômica](PENDENCIA-EXCLUSAO-ATOMICA.md) | excluir cliente são duas escritas PostgREST e não uma transação; a ordem foi invertida para o resto possível ser visível, mas resto ainda existe | depois da demonstração do `emporio`, ou ao excluir cliente com credencial real |
+| [Carrinho multi-item](PENDENCIA-CARRINHO-MULTI-ITEM.md) | a IA relata falha que nao houve ao somar 3 itens numa mensagem, re-adiciona, e o `on conflict` SOMA em vez de definir — **R$ 30 a mais num pedido real, em `aguardando_pagamento`** | **agora**: ha dinheiro errado em producao; e antes de qualquer cliente novo de vendas |
 | [Margem](PENDENCIA-MARGEM.md) | **decidido não fazer** — margem por cliente em `/admin/consumo` | planos diferentes entre clientes |
 
 Duas que **não** são pendência e vivem aqui perto, para não se procurar no lugar
