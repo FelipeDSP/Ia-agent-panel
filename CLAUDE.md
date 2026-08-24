@@ -274,6 +274,17 @@ perde trabalho de cadastro que ninguém consegue devolver.
   E chamar como superusuário não vale como teste: `postgres` ignora grant. A
   prova é `set local role n8n_agent` e chamar.
 
+  **E o FILTRO da conferência é uma suposição como qualquer outra.** Em
+  2026-08-24 a migração 52 saiu com `contato_exibivel` em
+  `{=X/postgres, anon=X, authenticated=X}` — o laço que conferia ACL percorria
+  `p.proname like 'api\_n8n\_%'`, e o helper não tem o prefixo. Não era
+  vazamento (função pura, recebe texto e devolve texto, não toca no banco), mas
+  ficou diferente da irmã `texto_normalizado`, de mesma natureza, criada na
+  migração seguinte. É a mesma família do parágrafo acima, um nível acima:
+  antes eu conferia contra a lista de roles que esperava; agora conferia a
+  lista de FUNÇÕES que esperava. **Confira o que a migração cria, não o que o
+  nome dela sugere** — a lista sai do arquivo, não do prefixo.
+
   `npm run teste:grants-n8n` varre `api_n8n_*` (não é lista fixa: função nova
   entra sozinha), exige o grant nos dois roles, confere que nenhuma abriu para
   `anon`/`authenticated` sem querer, e **chama de verdade** como `n8n_agent` —
@@ -399,6 +410,29 @@ trocar o tamanho do chunk sem medir: quebra calado.
   Corolário para quando esta contagem crescer de novo: se a asserção depende de
   algo que uma pessoa pode mudar pela interface, ela não é sobre propriedade —
   ou o teste arranja aquele algo, ou está contando com sorte.
+
+  **A contagem cresceu de novo em 2026-08-24: NOVE.** `tests/migracao-anti-loop.mjs`
+  afirmava `a 53 ainda não está em produção`. Verdade quando foi escrita, falsa
+  **quatro horas depois**, quando a migração foi aplicada — pelo mesmo trabalho,
+  no mesmo dia. E é a segunda vez que este defeito exato aparece na entrega em
+  que a regra é citada: o oitavo veio no commit chamado "varredura de testes que
+  afirmavam estado do mundo", e o nono veio de uma entrega cujo próprio texto
+  invocava o corolário acima.
+
+  Não acrescenta lição nova — acrescenta a evidência de que a lição **não pega
+  por leitura**, nem quando ela acabou de ser lida em voz alta. O conserto é
+  sempre o mesmo e é mecânico: rodar o ROLLBACK da própria migração dentro da
+  transação abortada, que é idempotente e põe o banco no estado pré-migração
+  tendo ela sido aplicada ou não. Se o teste de migração não começa com o
+  rollback, ele está afirmando o calendário.
+
+  **E o que descobriu os três vermelhos que ninguém via não foi revisão: foi
+  rodar tudo.** Em 2026-08-24, a primeira execução de todos os `teste:*` de uma
+  vez achou `teste:acqua-pronta` (4 falhas), `teste:comparacoes-tipo` (1) e
+  `teste:migracao-foto` (1) — nenhum deles relacionado ao que estava sendo
+  entregue, todos vermelhos havia dias. O rodapé de entrega lista os testes que
+  quem entrega ESCOLHE rodar, e a escolha é sempre a vizinhança da mudança. É
+  estruturalmente cego para regressão à distância.
 
   **Limpeza de teste é escopada por tenant, sempre.** Até 2026-08-17 quatro
   limpezas rodavam sem escopo, como `service_role` (que ignora RLS): duas
