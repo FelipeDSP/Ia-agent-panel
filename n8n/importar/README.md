@@ -99,6 +99,32 @@ contagem de nós depois de recarregar a página.
 
 O histórico dos dois está no git; o README guarda o que eles ensinaram.
 
+## Import pendente em 2026-08-24 — SÃO DOIS ARQUIVOS, nesta ordem
+
+A notificação de venda (migração 52) mexeu no `tool-fechar-pedido`, e o
+reposicionamento do `Avisa Midia Nao Suportada` foi junto, como estava combinado
+(mudança cosmética espera uma mudança real em vez de gastar uma janela sozinha).
+
+| ordem | arquivo | o que muda | risco |
+|---|---|---|---|
+| 1 | **SQL** — migração 52 | duas funções novas | nenhum: função sem chamador é inerte |
+| 2 | `n8n/workflows/tool-fechar-pedido.json` | 6 → **10 nós** (estrutural) | o nó novo chama a 52; sem o passo 1 ele estoura `42883` |
+| 3 | `n8n/workflows/agente-principal.json` | **só posição** de 1 nó, 58 nós antes e depois | nenhum comportamental |
+
+**O passo 3 é o único que exige o cuidado do `Import from File...`** (ele SOMA —
+ver a seção acima), e é o que menos entrega: move um nó no canvas. Se a janela
+estiver apertada, **faça 1 e 2 e deixe o 3 para a próxima**; o repo fica um
+palmo à frente da instância em coordenada de canvas, que o `n8n:diff` acusa e é
+inofensivo. O contrário não vale: o passo 2 sem o passo 1 quebra toda venda.
+
+Confira antes dos dois:
+
+```
+node scripts/n8n-validar.mjs n8n/workflows/tool-fechar-pedido.json n8n/workflows/agente-principal.json
+npm run n8n:sincronia
+npm run teste:pausa
+```
+
 ## Como importar o `agente-principal` (o que você provavelmente veio fazer)
 
 Arquivo: **`n8n/workflows/agente-principal.json`**. Confira antes:

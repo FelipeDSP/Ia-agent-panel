@@ -209,6 +209,15 @@ begin
   v_entrega := btrim(coalesce(v_meta ->> 'entrega', ''));
   v_obs     := btrim(coalesce(v_meta ->> 'observacao', ''));
 
+  -- `contact_name` as vezes vem do Chatwoot como JID do WhatsApp
+  -- (`551123913685@c.us`) e nao como nome: 1 das 25 conversas do emporio esta
+  -- assim hoje. Nesse caso a linha do nome CAI -- nao vira substituicao. Repetir
+  -- o numero, um deles ilegivel, e ruido; o telefone tem linha propria e sai do
+  -- campo `phone`, que e a fonte certa.
+  if btrim(coalesce(v_nome, '')) ~ '^\+?[0-9]{6,}@' then
+    v_nome := null;
+  end if;
+
   v_msg :=
       format(E'🛒 *Venda fechada — pedido nº %s*\n', coalesce(v_numero::text, '?'))
     || case when coalesce(btrim(v_nome), '') <> ''

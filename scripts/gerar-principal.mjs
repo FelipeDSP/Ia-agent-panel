@@ -918,8 +918,21 @@ for (const [nome, arquivo, precisaFiltro] of [
 // LAYOUT e nao por `position` direto porque o `restaurarLayout()` roda depois e
 // devolveria a coordenada antiga; e idempotente, porque na proxima geracao o
 // snapshot ja le a nova.
+//
+// CORRECAO DE 2026-08-24: a coordenada acima estava ERRADA. `[-2064, 3744]`
+// ficou ~5900px a esquerda de todo o resto — o vizinho mais proximo, o
+// `Webhook`, esta em x=2000, e o pai dele (`Audio Contratado?`) em x=3952. Na
+// tela o no sumia do enquadramento e a aresta do ramo falso atravessava o canvas
+// inteiro. Nao quebrava execucao nenhuma, so leitura; por isso ficou esperando
+// uma mudanca de verdade no workflow em vez de uma janela de import so para ele.
+// Agora vai junto com a notificacao de venda.
+//
+// `[4272, 5344]` e o ramo FALSO do `Audio Contratado?` (que esta em
+// [3952, 5104]), abaixo e a direita — o verdadeiro vai para `Audio Curto?`
+// [4496, 5072]. Nao colide com `Avisa Audio Longo` [4864, 5296] nem com
+// `Credencial (bloqueio)` [3744, 5376].
 if (LAYOUT['Avisa Midia Nao Suportada']) {
-  LAYOUT['Avisa Midia Nao Suportada'].position = [-2064, 3744];
+  LAYOUT['Avisa Midia Nao Suportada'].position = [4272, 5344];
 }
 
 // Fiacao ---------------------------------------------------------------------

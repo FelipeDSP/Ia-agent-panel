@@ -332,8 +332,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -2064,
-        3744
+        4272,
+        5344
       ],
       "id": "563ab9d2-b57a-465b-9b56-e89224555861",
       "name": "Avisa Midia Nao Suportada"

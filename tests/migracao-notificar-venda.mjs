@@ -328,6 +328,34 @@ try {
   chk('B NÃO consegue confirmar o pedido de A (escopo de tenant no update)',
     confCruzado.rows[0]?.v === false, String(confCruzado.rows[0]?.v));
 
+  /* -----------------------------------------------------------------------
+   * 7b. `contact_name` em formato de JID.
+   *
+   * 1 das 25 conversas do emporio tem `contact_name = '551123913685@c.us'` — o
+   * Chatwoot devolve o JID quando o contato não tem nome salvo. Sem regra, a
+   * venda chegaria com o número duas vezes, um deles ilegível.
+   * --------------------------------------------------------------------- */
+  console.log('\n-- 7b. Nome em formato de JID: a linha do nome CAI --\n');
+  const G = await semear(`${suf}-g`, CONV + 33, CFG_OK);
+  await c.query(`update public.conversas set contact_name = '551123913685@c.us'
+                  where tenant_id = $1 and conversation_id = $2`, [G.t, G.conv]);
+  sus('a conversa de G ficou mesmo com o JID no lugar do nome',
+    (await c.query(`select contact_name from public.conversas
+                     where tenant_id = $1 and conversation_id = $2`, [G.t, G.conv]))
+      .rows[0].contact_name === '551123913685@c.us');
+
+  const jid = await comoN8n(
+    `select * from public.api_n8n_notificar_venda($1::uuid, $2::bigint)`, [G.t, G.conv]);
+  const mJid = jid.rows[0]?.mensagem ?? '';
+  chk('com JID, a mensagem NÃO traz linha de nome', !/👤/.test(mJid), mJid.split('\n').slice(0, 4).join(' | '));
+  // Omitir, não substituir: o telefone continua vindo de `phone`.
+  chk('e o telefone continua lá, vindo de `phone`', /📱 \+5569900/.test(mJid),
+    mJid.split('\n').slice(0, 4).join(' | '));
+  // Contraprova: o mesmo caminho COM nome de gente produz a linha. Sem isto,
+  // "não tem 👤" passaria também com a mensagem inteira vazia.
+  sus('contraprova: nome de gente (tenant B) produz a linha 👤',
+    /👤 Cliente /.test(bNotif.rows[0]?.mensagem ?? ''));
+
   console.log('\n-- 8. Reexecutável e rollback --\n');
   const r2 = await tentar(M52);
   chk('aplicar duas vezes não quebra', r2.erro === null, r2.erro ?? '');
@@ -408,6 +436,25 @@ try {
     if (vaza.rows.length === 1) {
       console.log(`        (E vazou o pedido ${vaza.rows[0].pedido_id} — de A é ${A.ped.id}, de B é ${B.ped.id})`);
     }
+    await c.query(M52);
+  }
+  {
+    // S3 — tira a regra do JID. Sem ela a linha do nome volta com o número
+    // ilegível, e a asserção da seção 7b tem de conseguir enxergar isso.
+    const ALVO = /if btrim\(coalesce\(v_nome, ''\)\) ~ '\^\\\+\?\[0-9\]\{6,\}@' then\n    v_nome := null;\n  end if;/;
+    sus('S3 o alvo existe no SQL', ALVO.test(SQL));
+    const sab = SQL.replace(ALVO, '');
+    sus('S3 a mutação entrou (a regra do JID saiu)', sab !== SQL && !ALVO.test(sab));
+    const apS = await tentar(sab);
+    sus('S3 a versão sabotada aplica', apS.erro === null, apS.erro ?? '');
+
+    await c.query(`update public.pedidos set metadados = metadados - 'notificacao'
+                    where id = $1`, [G.ped.id]);
+    const volta = await comoN8n(
+      `select * from public.api_n8n_notificar_venda($1::uuid, $2::bigint)`, [G.t, G.conv]);
+    chk('S3 sem a regra, o JID volta a aparecer como nome (o teste reprova)',
+      /👤 551123913685@c\.us/.test(volta.rows[0]?.mensagem ?? ''),
+      (volta.rows[0]?.mensagem ?? '(zero linhas)').split('\n').slice(0, 4).join(' | '));
     await c.query(M52);
   }
 

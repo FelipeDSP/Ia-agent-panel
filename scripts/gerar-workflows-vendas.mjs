@@ -102,12 +102,12 @@ function noIndisponivel(x, y) {
   };
 }
 
-function noRetorno(x, y, id = 'ok') {
+function noRetorno(x, y, id = 'ok', expr = '={{ $json.resultado }}') {
   return {
     parameters: {
       assignments: {
         assignments: [
-          { id: 'ok-1', name: 'resultado', type: 'string', value: '={{ $json.resultado }}' },
+          { id: 'ok-1', name: 'resultado', type: 'string', value: expr },
         ],
       },
       options: {},
@@ -118,6 +118,122 @@ function noRetorno(x, y, id = 'ok') {
     name: 'Retorno',
     id: uid(id),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Notificacao de venda (migracao 52) — so no `fechar`
+// ---------------------------------------------------------------------------
+/**
+ * TRES REGRAS QUE ESTA CADEIA OBEDECE, e cada uma existe por um motivo:
+ *
+ * 1. NOTIFICAR NUNCA DERRUBA A VENDA. O pedido ja esta fechado quando esta parte
+ *    roda. Fazer o agente dizer ao cliente que deu erro num pedido correto e
+ *    trocar um problema por outro. Por isso os tres nos novos tem
+ *    `onError: continueRegularOutput`: falha de banco, de sessao WAHA ou de rede
+ *    some para o cliente e sobra gravada em `metadados.notificacao`.
+ *
+ * 2. UM TERMINAL SO. A sub-workflow devolve ao agente o que o ULTIMO no
+ *    executado produziu. Ramo paralelo aqui faria o retorno depender de qual
+ *    ramo terminou por ultimo — as vezes o texto do pedido, as vezes a resposta
+ *    do WhatsApp. Entao a notificacao fica EM SERIE e os dois caminhos
+ *    (notificou / nao notificou) desaguam no MESMO `Retorno`.
+ *
+ * 3. `.first()` E NAO `.item`. `Reivindica Notificacao` devolve ZERO LINHAS
+ *    quando nao ha o que notificar — que e o caso dos quatro tenants hoje, todos
+ *    com `vendas.config = {}`. Com `alwaysOutputData` o n8n fabrica um item
+ *    vazio, e item fabricado nao tem pareamento: `$('Fecha Pedido').item`
+ *    estouraria "Can't get data for expression" em TODA venda de tenant sem
+ *    numero configurado. `.first()` nao depende de pareamento.
+ */
+const TRIGGER = "$('When Executed by Another Workflow')";
+function nosNotificacao() {
+  return [
+    {
+      parameters: {
+        operation: 'executeQuery',
+        query: 'SELECT pedido_id, numero, sessao, destino, mensagem\n'
+             + 'FROM public.api_n8n_notificar_venda($1::uuid, $2::bigint);',
+        options: {
+          queryReplacement: `={{ [ ${TRIGGER}.item.json.tenant_id, ${TRIGGER}.item.json.conversation_id ] }}`,
+        },
+      },
+      type: 'n8n-nodes-base.postgres',
+      typeVersion: 2.6,
+      position: [1280, 320],
+      name: 'Reivindica Notificacao',
+      id: uid('not-rei'),
+      credentials: CRED_PG,
+      // Zero linhas e resposta NORMAL ("nao ha o que notificar"), nao erro. Sem
+      // isto o fluxo morreria aqui e o agente ficaria sem o texto do pedido.
+      alwaysOutputData: true,
+      onError: 'continueRegularOutput',
+    },
+    {
+      parameters: {
+        conditions: {
+          options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 },
+          conditions: [
+            {
+              id: 'not-1',
+              // `|| ''` porque o item fabricado pelo `alwaysOutputData` nao tem
+              // a chave, e `notEmpty` sobre `undefined` com typeValidation
+              // estrita e erro, nao `false`.
+              leftValue: "={{ $json.destino || '' }}",
+              rightValue: '',
+              operator: { type: 'string', operation: 'notEmpty', singleValue: true },
+            },
+          ],
+          combinator: 'and',
+        },
+        options: {},
+      },
+      type: 'n8n-nodes-base.if',
+      typeVersion: 2.2,
+      position: [1504, 320],
+      name: 'Tem Notificacao?',
+      id: uid('not-if'),
+    },
+    {
+      parameters: {
+        resource: 'Chatting',
+        operation: 'Send Text',
+        session: "={{ $('Reivindica Notificacao').first().json.sessao }}",
+        chatId: "={{ $('Reivindica Notificacao').first().json.destino }}",
+        // O texto vem PRONTO do banco. Montar aqui poria a formatacao numa
+        // expressao que nenhum teste alcanca; no SQL ela e medida com o pedido
+        // real (`npm run teste:notificar-venda`).
+        text: "={{ $('Reivindica Notificacao').first().json.mensagem }}",
+        requestOptions: {},
+      },
+      type: '@devlikeapro/n8n-nodes-waha.WAHA',
+      typeVersion: 202502,
+      position: [1728, 208],
+      name: 'Notifica Venda WAHA',
+      id: uid('not-waha'),
+      credentials: { wahaApi: { id: 'gx2yKmYvYBBJ2Yhl', name: 'WAHA account' } },
+      onError: 'continueRegularOutput',
+    },
+    {
+      parameters: {
+        operation: 'executeQuery',
+        query: 'SELECT public.api_n8n_confirmar_notificacao($1::uuid, $2::uuid, $3::boolean, $4::text) AS confirmado;',
+        options: {
+          // `$json.error` so existe porque o no do WAHA esta em
+          // `continueRegularOutput`: no sucesso ele nao vem. E o que separa
+          // `enviado_em` de `falhou_em` — e "reservado" nunca vira "enviado" por
+          // omissao.
+          queryReplacement: `={{ [ ${TRIGGER}.item.json.tenant_id, $('Reivindica Notificacao').first().json.pedido_id, !$json.error, $json.error ? String($json.error.message || $json.error).slice(0, 500) : null ] }}`,
+        },
+      },
+      type: 'n8n-nodes-base.postgres',
+      typeVersion: 2.6,
+      position: [1952, 208],
+      name: 'Confirma Notificacao',
+      id: uid('not-conf'),
+      credentials: CRED_PG,
+      onError: 'continueRegularOutput',
+    },
+  ];
 }
 
 function envelope(nome, nodes, connections) {
@@ -321,7 +437,8 @@ for (const [arq, nome, fn, extras, reps] of [
    [],
    "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id ] }}"],
 ]) {
-  const curto = arq.includes('fechar') ? 'fec' : 'can';
+  const ehFechar = arq.includes('fechar');
+  const curto = ehFechar ? 'fec' : 'can';
   const nodes = [
     {
       parameters: { workflowInputs: { values: [{ name: 'tenant_id' }, { name: 'conversation_id', type: 'number' }, ...extras] } },
@@ -337,19 +454,35 @@ for (const [arq, nome, fn, extras, reps] of [
       type: 'n8n-nodes-base.postgres',
       typeVersion: 2.6,
       position: [1056, 320],
-      name: arq.includes('fechar') ? 'Fecha Pedido' : 'Cancela Pedido',
+      name: ehFechar ? 'Fecha Pedido' : 'Cancela Pedido',
       id: uid(curto + '-q'),
       credentials: CRED_PG,
     },
-    noRetorno(1280, 320, curto + '-ok'),
+    // No `fechar`, o `Retorno` le do no NOMEADO e nao de `$json`: entre ele e o
+    // `Fecha Pedido` passaram a existir tres nos, e `$json.resultado` ali seria
+    // a resposta do WhatsApp, nao o texto do pedido.
+    ehFechar
+      ? noRetorno(2176, 320, `${curto}-ok`, "={{ $('Fecha Pedido').first().json.resultado }}")
+      : noRetorno(1280, 320, `${curto}-ok`),
     noIndisponivel(1056, 496),
+    ...(ehFechar ? nosNotificacao() : []),
   ];
-  const acao = arq.includes('fechar') ? 'Fecha Pedido' : 'Cancela Pedido';
+  const acao = ehFechar ? 'Fecha Pedido' : 'Cancela Pedido';
+  const cn = (destino) => [{ node: destino, type: 'main', index: 0 }];
   const connections = {
-    'When Executed by Another Workflow': { main: [[{ node: 'Busca Config', type: 'main', index: 0 }]] },
-    'Busca Config': { main: [[{ node: 'Vendas Ativa?', type: 'main', index: 0 }]] },
-    'Vendas Ativa?': { main: [[{ node: acao, type: 'main', index: 0 }], [{ node: 'Vendas Indisponivel', type: 'main', index: 0 }]] },
-    [acao]: { main: [[{ node: 'Retorno', type: 'main', index: 0 }]] },
+    'When Executed by Another Workflow': { main: [cn('Busca Config')] },
+    'Busca Config': { main: [cn('Vendas Ativa?')] },
+    'Vendas Ativa?': { main: [cn(acao), cn('Vendas Indisponivel')] },
+    // Em serie, um terminal so. Ver o comentario de `nosNotificacao()`.
+    ...(ehFechar
+      ? {
+        'Fecha Pedido': { main: [cn('Reivindica Notificacao')] },
+        'Reivindica Notificacao': { main: [cn('Tem Notificacao?')] },
+        'Tem Notificacao?': { main: [cn('Notifica Venda WAHA'), cn('Retorno')] },
+        'Notifica Venda WAHA': { main: [cn('Confirma Notificacao')] },
+        'Confirma Notificacao': { main: [cn('Retorno')] },
+      }
+      : { [acao]: { main: [cn('Retorno')] } }),
   };
   gravar(arq, envelope(nome, nodes, connections));
 }

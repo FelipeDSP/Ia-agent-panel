@@ -115,7 +115,7 @@
               "id": "ok-1",
               "name": "resultado",
               "type": "string",
-              "value": "={{ $json.resultado }}"
+              "value": "={{ $('Fecha Pedido').first().json.resultado }}"
             }
           ]
         },
@@ -124,7 +124,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1280,
+        2176,
         320
       ],
       "name": "Retorno",
@@ -152,6 +152,114 @@
       ],
       "name": "Vendas Indisponivel",
       "id": "venda-off000000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT pedido_id, numero, sessao, destino, mensagem\nFROM public.api_n8n_notificar_venda($1::uuid, $2::bigint);",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1280,
+        320
+      ],
+      "name": "Reivindica Notificacao",
+      "id": "venda-not-rei00000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "not-1",
+              "leftValue": "={{ $json.destino || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1504,
+        320
+      ],
+      "name": "Tem Notificacao?",
+      "id": "venda-not-if000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Reivindica Notificacao').first().json.sessao }}",
+        "chatId": "={{ $('Reivindica Notificacao').first().json.destino }}",
+        "text": "={{ $('Reivindica Notificacao').first().json.mensagem }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        1728,
+        208
+      ],
+      "name": "Notifica Venda WAHA",
+      "id": "venda-not-waha0000000000000000000000",
+      "credentials": {
+        "wahaApi": {
+          "id": "gx2yKmYvYBBJ2Yhl",
+          "name": "WAHA account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_confirmar_notificacao($1::uuid, $2::uuid, $3::boolean, $4::text) AS confirmado;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('Reivindica Notificacao').first().json.pedido_id, !$json.error, $json.error ? String($json.error.message || $json.error).slice(0, 500) : null ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1952,
+        208
+      ],
+      "name": "Confirma Notificacao",
+      "id": "venda-not-conf0000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "onError": "continueRegularOutput"
     }
   ],
   "pinData": {},
@@ -197,6 +305,57 @@
       ]
     },
     "Fecha Pedido": {
+      "main": [
+        [
+          {
+            "node": "Reivindica Notificacao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reivindica Notificacao": {
+      "main": [
+        [
+          {
+            "node": "Tem Notificacao?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Notificacao?": {
+      "main": [
+        [
+          {
+            "node": "Notifica Venda WAHA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Retorno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notifica Venda WAHA": {
+      "main": [
+        [
+          {
+            "node": "Confirma Notificacao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirma Notificacao": {
       "main": [
         [
           {
