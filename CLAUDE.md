@@ -426,6 +426,24 @@ trocar o tamanho do chunk sem medir: quebra calado.
   tendo ela sido aplicada ou não. Se o teste de migração não começa com o
   rollback, ele está afirmando o calendário.
 
+  **E o CRLF derrubou uma guarda de verdade, não só uma sabotagem.** Em
+  2026-08-24 o `teste:comparacoes-tipo` passou a acusar o **próprio comentário**
+  que explica a armadilha que ele caça. A proteção contra auto-casamento está
+  escrita e está certa; o que a matou foi o arquivo virar CRLF: `split('
+')`
+  deixa um `` no fim da linha, e em JavaScript **`.` não casa ``** (é
+  terminador de linha), então `/\/\/.*$/` não encontra onde ancorar e não
+  strippa comentário nenhum. `/\/\/.*$/.test("  // x")` é `true`;
+  `.test("  // x")` é `false`.
+
+  Ninguém editou nada — o git mudou o fim de linha (174 arquivos do repo estão
+  em CRLF contra 96 em LF) e a guarda morreu **sem aparecer em diff**. Então:
+  **todo varredor de arquivo usa `split(/?
+/)`**, nunca `split('
+')`, e a
+  sabotagem que prova um varredor tem de rodar nos DOIS fins de linha. Item
+  próprio em `docs/PENDENCIA-AUTOCASAMENTO-CRLF.md`.
+
   **E o que descobriu os três vermelhos que ninguém via não foi revisão: foi
   rodar tudo.** Em 2026-08-24, a primeira execução de todos os `teste:*` de uma
   vez achou `teste:acqua-pronta` (4 falhas), `teste:comparacoes-tipo` (1) e
@@ -478,6 +496,14 @@ trocar o tamanho do chunk sem medir: quebra calado.
 
 ## Antes de dar por pronto
 
+- **`npm run teste`** — a suite inteira, sequencial, ~3 minutos. Ele varre o
+  `package.json` pelo prefixo `teste:`, entao teste novo entra sozinho; nao ha
+  lista para manter. Rodar so os testes da vizinhanca da mudanca e o que deixou
+  o `teste:retomada-pausa` tres dias vermelho enquanto quatro migracoes eram
+  aplicadas, e a primeira execucao do runner achou tres vermelhos que ninguem
+  via. As exclusoes sao duas, declaradas com motivo sobre a NATUREZA do script
+  (nao sobre ele estar vermelho): `teste:recall` custa OpenAI por execucao,
+  `teste:acqua-pronta` e relatorio e nao teste
 - `npm run build` passa sem erro de tipo
 - Teste de isolamento entre os 3 tenants do seed passa
 - Nenhuma `service_role` key em código client
