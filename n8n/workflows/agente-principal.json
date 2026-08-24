@@ -1965,7 +1965,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT public.api_n8n_conversa_pausada($1::uuid, $2::bigint) AS pausada;",
+        "query": "SELECT pausada, motivo, anomalia, sessao, destino, mensagem\nFROM public.api_n8n_portao_mensagem($1::uuid, $2::bigint);",
         "options": {
           "queryReplacement": "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id ] }}"
         }
@@ -1978,7 +1978,7 @@
       ],
       "name": "Consulta Pausa",
       "id": "consulta-pausa0000000000000000000000",
-      "notes": "Portao unico de pausa, antes do Roteia Acao. Ate 21/08 so o ramo processar era protegido, e midia e bloqueado falavam por cima do atendimento humano. A regra NAO esta aqui: a funcao delega a public.pausa_vigente (migracao 47), que tem os outros leitores.",
+      "notes": "Portao unico, antes do Roteia Acao. Ate 21/08 so o ramo processar era protegido, e midia e bloqueado falavam por cima do atendimento humano. A regra NAO esta aqui: a funcao delega a public.pausa_vigente (migracao 47), que tem os outros leitores. Devolve SEMPRE uma linha — zero linhas pararia o fluxo em silencio e o agente nunca responderia.",
       "notesInFlow": true
     },
     {
@@ -2027,7 +2027,70 @@
       ],
       "name": "Humano Atende (ignora)",
       "id": "humano-atende-ignora0000000000000000",
-      "notes": "Fim de linha esperado: alguem esta atendendo esta conversa. Nao e erro. A pausa caduca sozinha pela janela do tenant (tenants.pausa_expira_minutos) e a proxima mensagem volta a passar.",
+      "notes": "Fim de linha esperado: nao e erro. Pausa por mensagem humana caduca sozinha pela janela do tenant (tenants.pausa_expira_minutos). Pausa MANUAL e pausa por ANOMALIA nao caducam — so voltam pelo painel. Ver `motivo` do Consulta Pausa para saber qual das tres.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "anomalia",
+              "leftValue": "={{ $('Consulta Pausa').first().json.anomalia === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3136,
+        5312
+      ],
+      "name": "Anomalia?",
+      "id": "anomalia-000000000000000000000000000",
+      "notes": "Pausa por anomalia ACABOU de acontecer nesta mensagem. Le do no por NOME e nao de $json, porque o NoOp no meio nao carrega as colunas.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Consulta Pausa').first().json.sessao }}",
+        "chatId": "={{ $('Consulta Pausa').first().json.destino }}",
+        "text": "={{ $('Consulta Pausa').first().json.mensagem }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        3360,
+        5312
+      ],
+      "name": "Notifica Anomalia WAHA",
+      "id": "notifica-anomalia0000000000000000000",
+      "credentials": {
+        "wahaApi": {
+          "id": "gx2yKmYvYBBJ2Yhl",
+          "name": "WAHA account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Canal do transferir_humano, reusado: e o mesmo recado (\"um humano precisa olhar esta conversa\") e esta preenchido em 4 tenants, enquanto vendas.config esta {} nos quatro. Sem destino configurado a funcao devolve destino nulo e o IF anterior nao chega aqui. O aviso do TETO de consumo NAO passa por aqui — fica em alertas_consumo, que e da agencia.",
       "notesInFlow": true
     }
   ],
@@ -2681,6 +2744,29 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "Humano Atende (ignora)": {
+      "main": [
+        [
+          {
+            "node": "Anomalia?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anomalia?": {
+      "main": [
+        [
+          {
+            "node": "Notifica Anomalia WAHA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   },

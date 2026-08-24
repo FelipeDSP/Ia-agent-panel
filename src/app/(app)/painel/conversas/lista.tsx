@@ -47,6 +47,23 @@ export function StatusBadge({
   if (status_efetivo === 'resolvido') return <Badge variant="secondary">resolvido</Badge>;
   if (status_efetivo !== 'pausado') return <Badge variant="success">ativo</Badge>;
 
+  /*
+   * `anomalia` vem antes de `manual` e usa cor PRÓPRIA de propósito. As duas não
+   * caducam, mas só esta significa "aconteceu algo que ninguém mandou": o agente
+   * detectou a mesma mensagem repetindo e parou sozinho. Pintá-la de `warning`,
+   * igual à pausa que alguém escolheu fazer, esconderia justamente o estado que
+   * pede atenção — e o custo de não olhar já foi medido em US$ 9,49.
+   */
+  if (motivo_pausa === 'anomalia') {
+    return (
+      <Badge
+        variant="danger"
+        title="O agente parou sozinho: a conversa recebeu a mesma mensagem várias vezes seguidas, o que costuma ser outro robô do outro lado. Não volta sozinha — clique em Retomar depois de olhar."
+      >
+        pausado · anomalia
+      </Badge>
+    );
+  }
   if (motivo_pausa === 'manual') {
     return <Badge variant="warning" title="Alguém pausou pelo painel. Só sai clicando em Retomar.">pausado</Badge>;
   }

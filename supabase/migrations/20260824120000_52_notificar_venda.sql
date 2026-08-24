@@ -83,6 +83,30 @@
 begin;
 
 -- ---------------------------------------------------------------------
+-- 0. O nome que da para mostrar, ou nada
+-- ---------------------------------------------------------------------
+-- `contact_name` as vezes vem do Chatwoot como JID do WhatsApp
+-- (`551123913685@c.us`) e nao como nome: 1 das 25 conversas do emporio esta
+-- assim hoje. Nesse caso a linha do nome CAI -- nao vira substituicao. Repetir o
+-- numero, um deles ilegivel, e ruido; o telefone tem linha propria e sai do
+-- campo `phone`, que e a fonte certa.
+--
+-- Funcao propria e nao `if` embutido porque a migracao 53 (pausa por anomalia)
+-- monta outra mensagem para o mesmo dono, com o mesmo problema. Regra em dois
+-- lugares vira duas regras na primeira vez que alguem ajustar uma.
+create or replace function public.contato_exibivel(p_nome text)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when btrim(coalesce(p_nome, '')) = ''                then null
+    when btrim(p_nome) ~ '^\+?[0-9]{6,}@'                then null
+    else btrim(p_nome)
+  end;
+$$;
+
+-- ---------------------------------------------------------------------
 -- 1. Reserva a notificacao e devolve o texto pronto
 -- ---------------------------------------------------------------------
 -- Devolve ZERO LINHAS quando nao ha o que notificar: tool desligada, canal
@@ -209,14 +233,8 @@ begin
   v_entrega := btrim(coalesce(v_meta ->> 'entrega', ''));
   v_obs     := btrim(coalesce(v_meta ->> 'observacao', ''));
 
-  -- `contact_name` as vezes vem do Chatwoot como JID do WhatsApp
-  -- (`551123913685@c.us`) e nao como nome: 1 das 25 conversas do emporio esta
-  -- assim hoje. Nesse caso a linha do nome CAI -- nao vira substituicao. Repetir
-  -- o numero, um deles ilegivel, e ruido; o telefone tem linha propria e sai do
-  -- campo `phone`, que e a fonte certa.
-  if btrim(coalesce(v_nome, '')) ~ '^\+?[0-9]{6,}@' then
-    v_nome := null;
-  end if;
+  -- JID no lugar do nome cai fora; ver `contato_exibivel` no topo.
+  v_nome := public.contato_exibivel(v_nome);
 
   v_msg :=
       format(E'🛒 *Venda fechada — pedido nº %s*\n', coalesce(v_numero::text, '?'))

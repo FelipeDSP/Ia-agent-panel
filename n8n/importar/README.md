@@ -107,15 +107,25 @@ reposicionamento do `Avisa Midia Nao Suportada` foi junto, como estava combinado
 
 | ordem | arquivo | o que muda | risco |
 |---|---|---|---|
-| 1 | **SQL** — migração 52 | duas funções novas | nenhum: função sem chamador é inerte |
-| 2 | `n8n/workflows/tool-fechar-pedido.json` | 6 → **10 nós** (estrutural) | o nó novo chama a 52; sem o passo 1 ele estoura `42883` |
-| 3 | `n8n/workflows/agente-principal.json` | **só posição** de 1 nó, 58 nós antes e depois | nenhum comportamental |
+| 1 | **SQL** — migração 52 | duas funções novas + `contato_exibivel` | nenhum: função sem chamador é inerte |
+| 2 | **SQL** — migração 53 | portão anti-loop, `anomalia`, tetos, `alertas_consumo` | mexe em `pausa_vigente`, que 4 consumidores leem |
+| 3 | `n8n/workflows/agente-principal.json` | 58 → **60 nós**; o `Consulta Pausa` troca de função | **sem o passo 2, TODA mensagem estoura `42883`** |
+| 4 | `n8n/workflows/tool-fechar-pedido.json` | 6 → **10 nós** | o nó novo chama a 52; sem o passo 1 toda venda quebra |
+| 5 | deploy do painel | `StatusBadge` ganha o estado `anomalia` | nenhum |
 
-**O passo 3 é o único que exige o cuidado do `Import from File...`** (ele SOMA —
-ver a seção acima), e é o que menos entrega: move um nó no canvas. Se a janela
-estiver apertada, **faça 1 e 2 e deixe o 3 para a próxima**; o repo fica um
-palmo à frente da instância em coordenada de canvas, que o `n8n:diff` acusa e é
-inofensivo. O contrário não vale: o passo 2 sem o passo 1 quebra toda venda.
+Os passos 3 e 4 são **um import só** — foi por isso que a notificação de venda
+ficou esperando a proteção anti-loop ficar pronta. Duas janelas de import no
+`emporio` com cliente real usando custa mais que uma.
+
+O `Avisa Midia Nao Suportada` também vai no passo 3: estava em `[-2064, 3744]`,
+~5900px à esquerda de todo o resto, com a aresta cruzando o canvas inteiro.
+Mudança cosmética que esperou uma mudança real em vez de gastar uma janela
+sozinha.
+
+**A ordem SQL-antes-de-import não é preferência.** Nos dois casos a função nova
+sem chamador é inerte, e o nó novo sem a função estoura — e no passo 3 estoura
+para todo tenant, na primeira mensagem, porque o portão é a primeira coisa
+depois do `Tenant Valido?`.
 
 Confira antes dos dois:
 
@@ -123,6 +133,8 @@ Confira antes dos dois:
 node scripts/n8n-validar.mjs n8n/workflows/tool-fechar-pedido.json n8n/workflows/agente-principal.json
 npm run n8n:sincronia
 npm run teste:pausa
+npm run teste:anti-loop
+npm run teste:notificar-venda
 ```
 
 ## Como importar o `agente-principal` (o que você provavelmente veio fazer)

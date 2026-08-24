@@ -150,6 +150,9 @@ try {
   const ap = await tentar(M52);
   chk('a migração aplica', ap.erro === null, ap.erro ?? '');
   chk('as DUAS funções existem', (await contarFuncoes()) === 2);
+  chk('e o helper `contato_exibivel` existe (a 53 depende dele)',
+    (await c.query(`select count(*)::int n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
+       where ns.nspname = 'public' and p.proname = 'contato_exibivel'`)).rows[0].n === 1);
 
   console.log('\n-- 2. Grants: os DOIS roles, e nenhum a mais --\n');
   const acls = (await c.query(
@@ -439,11 +442,12 @@ try {
     await c.query(M52);
   }
   {
-    // S3 — tira a regra do JID. Sem ela a linha do nome volta com o número
-    // ilegível, e a asserção da seção 7b tem de conseguir enxergar isso.
-    const ALVO = /if btrim\(coalesce\(v_nome, ''\)\) ~ '\^\\\+\?\[0-9\]\{6,\}@' then\n    v_nome := null;\n  end if;/;
+    // S3 — tira a regra do JID de dentro do `contato_exibivel`. Sem ela a linha
+    // do nome volta com o número ilegível, e a asserção da seção 7b tem de
+    // conseguir enxergar isso.
+    const ALVO = /when btrim\(p_nome\) ~ '\^\\\+\?\[0-9\]\{6,\}@'/;
     sus('S3 o alvo existe no SQL', ALVO.test(SQL));
-    const sab = SQL.replace(ALVO, '');
+    const sab = SQL.replace(ALVO, "when btrim(p_nome) ~ 'nunca-casa-com-nada'");
     sus('S3 a mutação entrou (a regra do JID saiu)', sab !== SQL && !ALVO.test(sab));
     const apS = await tentar(sab);
     sus('S3 a versão sabotada aplica', apS.erro === null, apS.erro ?? '');

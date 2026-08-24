@@ -60,6 +60,21 @@ function acharMigracao(sufixo) {
 
 const M47 = acharMigracao('_47_retomada_pausa.sql');
 const R47 = acharMigracao('_47_retomada_pausa_rollback.sql');
+/*
+ * A CADEIA, e não o elo. A migração 51 criou a view `conversas_painel`, que LÊ
+ * `conversa_status_efetivo` — então desfazer a 47 sozinha passou a falhar com
+ * `cannot drop function ... because other objects depend on it` a partir do dia
+ * em que a 51 foi aplicada (21/08). O teste ficou vermelho sem defeito nenhum em
+ * produção, que é exatamente o que aconteceu com `migracao-audio.mjs` quando ela
+ * replayava a 32 sozinha e a 37 já havia substituído a assinatura.
+ *
+ * Regra: replaye a cadeia na ordem em que produção a viu, e o rollback na ordem
+ * INVERSA — 51 sai antes da 47, e volta depois dela.
+ */
+const M51 = acharMigracao('_51_conversas_painel.sql');
+const R51 = acharMigracao('_51_conversas_painel_rollback.sql');
+const desfazer47 = async () => { await c.query(R51); await c.query(R47); };
+const refazer47 = async () => { await c.query(M47); await c.query(M51); };
 
 if (!process.env.SUPABASE_DB_URL) {
   console.error('SUPABASE_DB_URL ausente. Rode com --env-file=.env.local');
@@ -248,7 +263,7 @@ try {
    * banco no estado pré-47 tendo a 47 sido aplicada ou não — e o teste mede a
    * MIGRAÇÃO, não o calendário.
    */
-  await c.query(R47);
+  await desfazer47();
   // Por NOME, não por prefixo de versão: a versão muda no rename que o ledger
   // obriga (CLAUDE.md), e a primeira forma disto já nasceu errada — dizia
   // "ainda não" com a 47 aplicada, meia hora depois de aplicada.
@@ -501,7 +516,7 @@ try {
   // -------------------------------------------------------------------------
   console.log('\n-- 9. Rollback --\n');
 
-  await c.query(R47);
+  await desfazer47();
   const colDepois = (await c.query(
     `select 1 from information_schema.columns where table_name='conversas' and column_name='motivo_pausa'`)).rowCount;
   const janDepois = (await c.query(
@@ -519,7 +534,7 @@ try {
   chk('e o n8n continua sincronizando conversa depois do rollback',
     posRb.erro === null && posRb.rows[0]?.status === 'pausado', posRb.erro ?? JSON.stringify(posRb.rows));
 
-  await c.query(M47); // volta para "aplicada", para as sabotagens rodarem em cima
+  await refazer47(); // volta para "aplicada", para as sabotagens rodarem em cima
 
   // -------------------------------------------------------------------------
   console.log('\n-- 10. Sabotagem --\n');
@@ -539,7 +554,7 @@ try {
     sus('S1 a versão sabotada aplica', r.erro === null, r.erro ?? '');
     chk('S1 sem ela, pausa MANUAL de 5 dias caduca (o teste reprova)',
       (await pv('pausado', 7200, 'manual', 30)) === false, String(await pv('pausado', 7200, 'manual', 30)));
-    await c.query(M47);
+    await refazer47();
   }
   {
     // O sync volta a devolver o status cru.
@@ -551,7 +566,7 @@ try {
     sus('S2 a versão sabotada aplica', r.erro === null, r.erro ?? '');
     chk('S2 sem ele, o sync mente sobre a pausa vencida (o teste reprova)',
       (await syncStatus(A, 4711)) === 'pausado', await syncStatus(A, 4711));
-    await c.query(M47);
+    await refazer47();
   }
   {
     // `pode_transcrever` volta a comparar cru — e diverge do sync.
@@ -565,7 +580,7 @@ try {
     chk('S3 sem ele, pode_transcrever DIVERGE do sync (o teste reprova)',
       div[0]?.conversa_pausada === true && (await syncStatus(A, 4711)) === 'ativo',
       `transcrever=${div[0]?.conversa_pausada} sync=${await syncStatus(A, 4711)}`);
-    await c.query(M47);
+    await refazer47();
   }
   {
     // O caminho do n8n para de escrever o motivo — e a constraint o derruba.
@@ -578,7 +593,7 @@ try {
       `select public.api_n8n_definir_status_conversa($1::uuid, $2::bigint, 'pausado') v`, [A, 4702]);
     chk('S4 sem ele, a pausa do n8n é RECUSADA pela constraint (o teste reprova)',
       p.erro !== null && /conversas_pausa_tem_motivo/.test(p.erro ?? ''), p.erro ?? '(passou)');
-    await c.query(M47);
+    await refazer47();
   }
   {
     // Unidade errada na janela: minutos viram horas.
@@ -590,7 +605,7 @@ try {
     sus('S5 a versão sabotada aplica', r.erro === null, r.erro ?? '');
     chk('S5 com a unidade errada, a janela de 1 min não vence em 10 (o teste reprova)',
       (await syncStatus(B, CONV_COMPART)) === 'pausado', await syncStatus(B, CONV_COMPART));
-    await c.query(M47);
+    await refazer47();
   }
   {
     // Vazamento clássico: o join de conversas sem `tenant_id`.
@@ -604,7 +619,7 @@ try {
     chk('S6 sem ele, A enxerga a conversa de B com o mesmo id (o teste reprova)',
       vaz.length !== 1 || vaz.some((l) => l.conversa_pausada === true),
       `${vaz.length} linha(s): ${JSON.stringify(vaz.map((l) => l.conversa_pausada))}`);
-    await c.query(M47);
+    await refazer47();
   }
   {
     // A constraint sai da migração. Precisa do rollback antes, senão ela já
@@ -620,7 +635,7 @@ try {
       check (status <> 'pausado' or motivo_pausa is not null);
   end if;`, '');
     sus('S7 mutação entrou (a constraint saiu da migração)', entrou);
-    await c.query(R47);
+    await desfazer47();
     const r = await tentar(sql);
     sus('S7 a versão sabotada aplica', r.erro === null, r.erro ?? '');
     const existe = (await c.query(
@@ -631,8 +646,8 @@ try {
       `insert into public.conversas (tenant_id, conversation_id, status, pausado_em)
        values ($1, 4741, 'pausado', now())`, [A]);
     chk('S7 sem ela, pausa sem motivo ENTRA (o teste reprova)', passou.erro === null, passou.erro ?? '');
-    await c.query(R47);
-    await c.query(M47);
+    await desfazer47();
+    await refazer47();
   }
   {
     /*
@@ -652,11 +667,11 @@ try {
       'alter table public.tenants alter column pausa_expira_minutos set not null;');
     sus('S8 mutação entrou (voltou o `update public.tenants`)',
       entrou && sql.includes('update public.tenants set pausa_expira_minutos = 30'));
-    await c.query(R47);
+    await desfazer47();
     const r = await tentar(sql);
     chk('S8 com o `update`, o guard DERRUBA a migração sem claim (o teste reprova)',
       r.erro !== null && r.codigo === '42501', `${r.codigo ?? '(aplicou)'}: ${r.erro ?? ''}`);
-    await c.query(M47);
+    await refazer47();
   }
 } catch (e) {
   falhas.push(`exceção não prevista: ${e.message}`);

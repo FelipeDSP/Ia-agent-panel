@@ -1000,20 +1000,28 @@ w.connections['Mensagem Pronta'] = { main: [cx('Sync Conversa')] };
 // pausadas la. Sem aquele conserto, este portao faria o painel tender a escolher
 // justamente a conversa em atendimento para testar time.
 
-const PORTAO_NOS = ['Consulta Pausa', 'Nao Pausada?', 'Humano Atende (ignora)'];
+const PORTAO_NOS = ['Consulta Pausa', 'Nao Pausada?', 'Humano Atende (ignora)',
+  'Anomalia?', 'Notifica Anomalia WAHA'];
 for (const nome of [...PORTAO_NOS, 'Nao Pausado?']) {
   w.nodes = w.nodes.filter((n) => n.name !== nome);
   delete w.connections[nome];
 }
 
-// A funcao e da migracao 48. Nome dizendo o que faz: `api_n8n_pode_transcrever`
-// tambem devolve `conversa_pausada` e ate respeita a janela, mas uma funcao
-// chamada "pode transcrever" respondendo "a conversa esta pausada?" e a mentira
-// de nome que este repo vem limpando.
+// A funcao era `api_n8n_conversa_pausada` (migracao 48) e passou a ser
+// `api_n8n_portao_mensagem` (migracao 53), que faz TRES coisas na mesma ida ao
+// banco: teto de consumo do tenant, pausa vigente, e pausa por anomalia quando a
+// conversa esta repetindo. A antiga continua existindo e STABLE, para quem so le.
+//
+// A 53 nao virou no novo por capricho: aquela funcao e STABLE (o planner pode
+// cachear o resultado dentro da mesma query) e a checagem de anomalia ESCREVE.
+// Uma funcao chamada "conversa_pausada" gravando pausa seria nome dizendo uma
+// coisa e efeito fazendo outra — a doenca do `Conversa Ativa?` que este portao
+// matou.
 w.nodes.push({
   parameters: {
     operation: 'executeQuery',
-    query: 'SELECT public.api_n8n_conversa_pausada($1::uuid, $2::bigint) AS pausada;',
+    query: 'SELECT pausada, motivo, anomalia, sessao, destino, mensagem\n'
+         + 'FROM public.api_n8n_portao_mensagem($1::uuid, $2::bigint);',
     options: {
       queryReplacement:
         "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id ] }}",
@@ -1025,9 +1033,10 @@ w.nodes.push({
   name: 'Consulta Pausa',
   id: idDe('consulta-pausa'),
   notes:
-    'Portao unico de pausa, antes do Roteia Acao. Ate 21/08 so o ramo processar era protegido, e ' +
-    'midia e bloqueado falavam por cima do atendimento humano. A regra NAO esta aqui: a funcao ' +
-    'delega a public.pausa_vigente (migracao 47), que tem os outros leitores.',
+    'Portao unico, antes do Roteia Acao. Ate 21/08 so o ramo processar era protegido, e midia e ' +
+    'bloqueado falavam por cima do atendimento humano. A regra NAO esta aqui: a funcao delega a ' +
+    'public.pausa_vigente (migracao 47), que tem os outros leitores. Devolve SEMPRE uma linha — ' +
+    'zero linhas pararia o fluxo em silencio e o agente nunca responderia.',
   notesInFlow: true,
 });
 
@@ -1055,14 +1064,67 @@ w.nodes.push({
   name: 'Humano Atende (ignora)',
   id: idDe('humano-atende-ignora'),
   notes:
-    'Fim de linha esperado: alguem esta atendendo esta conversa. Nao e erro. A pausa caduca sozinha ' +
-    'pela janela do tenant (tenants.pausa_expira_minutos) e a proxima mensagem volta a passar.',
+    'Fim de linha esperado: nao e erro. Pausa por mensagem humana caduca sozinha pela janela do ' +
+    'tenant (tenants.pausa_expira_minutos). Pausa MANUAL e pausa por ANOMALIA nao caducam — ' +
+    'so voltam pelo painel. Ver `motivo` do Consulta Pausa para saber qual das tres.',
+  notesInFlow: true,
+});
+
+// ---------------------------------------------------------------------------
+// Aviso de anomalia (migracao 53)
+// ---------------------------------------------------------------------------
+// FORA DO CAMINHO QUENTE, de proposito: pendura no ramo que ja parava. Mensagem
+// normal nao passa por aqui.
+//
+// `anomalia` vem true SO NA TRANSICAO — a pausa e o proprio claim, entao a
+// segunda mensagem da mesma conversa ja volta false e ninguem recebe dois
+// avisos. Nao precisa da mecanica de reserva que a 52 usa em pedidos.
+w.nodes.push(ifNo('Anomalia?', [
+  {
+    id: 'anomalia',
+    leftValue: "={{ $('Consulta Pausa').first().json.anomalia === true }}",
+    rightValue: true,
+    operator: { type: 'boolean', operation: 'true', singleValue: true },
+  },
+], [3136, 5312],
+  'Pausa por anomalia ACABOU de acontecer nesta mensagem. Le do no por NOME e nao de $json, ' +
+  'porque o NoOp no meio nao carrega as colunas.'));
+
+w.nodes.push({
+  parameters: {
+    resource: 'Chatting',
+    operation: 'Send Text',
+    session: "={{ $('Consulta Pausa').first().json.sessao }}",
+    chatId: "={{ $('Consulta Pausa').first().json.destino }}",
+    // Texto PRONTO do banco. Montar aqui poria a redacao numa expressao que
+    // nenhum teste alcanca; no SQL ela e medida (npm run teste:anti-loop).
+    text: "={{ $('Consulta Pausa').first().json.mensagem }}",
+    requestOptions: {},
+  },
+  type: '@devlikeapro/n8n-nodes-waha.WAHA',
+  typeVersion: 202502,
+  position: [3360, 5312],
+  name: 'Notifica Anomalia WAHA',
+  id: idDe('notifica-anomalia'),
+  credentials: { wahaApi: { id: 'gx2yKmYvYBBJ2Yhl', name: 'WAHA account' } },
+  // A conversa JA foi pausada quando isto roda. Falhar aqui nao pode desfazer
+  // nada nem sujar a execucao: o dano que importava ja foi evitado.
+  onError: 'continueRegularOutput',
+  notes:
+    'Canal do transferir_humano, reusado: e o mesmo recado ("um humano precisa olhar esta ' +
+    'conversa") e esta preenchido em 4 tenants, enquanto vendas.config esta {} nos quatro. ' +
+    'Sem destino configurado a funcao devolve destino nulo e o IF anterior nao chega aqui. ' +
+    'O aviso do TETO de consumo NAO passa por aqui — fica em alertas_consumo, que e da agencia.',
   notesInFlow: true,
 });
 
 w.connections['Tenant Valido?'] = { main: [cx('Consulta Pausa'), []] };
 w.connections['Consulta Pausa'] = { main: [cx('Nao Pausada?')] };
 w.connections['Nao Pausada?'] = { main: [cx('Roteia Acao'), cx('Humano Atende (ignora)')] };
+w.connections['Humano Atende (ignora)'] = { main: [cx('Anomalia?')] };
+// Saida falsa VAZIA e o fim de linha correto aqui: pausa que ja existia nao
+// gera aviso nenhum.
+w.connections['Anomalia?'] = { main: [cx('Notifica Anomalia WAHA'), []] };
 
 // O `Nao Pausado?` morreu com o portao: era o mesmo teste, tarde demais e so
 // para um ramo. O `Sync Conversa` passa a ligar direto no `Acumula Mensagem`.

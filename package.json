@@ -65,7 +65,8 @@
     "teste:busca-sem-acento": "node --env-file=.env.local tests/migracao-busca-sem-acento.mjs",
     "teste:conversas-painel": "node --env-file=.env.local tests/migracao-conversas-painel.mjs",
     "teste:views-invoker": "node tests/views-security-invoker.mjs",
-    "teste:notificar-venda": "node --env-file=.env.local tests/migracao-notificar-venda.mjs"
+    "teste:notificar-venda": "node --env-file=.env.local tests/migracao-notificar-venda.mjs",
+    "teste:anti-loop": "node --env-file=.env.local tests/migracao-anti-loop.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

@@ -25,4 +25,13 @@ begin;
 drop function if exists public.api_n8n_notificar_venda(uuid, bigint, integer);
 drop function if exists public.api_n8n_confirmar_notificacao(uuid, uuid, boolean, text);
 
+-- `contato_exibivel` sai POR ULTIMO e so aqui: a migracao 53 tambem a usa. Se a
+-- 53 estiver aplicada, este rollback quebra a pausa por anomalia -- rollback e
+-- na ordem inversa, 53 antes de 52. O `drop` sem `cascade` recusa se houver
+-- dependencia registrada; nao havera, porque plpgsql e late-binding e
+-- `pg_depend` fica vazio (ver CLAUDE.md). Ou seja: NADA vai avisar. Confira com
+--   select p.proname from pg_proc p where p.prosrc ilike '%contato_exibivel%';
+-- antes de rodar.
+drop function if exists public.contato_exibivel(text);
+
 commit;
