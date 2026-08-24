@@ -80,6 +80,45 @@ try {
   const A = (await c.query("select id from public.tenants where slug='restaurante-teste'")).rows[0];
   const B = (await c.query("select id from public.tenants where slug='sandbox-de-testes'")).rows[0];
 
+  /* -----------------------------------------------------------------------
+   * ARRANJA A CREDENCIAL, em vez de contar com ela.
+   *
+   * `api_n8n_enviar_foto` devolve `chatwoot_url` + `chatwoot_token` quando
+   * permite, e a asserção lá embaixo exige os dois. Só que o token mora em
+   * `tenant_credenciais` desde a migração 21, e conectar/desconectar um cliente
+   * do Chatwoot é operação normal do painel — há `teste:desconectar-chatwoot`
+   * provando que funciona. Em 24/08/2026 este teste ficou vermelho porque
+   * ALGUÉM USOU O PRODUTO: dos 8 tenants vivos, 3 tinham token, e o
+   * `restaurante-teste` não era um deles.
+   *
+   * É o décimo caso da série "afirme PROPRIEDADE, não estado do mundo" — e no
+   * mesmo arquivo que já produziu o oitavo. Aquela varredura procurou
+   * "afirmação sobre contratação" e esta linha, que é "afirmação sobre estado",
+   * passou por baixo.
+   *
+   * Tudo dentro da transação abortada; nada disto sobrevive ao rollback.
+   * --------------------------------------------------------------------- */
+  await c.query(
+    `insert into public.tenant_credenciais (tenant_id, chatwoot_token)
+     values ($1, 'token-arranjado-pelo-teste')
+     on conflict (tenant_id) do update set chatwoot_token = excluded.chatwoot_token`,
+    [A.id]);
+  // `chatwoot_url` mora em `tenants`, e `trg_tenants_guard_colunas` recusaria
+  // coluna fora da whitelist — mas a claim de super_admin já está ligada desde a
+  // linha 74, para a transação inteira. NÃO dê `reset` nela aqui: a primeira
+  // versão deste arranjo setava e resetava a claim, e o `reset` derrubou a do
+  // topo, quebrando o `insert` de `tenant_tools` trinta linhas abaixo.
+  await c.query(`update public.tenants set chatwoot_url = 'https://chatwoot.arranjado.teste' where id = $1`, [A.id]);
+
+  // Confirme que a mutação entrou antes de acreditar no resultado.
+  const arranjo = (await c.query(
+    `select t.chatwoot_url, cr.chatwoot_token
+       from public.tenants t left join public.tenant_credenciais cr on cr.tenant_id = t.id
+      where t.id = $1`, [A.id])).rows[0];
+  chk('arranjo: o tenant A tem url e token de Chatwoot (o teste os criou)',
+    Boolean(arranjo.chatwoot_url) && arranjo.chatwoot_token === 'token-arranjado-pelo-teste',
+    JSON.stringify(arranjo));
+
   const enviar = async (tenantId, produtoId, conv = CONV) =>
     (await c.query('select * from public.api_n8n_enviar_foto($1,$2,$3)', [tenantId, conv, produtoId])).rows[0];
 

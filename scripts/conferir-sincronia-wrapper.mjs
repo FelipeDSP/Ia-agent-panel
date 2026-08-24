@@ -130,7 +130,11 @@ let refs = 0;
 for (const n of w.nodes) {
   if (nomesAgents.includes(n.name)) continue;
   const txt = n.name === 'Estima Tokens'
-    ? (n.parameters.jsCode ?? '').split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')
+    // `split(/\r?\n/)` e nao `split('\n')`: ver a nota do CLAUDE.md sobre CRLF.
+    // Aqui o `trim()` do filtro ja comia o `\r` e a checagem funcionava por
+    // ACIDENTE — protecao por acidente e a mesma coisa que nao estar protegido,
+    // porque some na primeira vez que alguem trocar o filtro.
+    ? (n.parameters.jsCode ?? '').split(/\r?\n/).filter((l) => !l.trim().startsWith('//')).join('\n')
     : JSON.stringify(n.parameters ?? {});
   for (const alvo of ['AI Agent', ...nomesAgents]) {
     if (txt.includes(`$('${alvo}')`)) { refs++; console.log(`        [${n.name}] referencia $('${alvo}')`); }
@@ -328,7 +332,7 @@ console.log('\n  -- 10. modulo de audio: convergencia e travas --');
   // nome — e uma primeira versao desta checagem passou numa sabotagem por casar
   // com o comentario em vez do codigo.
   const mpCodigo = (mp?.parameters?.jsCode ?? '')
-    .split('\n')
+    .split(/\r?\n/)                       // CRLF: ver a nota no sitio acima
     .filter((l) => !l.trim().startsWith('//'))
     .join('\n');
   checar('Mensagem Pronta le o texto por NOME, nao do $input',

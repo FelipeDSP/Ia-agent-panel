@@ -79,6 +79,33 @@ chk(`o banco devolveu colunas bigint/numeric para varrer (${colunas.length})`, c
 /** O arquivo lê do banco por `pg` (string) ou por supabase-js (JSON/número)? */
 const usaPg = (src) => /from ['"]pg['"]|require\(['"]pg['"]\)/.test(src);
 
+/**
+ * Divide o fonte em linhas E tira o comentário de cada uma. UMA função, usada
+ * pela varredura E pela sabotagem — antes eram duas cópias do mesmo `replace`, e
+ * é por isso que a sabotagem seguia verde enquanto a varredura estava cega.
+ *
+ * `split(/\r?\n/)` E NÃO `split('\n')`: este repo oscila entre CRLF e LF
+ * (`core.autocrlf=true` no git do sistema, sem `.gitattributes`), e com
+ * `split('\n')` sobra um `\r` no fim de cada linha. Em JavaScript **`.` não casa
+ * `\r`** — `\r` é terminador de linha para a engine de regex —, então
+ * `/\/\/.*$/` não acha onde ancorar e NÃO TIRA COMENTÁRIO NENHUM:
+ *
+ *     /\/\/.*$/.test('  // x')     -> true
+ *     /\/\/.*$/.test('  // x\r')   -> false
+ *
+ * Foi exatamente assim que este arquivo passou a acusar o PRÓPRIO comentário da
+ * linha que explica a armadilha. Ninguém editou nada: o git mudou o fim de
+ * linha e a guarda morreu sem aparecer em diff. Ver
+ * docs/PENDENCIA-AUTOCASAMENTO-CRLF.md.
+ *
+ * O `\r$` continua sendo removido aqui de propósito, mesmo já não sobrando
+ * nenhum depois do split: assim a função está certa qualquer que seja o caller.
+ */
+const linhasDeCodigo = (src) => src.split(/\r?\n/).map((linha) => linha
+  .replace(/\r$/, '')
+  .replace(/\/\/.*$/, '')
+  .replace(/\/\*.*?\*\//g, ''));
+
 const achados = [];
 let arquivosPg = 0;
 
@@ -99,12 +126,10 @@ for (const pasta of PASTAS) {
     const src = fs.readFileSync(arq, 'utf8');
     if (!usaPg(src)) continue;
     arquivosPg++;
-    const linhas = src.split('\n');
-    linhas.forEach((linha, i) => {
-      // Comentário não é código. Sem isto, a própria explicação deste teste
-      // (que cita `chatwoot_account_id === 912345`) viraria achado — já houve
-      // regex casando com comentário neste repositório.
-      const semComentario = linha.replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, '');
+    // Comentário não é código. Sem isto, a própria explicação deste teste
+    // (que cita a coluna com um número ao lado) viraria achado — e virou, entre
+    // o dia em que o arquivo passou para CRLF e 24/08/2026.
+    linhasDeCodigo(src).forEach((semComentario, i) => {
       if (!semComentario.trim() || semComentario.trim().startsWith('*')) return;
       for (const col of colunas) {
         if (!semComentario.includes(col)) continue;
@@ -153,11 +178,37 @@ chk('nenhuma comparação estrita entre coluna bigint/numeric e número, em arqu
     `(${alvo}\\s*(?:!==|===)\\s*(?:Number\\(|-?\\d))`
     + `|((?:^|[^\\w.])-?\\d[\\d_.]*\\s*(?:!==|===)\\s*[\\w.\\[\\]?]*${alvo})`,
   );
-  const casou = sintetico.map((l) => re.test(l.replace(/\/\/.*$/, '')));
+  // Passa pela MESMA `linhasDeCodigo` da varredura. Antes esta sabotagem tinha a
+  // sua própria cópia do `replace`, e foi por isso que ela continuou verde
+  // enquanto a varredura de verdade estava cega.
+  const casou = linhasDeCodigo(sintetico.join('\n')).map((l) => re.test(l));
   chk('sabotagem: pega `col === 12345`', casou[0] === true);
   chk('sabotagem: pega `33180 !== ...col`', casou[1] === true);
   chk('sabotagem: IGNORA a mesma coisa dentro de comentário', casou[2] === false);
   chk('sabotagem: NÃO acusa o conserto (`String(a) === String(b)`)', casou[3] === false);
+
+  /* ---------------------------------------------------------------------
+   * A SABOTAGEM QUE FALTAVA: o MESMO fonte nos DOIS fins de linha.
+   *
+   * A sabotagem acima já existia e já checava "ignora dentro de comentário" —
+   * e passou verde durante todo o tempo em que a varredura estava quebrada,
+   * porque ela montava o texto com `\n` e o repositório estava em CRLF. Uma
+   * sabotagem que só roda num fim de linha não mede um varredor de arquivos
+   * deste repo: metade dele está em CRLF a qualquer momento.
+   * ------------------------------------------------------------------- */
+  const emLf = linhasDeCodigo(sintetico.join('\n'));
+  const emCrlf = linhasDeCodigo(sintetico.join('\r\n'));
+  chk('CRLF: o fonte em \\r\\n produz as MESMAS linhas de código que em \\n',
+    JSON.stringify(emLf) === JSON.stringify(emCrlf),
+    `LF=${JSON.stringify(emLf)}  CRLF=${JSON.stringify(emCrlf)}`);
+  chk('CRLF: o comentário continua sendo ignorado com \\r no fim',
+    re.test(emCrlf[2]) === false, JSON.stringify(emCrlf[2]));
+  // Contraprova do mecanismo, para a asserção acima não passar por acaso: a
+  // forma ANTIGA (split cru + replace ancorado) falha sob CRLF. Se um dia isto
+  // ficar `false`, a engine mudou e este comentário está velho.
+  chk('CRLF: contraprova — a forma antiga (`split(\'\\n\')`) DEIXA o comentário passar',
+    re.test(sintetico.join('\r\n').split('\n')[2].replace(/\/\/.*$/, '')) === true,
+    'se isto falhar, `.` passou a casar `\\r` e a nota do cabeçalho precisa mudar');
 }
 
 console.log('\n' + '-'.repeat(60));
