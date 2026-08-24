@@ -59,6 +59,7 @@
     "teste:mutacao-sem-erro": "node tests/mutacao-sem-erro.mjs",
     "teste:times-chatwoot": "node --import ./tests/lib/ts.mjs tests/times-chatwoot.mjs",
     "teste:pausa": "node tests/pausa-roteamento.mjs",
+    "teste:portao": "node tests/presenca-do-portao.mjs",
     "teste:filtro-saida": "node tests/filtro-saida.mjs",
     "teste:saida-cortes": "node --env-file=.env.local tests/migracao-saida-cortes.mjs",
     "teste:retomada-pausa": "node --env-file=.env.local tests/migracao-retomada-pausa.mjs",

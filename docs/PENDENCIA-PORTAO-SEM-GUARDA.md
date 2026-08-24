@@ -1,10 +1,11 @@
 # Pendência — nenhuma guarda percebe se o portão de pausa sumir do workflow
 
-**Estado:** medido em 2026-08-24. **Nada quebrado hoje** — o portão está lá, com
-os 60 nós. O que falta é o alarme.
+**Estado: RESOLVIDO em 2026-08-24**, no mesmo dia, antes do import.
+`npm run teste:portao` (`tests/presenca-do-portao.mjs`) faz a asserção, e as
+quatro sabotagens deste documento reprovam nele.
 
-**Gatilho:** antes do próximo import do `agente-principal.json`. É exatamente o
-momento em que o arquivo pode voltar para uma versão velha sem ninguém notar.
+Fica registrado porque o **modo de descoberta** vale mais que o conserto: o
+buraco existia desde a migração 48 e três verificações verdes o escondiam.
 
 ## O experimento
 
@@ -56,7 +57,7 @@ Duas lições, e a segunda é a que fica:
 2. **guarda de conteúdo não substitui guarda de presença.** Todas as três
    verificam o que existe. Nenhuma tem uma lista do que **precisa** existir.
 
-## A saída provável
+## A saída — feita, e por CAMINHO e não por nó
 
 Um teste que afirme a PRESENÇA e a FIAÇÃO dos nós que carregam invariante de
 segurança, e não a lista inteira de 60 — lista completa vira ruído a cada nó novo.
@@ -70,9 +71,24 @@ o dano é silencioso"):
 | `Tenant Valido?` → `Consulta Pausa` | o portão vem ANTES do `Roteia Acao`, senão só protege um ramo |
 | `Fala com o Cliente?` saída falsa | mesmo modo de falha, do outro lado |
 
-E a sabotagem que prova o teste é a deste documento: **remover o portão e exigir
-vermelho**. Se ela não derrubar, o teste novo está medindo o que as três atuais
-já medem.
+**A asserção central acabou não sendo presença, e sim uma propriedade de GRAFO:**
+removendo `Nao Pausada?` do grafo, `Roteia Acao` tem de ficar INALCANÇÁVEL a
+partir do `Webhook`. Isso é dizer que o portão está em TODO caminho, e não num
+deles — nó órfão não satisfaz, desvio paralelo não satisfaz, e a propriedade
+sobrevive a alguém acrescentar nós no meio.
+
+"O nó existe" seria fraco demais: o portão pode estar presente e DESCONECTADO,
+que é exatamente o modo de falha do `E Humano ou Dispositivo?` — nó lá, saída
+solta, meses em produção sem pausar ninguém.
+
+As quatro sabotagens que o teste carrega, e o que cada uma prova:
+
+| | o que faz | por que existe |
+|---|---|---|
+| S1 | remove os 5 nós do portão | o experimento deste documento |
+| S2 | mantém os 5 nós e liga `Tenant Valido?` direto no `Roteia Acao` | **presente e desconectado** — e o teste tem de acusar DESVIO, não "ausente" |
+| S3 | deixa a saída falsa do `Nao Pausada?` vazia | o corte continua satisfeito; é por isso que as arestas nomeadas existem além dele |
+| S4 | mantém tudo e troca a query por `select true` | nó presente, ligado, consultando outra coisa passaria em todo o resto |
 
 ## O que NÃO é este item
 
