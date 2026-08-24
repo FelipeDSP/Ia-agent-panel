@@ -328,6 +328,14 @@ revoke all on function public.api_n8n_notificar_venda(uuid, bigint, integer)
   from public, anon, authenticated;
 revoke all on function public.api_n8n_confirmar_notificacao(uuid, uuid, boolean, text)
   from public, anon, authenticated;
+-- `contato_exibivel` entra na mesma disciplina, e faltou na primeira aplicacao
+-- desta migracao (24/08). NAO era vazamento — a funcao e pura, recebe um texto e
+-- devolve outro, sem tocar no banco: `anon` executando nao descobre nada que nao
+-- tivesse. Mas ficava `{=X/postgres, anon=X, authenticated=X}` enquanto a irma
+-- `texto_normalizado` (mesma natureza, migracao 53) ficava fechada. Inconsistencia
+-- e o que faz a proxima pessoa achar que o padrao e "as vezes".
+revoke all on function public.contato_exibivel(text)
+  from public, anon, authenticated;
 
 -- `service_role` e o role do PostgREST/supabase-js. O n8n NAO passa por ali:
 -- ele conecta como `n8n_agent`, e essa e a linha que o agente usa em toda
@@ -338,6 +346,8 @@ grant execute on function public.api_n8n_notificar_venda(uuid, bigint, integer) 
 grant execute on function public.api_n8n_notificar_venda(uuid, bigint, integer) to n8n_agent;
 grant execute on function public.api_n8n_confirmar_notificacao(uuid, uuid, boolean, text) to service_role;
 grant execute on function public.api_n8n_confirmar_notificacao(uuid, uuid, boolean, text) to n8n_agent;
+grant execute on function public.contato_exibivel(text) to service_role;
+grant execute on function public.contato_exibivel(text) to n8n_agent;
 
 comment on function public.api_n8n_notificar_venda(uuid, bigint, integer) is
   'Reserva a notificacao de uma venda recem-fechada e devolve o texto pronto. '

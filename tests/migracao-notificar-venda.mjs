@@ -155,12 +155,23 @@ try {
        where ns.nspname = 'public' and p.proname = 'contato_exibivel'`)).rows[0].n === 1);
 
   console.log('\n-- 2. Grants: os DOIS roles, e nenhum a mais --\n');
+  /*
+   * TODAS as funções que a migração cria, e não só as `api_n8n_*`. A primeira
+   * aplicação em produção (24/08) deixou `contato_exibivel` com
+   * `{=X/postgres, anon=X, authenticated=X}` porque o laço de conferência —
+   * aqui e no script de apply — filtrava por prefixo. Não era vazamento (a
+   * função é pura, recebe texto e devolve texto, não toca no banco), mas ficava
+   * diferente da irmã `texto_normalizado`, e inconsistência é o que faz a
+   * próxima pessoa achar que o padrão é "às vezes".
+   */
   const acls = (await c.query(
     `select p.proname, coalesce(p.proacl::text, '(default)') acl
        from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
       where ns.nspname = 'public'
-        and p.proname in ('api_n8n_notificar_venda', 'api_n8n_confirmar_notificacao')
+        and p.proname in ('api_n8n_notificar_venda', 'api_n8n_confirmar_notificacao', 'contato_exibivel')
       order by p.proname`)).rows;
+  sus('a conferência de ACL cobre as TRÊS funções da migração, não só as api_n8n_*',
+    acls.length === 3, `${acls.length}`);
   acls.forEach((r) => console.log(`      ${r.proname}: ${r.acl}`));
   /*
    * Não basta conferir os roles que EU escrevi — isso é auto-confirmação, e foi

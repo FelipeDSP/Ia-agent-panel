@@ -2,6 +2,25 @@
 -- 53. Protecao anti-loop: pausa por anomalia (B) + teto de consumo (C)
 -- =====================================================================
 --
+-- >>> NAO APLIQUE ESTA MIGRACAO SEM A 52 APLICADA ANTES. <<<
+--
+-- Ela CHAMA `public.contato_exibivel(text)`, que e criada na migracao 52
+-- (20260824120000_52_notificar_venda.sql). Sem a 52, esta aqui APLICA SEM
+-- RECLAMAR e depois falha em runtime, no caminho quente, com
+-- `42883: function public.contato_exibivel(text) does not exist` — na primeira
+-- conversa que entrar em anomalia, e nao no dia do apply. plpgsql e
+-- late-binding: o corpo e uma string resolvida na execucao, e `pg_depend` fica
+-- vazio, entao NADA no banco vai avisar (mesma mecanica das extensoes, ver
+-- CLAUDE.md).
+--
+-- Confira antes:
+--   select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--    where n.nspname = 'public' and p.proname = 'contato_exibivel';   -- tem de ser 1
+--
+-- E o rollback e na ordem INVERSA: 53 antes de 52. O rollback da 52 dropa o
+-- `contato_exibivel` e quebra esta aqui do mesmo jeito silencioso.
+--
+-- ---------------------------------------------------------------------
 -- O QUE ACONTECEU, E POR QUE NAO E ACIDENTE ISOLADO
 --
 -- Entre 21 e 24/08/2026 a conversa 20 do `emporio` trocou 5.624 mensagens

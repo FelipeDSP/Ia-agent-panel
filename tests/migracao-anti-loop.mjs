@@ -236,7 +236,26 @@ try {
   console.log('\n== Migração 53: proteção anti-loop ==\n');
 
   console.log('-- 1. Estado de ANTES, e as duas migrações --\n');
-  sus('a 53 ainda não está em produção', fnAntesDeTudo === 0, `${fnAntesDeTudo}`);
+  /*
+   * ARRANJA o estado de antes, em vez de afirmar que ele existe.
+   *
+   * A primeira versão desta linha era `sus('a 53 ainda não está em produção',
+   * fnAntesDeTudo === 0)` — verdade quando foi escrita, FALSA quatro horas
+   * depois, quando a migração foi aplicada. Estado do mundo, não propriedade;
+   * é o defeito que a `migracao-foto-agente.mjs` cometeu com `foto_produto` e
+   * que está escrito no CLAUDE.md. Teste que fica vermelho porque o sistema
+   * funcionou é a forma mais rápida de todo mundo parar de olhar a suíte.
+   *
+   * A forma que não envelhece: rodar o ROLLBACK aqui dentro da transação
+   * abortada. Ele é idempotente, então põe o banco no estado pré-53 tendo a 53
+   * sido aplicada ou não.
+   */
+  await c.query(R53);
+  sus('o rollback deixou o banco no estado pré-53 (portão ausente)',
+    (await existeFn('api_n8n_portao_mensagem')) === 0);
+  console.log(`  (53 no ledger: ${(await c.query(
+    `select 1 from supabase_migrations.schema_migrations where name = '53_anti_loop'`)).rowCount
+    ? 'sim — desfeita aqui dentro' : 'ainda não'})`);
   // A 53 usa `contato_exibivel`, que é da 52. A ordem de aplicação é essa, e o
   // teste replaya a CADEIA — replayar um elo sozinho já deixou este repo
   // vermelho por três dias (migração 32 x 37).
@@ -249,14 +268,26 @@ try {
   chk('e `texto_normalizado` também', (await existeFn('texto_normalizado')) === 1);
 
   console.log('\n-- 2. Grants e ACL --\n');
-  const acl = (await c.query(
-    `select coalesce(p.proacl::text, '(default)') a from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
-      where ns.nspname = 'public' and p.proname = 'api_n8n_portao_mensagem'`)).rows[0].a;
-  console.log(`      portão: ${acl}`);
-  chk('portão executável por service_role', /service_role=X/.test(acl), acl);
-  chk('portão executável por n8n_agent', /n8n_agent=X/.test(acl), acl);
-  chk('portão NÃO deixou EXECUTE para PUBLIC', !/\{=X\//.test(acl), acl);
-  chk('portão NÃO abriu para anon', !/(^|,|\{)anon=X/.test(acl), acl);
+  /*
+   * AS DUAS funções da migração, e não só a `api_n8n_*`. Conferir por prefixo
+   * deixou `contato_exibivel` (migração 52) aberta para PUBLIC/anon na primeira
+   * aplicação em produção — não era vazamento, mas era inconsistência que
+   * nenhuma checagem veria.
+   */
+  const acls53 = (await c.query(
+    `select p.proname, coalesce(p.proacl::text, '(default)') a
+       from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace
+      where ns.nspname = 'public' and p.proname in ('api_n8n_portao_mensagem', 'texto_normalizado')
+      order by p.proname`)).rows;
+  acls53.forEach((r) => console.log(`      ${r.proname}: ${r.a}`));
+  sus('a conferência cobre as DUAS funções da migração', acls53.length === 2, `${acls53.length}`);
+  for (const f of acls53) {
+    chk(`${f.proname} executável por service_role`, /service_role=X/.test(f.a), f.a);
+    chk(`${f.proname} executável por n8n_agent`, /n8n_agent=X/.test(f.a), f.a);
+    chk(`${f.proname} NÃO deixou EXECUTE para PUBLIC`, !/\{=X\//.test(f.a), f.a);
+    chk(`${f.proname} NÃO abriu para anon`, !/(^|,|\{)anon=X/.test(f.a), f.a);
+  }
+  const acl = acls53.find((f) => f.proname === 'api_n8n_portao_mensagem').a;
 
   const aclTab = (await c.query(`select relacl::text a from pg_class where relname = 'alertas_consumo'`)).rows[0].a;
   console.log(`      alertas_consumo: ${aclTab}`);
