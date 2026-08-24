@@ -63,7 +63,9 @@
     "teste:retomada-pausa": "node --env-file=.env.local tests/migracao-retomada-pausa.mjs",
     "teste:conversa-pausada": "node --env-file=.env.local tests/migracao-conversa-pausada.mjs",
     "teste:busca-sem-acento": "node --env-file=.env.local tests/migracao-busca-sem-acento.mjs",
-    "teste:conversas-painel": "node --env-file=.env.local tests/migracao-conversas-painel.mjs"
+    "teste:conversas-painel": "node --env-file=.env.local tests/migracao-conversas-painel.mjs",
+    "teste:views-invoker": "node tests/views-security-invoker.mjs",
+    "teste:notificar-venda": "node --env-file=.env.local tests/migracao-notificar-venda.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

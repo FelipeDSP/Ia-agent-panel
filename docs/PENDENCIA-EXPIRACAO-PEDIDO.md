@@ -50,6 +50,15 @@ A saída provável é uma coluna própria — `aguardando_desde`, escrita só po
 `fechar_pedido` — e a expiração passar a compará-la. Mas isso é migração, e não é
 o escopo deste registro.
 
+**Quem escreve em `pedidos` hoje, e portanto mexe no relógio:** `fechar_pedido`,
+`adicionar_item`/`remover_item` (via total), `cancelar_pedido`,
+`expirar_pedidos_vencidos` e — a partir da migração 52 — o claim da notificação
+de venda (`api_n8n_notificar_venda` e `api_n8n_confirmar_notificacao`, que
+gravam em `metadados.notificacao`). O desvio da 52 é de **segundos**, medido pelo
+`npm run teste:notificar-venda`, porque o claim roda logo depois do fechamento;
+mas a lista é o argumento: cada novo escritor de `pedidos` vira um novo
+adiador da expiração, calado, e isso só para com a coluna própria.
+
 ## Defeito 2 — a expiração é PREGUIÇOSA, como a da pausa
 
 `expirar_pedidos_vencidos` só roda **de dentro** de `pedido_aberto_da_conversa` e
