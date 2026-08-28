@@ -22,9 +22,29 @@ const body   = $json.body || {};
 const sender = body.sender || {};
 const conv   = body.conversation || {};
 
+// `chatwoot_inbox_id` entra aqui na migracao 54: o roteamento deixou de ser por
+// CONTA e passou a ser pelo PAR (conta, caixa), porque o bot do Chatwoot e ligado
+// a uma inbox e nao a conta — dois agentes do mesmo cliente cabem em duas caixas
+// da mesma conta.
+//
+// AS DUAS FONTES, e por que nesta ordem. Confirmado em payload real de
+// `message_created`, o inbox aparece em tres lugares:
+//
+//   body.conversation.inbox_id               189
+//   body.conversation.contact_inbox.inbox_id 189
+//   body.inbox.id                            189   (+ .name "WA - Testes")
+//
+// `conversation.inbox_id` vem primeiro porque `conversation` e o objeto que todo
+// evento de mensagem carrega; `body.inbox` e o reforco. Nao ha payload
+// `outgoing` medido, e o ramo de pausa e outgoing — o `??` existe para isso.
+//
+// Nulo aqui NAO e tratado com valor de reserva de proposito: a
+// `api_n8n_tenant_por_chatwoot` estoura 22023 em caixa nula, e e o que se quer.
+// Chutar um numero faria o webhook resolver o tenant errado em silencio.
 const base = {
   conversation_id: conv.id ?? null,
   chatwoot_account_id: body.account?.id ?? null,
+  chatwoot_inbox_id: conv.inbox_id ?? body.inbox?.id ?? null,
   contact_name: sender.name || 'Cliente',
   phone: (sender.phone_number || '').replace(/\D/g, '') || null
 };

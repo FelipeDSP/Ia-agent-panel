@@ -51,7 +51,7 @@ console.log('\n== Acqua pronta para voltar? ==\n');
 // ---------------------------------------------------------------------------
 const { data: t } = await admin
   .from('tenants')
-  .select('id, nome, ativo, deletado_em, agente_ativo, chatwoot_account_id, chatwoot_url, modelo, debounce_segundos, system_prompt')
+  .select('id, nome, ativo, deletado_em, agente_ativo, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, modelo, debounce_segundos, system_prompt')
   .eq('slug', SLUG)
   .maybeSingle();
 
@@ -84,10 +84,16 @@ checar('devolve token não nulo', Boolean(linhaCred?.chatwoot_token),
   'o token vive em tenant_credenciais desde a migração 21');
 checar('devolve url e account_id', Boolean(linhaCred?.chatwoot_url) && linhaCred?.chatwoot_account_id != null);
 
-// O webhook entra por account_id, não por uuid: é o primeiro passo do fluxo.
-const { data: porConta } = await admin.rpc('api_n8n_tenant_por_chatwoot', { p_account_id: t.chatwoot_account_id });
+// O webhook entra pelo PAR (conta, caixa), não por uuid: é o primeiro passo do
+// fluxo. A migração 54 acrescentou `p_inbox_id` — este é o ÚNICO chamador da
+// função por RPC nomeada (PostgREST) no repo, então ele é o segundo consumidor
+// da assinatura e entra na varredura junto com o n8n.
+const { data: porConta } = await admin.rpc('api_n8n_tenant_por_chatwoot', {
+  p_account_id: t.chatwoot_account_id,
+  p_inbox_id: t.chatwoot_inbox_id,
+});
 const linhaConta = Array.isArray(porConta) ? porConta[0] : porConta;
-checar('api_n8n_tenant_por_chatwoot resolve a conta 56', linhaConta?.tenant_id === t.id,
+checar('api_n8n_tenant_por_chatwoot resolve o par (conta, caixa)', linhaConta?.tenant_id === t.id,
   'sem isso o webhook chega e o fluxo para no "Tenant Valido?"');
 
 // ---------------------------------------------------------------------------

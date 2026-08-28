@@ -230,6 +230,10 @@ const estadoConversa = async (t, conv) => (await c.query(
 
 await c.connect();
 const fnAntesDeTudo = await existeFn('api_n8n_portao_mensagem');
+// Quantas anomalias REAIS existem antes de o teste começar. Ver o guard do
+// `finally`: a propriedade e o DELTA, nao o valor absoluto.
+const anomAntesDeTudo = (await c.query(
+  `select count(*)::int n from public.conversas where motivo_pausa = 'anomalia'`)).rows[0].n;
 await c.query('begin');
 
 try {
@@ -249,7 +253,32 @@ try {
    * A forma que não envelhece: rodar o ROLLBACK aqui dentro da transação
    * abortada. Ele é idempotente, então põe o banco no estado pré-53 tendo a 53
    * sido aplicada ou não.
+   *
+   * MAS O ROLLBACK DA 53 É DESENHADO PARA SE RECUSAR, e por isso a linha abaixo
+   * existe. Ele falha com `23514` enquanto houver conversa em `anomalia` — de
+   * propósito, porque a alternativa seria reescrever em silêncio a pausa de uma
+   * conversa que alguém precisa olhar (está no cabeçalho dele, e a seção 8 mede
+   * exatamente essa recusa).
+   *
+   * Usar como PRIMITIVA DE ARRANJO uma operação que se recusa é o defeito. Em
+   * 25/08 a conversa 20 do `emporio` foi pausada por anomalia — a proteção da 53
+   * agindo em produção, o laço com a PresenteIA — e este teste ficou vermelho
+   * por isso, sem defeito nenhum no código. É o décimo caso da série do
+   * CLAUDE.md, e o corolário se aplica ao pé da letra: se a asserção depende de
+   * algo que uma pessoa (ou o próprio agente) pode mudar, ou o teste ARRANJA
+   * aquele algo, ou está contando com sorte.
+   *
+   * `motivo_pausa = 'manual'` é uma das duas saídas que o cabeçalho do rollback
+   * prescreve para um humano, e é a conservadora: a conversa CONTINUA pausada.
+   * Tudo isto é revertido com a transação — a conversa 20 não é tocada.
    */
+  const neutralizadas = (await c.query(
+    `update public.conversas set motivo_pausa = 'manual'
+      where motivo_pausa = 'anomalia' returning conversation_id`)).rowCount;
+  if (neutralizadas) {
+    console.log(`  (${neutralizadas} anomalia(s) real(is) neutralizada(s) DENTRO da transação,` +
+      ' para o rollback poder rodar como arranjo; revertido no fim)');
+  }
   await c.query(R53);
   sus('o rollback deixou o banco no estado pré-53 (portão ausente)',
     (await existeFn('api_n8n_portao_mensagem')) === 0);
@@ -588,10 +617,23 @@ try {
     `select count(*)::int n from public.tenants where slug like 'zz-efem-loop53-%'`)).rows[0].n;
   console.log(`  (tenants efêmeros sobrando: ${sobra})`);
   if (sobra > 0) falhas.push(`${sobra} tenant(s) efêmero(s) sobraram`);
-  const pausadasReais = (await c.query(
+  // DELTA, e não valor absoluto. A versão anterior exigia ZERO conversa em
+  // `anomalia` no banco — o que é estado do mundo: pausar por anomalia é
+  // operação NORMAL do sistema desde a 53, e a conversa 20 do `emporio` está
+  // assim desde 25/08 porque a proteção funcionou. O teste ficava vermelho por
+  // o sistema ter agido, que é a forma mais rápida de todo mundo parar de olhar
+  // a suíte.
+  //
+  // A propriedade é `o teste não ACRESCENTOU nenhuma`. O molde certo estava três
+  // linhas acima o tempo todo (`fnAntesDeTudo === depois`), escrito pela mesma
+  // pessoa na mesma sessão — ler o próprio arquivo não bastou.
+  const anomDepois = (await c.query(
     `select count(*)::int n from public.conversas where motivo_pausa = 'anomalia'`)).rows[0].n;
-  console.log(`  (conversas reais em anomalia: ${pausadasReais})`);
-  if (pausadasReais > 0) falhas.push('o teste deixou conversa real pausada por anomalia');
+  console.log(`  (conversas reais em anomalia: ${anomDepois}` +
+    ` — igual a antes: ${anomAntesDeTudo === anomDepois ? 'sim' : 'NÃO'})`);
+  if (anomDepois !== anomAntesDeTudo) {
+    falhas.push(`o teste mexeu em pausa por anomalia real: ${anomAntesDeTudo} -> ${anomDepois}`);
+  }
   await c.end();
 }
 

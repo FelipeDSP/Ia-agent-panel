@@ -68,7 +68,8 @@
     "teste:conversas-painel": "node --env-file=.env.local tests/migracao-conversas-painel.mjs",
     "teste:views-invoker": "node tests/views-security-invoker.mjs",
     "teste:notificar-venda": "node --env-file=.env.local tests/migracao-notificar-venda.mjs",
-    "teste:anti-loop": "node --env-file=.env.local tests/migracao-anti-loop.mjs"
+    "teste:anti-loop": "node --env-file=.env.local tests/migracao-anti-loop.mjs",
+    "teste:roteamento-caixa": "node --env-file=.env.local tests/migracao-roteamento-caixa.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

@@ -113,10 +113,12 @@ export function FormConfigSuper({
 export function FormChatwoot({
   tenantId,
   accountId,
+  inboxId,
   url,
 }: {
   tenantId: string;
   accountId: number | null;
+  inboxId: number | null;
   url: string;
 }) {
   const [estado, acao] = useActionState<EstadoAcao, FormData>(conectarChatwoot, {});
@@ -129,7 +131,7 @@ export function FormChatwoot({
         {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
         {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <div className="flex flex-col gap-2">
             <Label htmlFor="chatwoot_account_id">account_id</Label>
             <Input
@@ -142,10 +144,50 @@ export function FormChatwoot({
             <ErroCampo msg={estado.errosCampo?.['chatwoot_account_id']} />
           </div>
           <div className="flex flex-col gap-2">
+            <Label htmlFor="chatwoot_inbox_id">inbox_id</Label>
+            <Input
+              id="chatwoot_inbox_id"
+              name="chatwoot_inbox_id"
+              type="number"
+              min="1"
+              defaultValue={inboxId ?? ''}
+            />
+            <ErroCampo msg={estado.errosCampo?.['chatwoot_inbox_id']} />
+          </div>
+          <div className="flex flex-col gap-2">
             <Label htmlFor="chatwoot_url">URL</Label>
             <Input id="chatwoot_url" name="chatwoot_url" defaultValue={url} />
           </div>
         </div>
+
+        {/*
+          ESTA FRASE É A COMPENSAÇÃO DE UM CAMPO SEM VALIDAÇÃO, e é por isso que
+          ela nomeia a consequência em vez de descrever o campo.
+
+          O `account_id` é validado com chamada real ao Chatwoot antes de gravar
+          (restrição da Fase 3). O `inbox_id` NÃO É, e não dá para ser hoje: o
+          token guardado é de Agent Bot e a API responde 401 em
+          `/accounts/{id}/inboxes` — medido nos três tenants conectados. Então
+          errar o número aqui não produz erro nenhum: produz agente mudo.
+
+          Um rótulo neutro ("id da caixa de entrada") deixaria a pessoa achar que
+          o campo se defende sozinho, como o de cima. Ao mexer aqui, não troque
+          por descrição — a informação que falta é o que ACONTECE se errar.
+
+          Quando a pendência da validação for resolvida (o campo vira lista das
+          caixas da conta), esta frase sai junto: aviso que deixou de ser verdade
+          é a forma mais rápida de treinar todo mundo a não ler os avisos.
+        */}
+        <p className="text-sm text-muted-foreground">
+          A caixa (<code>inbox_id</code>) é o que roteia: o agente é ligado a uma caixa, não à
+          conta — por isso duas caixas da mesma conta podem ter agentes diferentes.{' '}
+          <strong className="text-foreground">
+            Este campo não é conferido contra o Chatwoot.
+          </strong>{' '}
+          Se o número estiver errado, nada dá erro aqui: o agente simplesmente para de responder
+          nessa caixa, calado. Confira em Configurações → Caixas de entrada, na URL
+          (<code>/app/accounts/&lt;conta&gt;/settings/inboxes/&lt;caixa&gt;</code>).
+        </p>
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="chatwoot_token">Token (api_access_token)</Label>

@@ -40,7 +40,7 @@ export default async function PaginaDetalheTenant({
   const { data: tenant } = await supabase
     .from('tenants')
     .select(
-      'id, nome, slug, ativo, agente_ativo, chatwoot_account_id, chatwoot_url, system_prompt, modelo, temperatura, debounce_segundos',
+      'id, nome, slug, ativo, agente_ativo, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, system_prompt, modelo, temperatura, debounce_segundos',
     )
     .eq('id', id)
     .is('deletado_em', null)
@@ -202,8 +202,14 @@ export default async function PaginaDetalheTenant({
           <CardHeader>
             <CardTitle>Chatwoot</CardTitle>
             <CardDescription>
+              {/*
+                CONTA E CAIXA JUNTAS. Desde a migração 54 o roteamento é pelo PAR:
+                dizer só a conta descreveria uma ligação que não existe sozinha, e
+                é justamente a caixa que decide qual agente responde quando duas
+                convivem na mesma conta.
+              */}
               {tenant.chatwoot_account_id
-                ? `Conectado à conta ${tenant.chatwoot_account_id}.`
+                ? `Conectado à conta ${tenant.chatwoot_account_id}, caixa ${tenant.chatwoot_inbox_id}.`
                 : 'Ainda não conectado.'}
             </CardDescription>
           </CardHeader>
@@ -211,6 +217,7 @@ export default async function PaginaDetalheTenant({
             <FormChatwoot
               tenantId={tenant.id}
               accountId={tenant.chatwoot_account_id}
+              inboxId={tenant.chatwoot_inbox_id}
               url={tenant.chatwoot_url}
             />
           </CardContent>

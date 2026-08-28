@@ -55,6 +55,12 @@ Guia prático para provisionar uma capacidade nova do agente (ex.: `agendar_hora
      - `conversation_id` → `={{ $('Extrair e Filtrar').item.json.conversation_id }}`
      - `account_id` → `={{ $('Extrair e Filtrar').item.json.chatwoot_account_id }}`
 
+     A tool **não** recebe `chatwoot_inbox_id`, e isso é de propósito: o
+     `account_id` aqui serve só para montar a URL da API do Chatwoot
+     (`/api/v1/accounts/<conta>/conversations/<id>/messages`), que é escopada
+     por CONVERSA. Quem precisa da caixa é o roteamento — os dois nós
+     `Resolve Tenant`, que já resolveram o `tenant_id` antes da tool existir.
+
 3. **Adicionar a seção no system prompt** do AI Agent, junto das outras:
    ```
    ## Ferramenta: <tool_nome>

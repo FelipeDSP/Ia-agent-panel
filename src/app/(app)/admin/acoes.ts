@@ -359,6 +359,32 @@ export async function conectarChatwoot(
     return { errosCampo: { chatwoot_account_id: 'account_id deve ser um número.' } };
   }
 
+  // A CAIXA É OBRIGATÓRIA desde a migração 54, e não é rigor: o roteamento passou
+  // a casar pelo PAR (conta, caixa), e o banco tem um CHECK bicondicional. Deixar
+  // em branco não daria "conectado sem caixa" — daria 23514 vindo do Postgres,
+  // erro de banco no lugar de mensagem de formulário.
+  //
+  // E ELA NÃO É VALIDADA CONTRA O CHATWOOT, ao contrário do account_id. Não é
+  // esquecimento: o token guardado é de Agent Bot, e a API recusa
+  // (`GET /api/v1/accounts/{id}/inboxes -> 401 "not authorized for bots"`,
+  // medido nos três tenants conectados). Então digitar a caixa errada não dá
+  // erro nenhum aqui — o agente simplesmente para de resolver aquele tenant, em
+  // silêncio. A tela diz isso em voz alta; ver `docs/PENDENCIA-CAIXA-SEM-VALIDACAO.md`
+  // para o conserto e o gatilho dele.
+  const inboxIdBruto = String(fd.get('chatwoot_inbox_id') ?? '').trim();
+  if (!inboxIdBruto) {
+    return {
+      errosCampo: {
+        chatwoot_inbox_id:
+          'Informe a caixa de entrada. O agente é ligado a uma caixa, não à conta.',
+      },
+    };
+  }
+  const inboxId = Number(inboxIdBruto);
+  if (!Number.isInteger(inboxId) || inboxId < 1) {
+    return { errosCampo: { chatwoot_inbox_id: 'inbox_id deve ser um número.' } };
+  }
+
   const supabase = await criarClienteServidor();
 
   // Token em branco = "revalidar/ajustar sem redigitar": reaproveita o que já
@@ -383,19 +409,46 @@ export async function conectarChatwoot(
     return { erro: validacao.motivo };
   }
 
-  // account_id/url (nao-sensiveis) ficam em tenants; o token vai para a tabela
-  // segregada (migracao 21a). Grava a conta primeiro para o UNIQUE de account_id
-  // reprovar antes de tocar na credencial.
+  // account_id/inbox_id/url (nao-sensiveis) ficam em tenants; o token vai para a
+  // tabela segregada (migracao 21a). Grava o par primeiro para o unico reprovar
+  // antes de tocar na credencial.
+  //
+  // OS DOIS CAMPOS VAO JUNTOS, SEMPRE. `tenants_chatwoot_par_check` exige que ou
+  // os dois sejam nulos ou os dois estejam preenchidos — gravar um sem o outro e
+  // 23514 na hora, que e o desenho: metade do par e cadastro que mente.
   const { error } = await supabase
     .from('tenants')
-    .update({ chatwoot_account_id: accountId, chatwoot_url: url })
+    .update({ chatwoot_account_id: accountId, chatwoot_inbox_id: inboxId, chatwoot_url: url })
     .eq('id', tenantId);
 
   if (error) {
+    // DOIS `23505` COM SIGNIFICADOS DIFERENTES desde a migração 54, e o
+    // `error.code` não os distingue — só o nome da constraint, que o Postgres
+    // põe no texto (`duplicate key value violates unique constraint "<nome>"`).
+    // Uma mensagem só, escrita para o caso mais comum, descreveria a causa
+    // errada no outro — que é a classe de defeito que este repo vem limpando.
     if (error.code === '23505') {
+      if (error.message.includes('idx_tenants_chatwoot_sem_caixa')) {
+        return {
+          errosCampo: {
+            chatwoot_account_id:
+              `A conta ${accountId} já está ligada a outro cliente que foi cadastrado sem caixa. ` +
+              'Defina a caixa daquele cliente, ou desconecte-o, antes de dividir a conta.',
+          },
+        };
+      }
       return {
-        errosCampo: { chatwoot_account_id: 'Essa conta do Chatwoot já está ligada a outro cliente.' },
+        errosCampo: {
+          chatwoot_inbox_id:
+            `A caixa ${inboxId} da conta ${accountId} já está ligada a outro cliente. ` +
+            'Outra caixa da MESMA conta pode ser usada — é o que permite dois agentes no mesmo Chatwoot.',
+        },
       };
+    }
+    // 23514 = `tenants_chatwoot_par_check`. Não deveria chegar aqui (as duas
+    // validações acima cobrem), então é defeito desta função e não do usuário.
+    if (error.code === '23514') {
+      return { erro: 'Conta e caixa precisam ser gravadas juntas. Isto é um defeito do painel — reporte.' };
     }
     return { erro: `Não foi possível salvar: ${error.message}` };
   }
@@ -477,7 +530,7 @@ export async function desconectarChatwoot(
   // confiar na mensagem errada.
   const { data: antes, error: erroLeitura } = await supabase
     .from('tenants')
-    .select('chatwoot_account_id')
+    .select('chatwoot_account_id, chatwoot_inbox_id')
     .eq('id', tenantId)
     .maybeSingle();
 
@@ -489,9 +542,14 @@ export async function desconectarChatwoot(
 
   const apagarCredencial = fd.get('apagar_credencial') === '1';
 
+  // A CAIXA SAI JUNTO COM A CONTA. Não é limpeza opcional: desde a migração 54
+  // o `tenants_chatwoot_par_check` exige o par inteiro ou nada, então zerar só a
+  // conta é 23514 e o botão falharia. O CHECK é bicondicional exatamente para
+  // que esquecer isto vire erro na hora, em vez de deixar `(null, 279)` — uma
+  // linha que não roteia nem vaza, mas fica mentindo no cadastro.
   const { error } = await supabase
     .from('tenants')
-    .update({ chatwoot_account_id: null })
+    .update({ chatwoot_account_id: null, chatwoot_inbox_id: null })
     .eq('id', tenantId);
 
   if (error) return { erro: `Não foi possível desconectar: ${error.message}` };
@@ -641,16 +699,21 @@ export async function excluirTenant(
     };
   }
 
-  // Solta o chatwoot_account_id na exclusão: ele é UNIQUE e, se ficasse preso ao
-  // tenant morto, aquela conta do Chatwoot não poderia ser religada a nenhum outro
-  // cliente. chatwoot_url é NOT NULL, então não pode ir a null — só zeramos o que
-  // trava a religação (account_id) e a credencial (token).
+  // Solta o PAR (conta, caixa) na exclusão: os dois entram nos únicos parciais e,
+  // se ficassem presos ao tenant morto, aquela caixa não poderia ser religada a
+  // nenhum outro cliente. chatwoot_url é NOT NULL, então não pode ir a null — só
+  // zeramos o que trava a religação (o par) e a credencial (token).
+  //
+  // A caixa sai JUNTO, e não por simetria: o `tenants_chatwoot_par_check` da
+  // migração 54 é bicondicional, então zerar só a conta seria 23514 e a exclusão
+  // falharia inteira.
   const { error } = await supabase
     .from('tenants')
     .update({
       deletado_em: new Date().toISOString(),
       ativo: false,
       chatwoot_account_id: null,
+      chatwoot_inbox_id: null,
     })
     .eq('id', tenantId)
     .is('deletado_em', null); // idempotente: não re-exclui

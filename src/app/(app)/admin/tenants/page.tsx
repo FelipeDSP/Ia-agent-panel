@@ -23,6 +23,7 @@ type LinhaTenant = {
   ativo: boolean;
   agente_ativo: boolean;
   chatwoot_account_id: number | null;
+  chatwoot_inbox_id: number | null;
   criado_em: string;
 };
 
@@ -39,7 +40,7 @@ export default async function PaginaTenants() {
    */
   const { data: tenants, error } = await supabase
     .from('tenants')
-    .select('id, slug, nome, ativo, agente_ativo, chatwoot_account_id, criado_em')
+    .select('id, slug, nome, ativo, agente_ativo, chatwoot_account_id, chatwoot_inbox_id, criado_em')
     .is('deletado_em', null)
     .order('nome');
 
@@ -137,7 +138,21 @@ export default async function PaginaTenants() {
                         <div className="text-xs text-muted-foreground">{tenant.slug}</div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {tenant.chatwoot_account_id ?? (
+                        {/*
+                          A CAIXA APARECE JUNTO. Com dois agentes cabendo na
+                          mesma conta, a coluna "59" repetida em duas linhas
+                          seria indistinguível — e a pergunta que se faz olhando
+                          esta lista é exatamente "quem atende o quê".
+                        */}
+                        {tenant.chatwoot_account_id ? (
+                          <span className="tabular-nums">
+                            {tenant.chatwoot_account_id}
+                            <span className="text-xs text-muted-foreground">
+                              {' / caixa '}
+                              {tenant.chatwoot_inbox_id}
+                            </span>
+                          </span>
+                        ) : (
                           <span className="text-xs">não conectado</span>
                         )}
                       </TableCell>

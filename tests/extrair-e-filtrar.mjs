@@ -47,18 +47,27 @@ const executar = (corpo, body) => {
   }
 };
 
-// `anexo` e adicao intencional da fatia de audio. A DECISAO (acao, mensagem,
-// motivo) tem de ser identica; o campo novo nao conta como divergencia.
-const semAnexo = (saida) => {
+// CAMPOS ADITIVOS. A DECISAO (acao, mensagem, motivo) tem de ser identica ao
+// "antes"; campo NOVO nao conta como divergencia, desde que ganhe assercao
+// propria mais abaixo — senao a isencao vira buraco.
+//
+//   anexo              fatia de audio (12/08)
+//   chatwoot_inbox_id  migracao 54, roteamento por (conta, caixa)
+//
+// Ao acrescentar um campo aqui, acrescente tambem o teste dele contra payload
+// REAL. Tirar da comparacao sem testar em outro lugar e o mesmo que nao ter.
+const ADITIVOS = ['anexo', 'chatwoot_inbox_id'];
+
+const semAditivos = (saida) => {
   if (!Array.isArray(saida)) return JSON.stringify(saida);
   return JSON.stringify(saida.map((i) => {
     const j = { ...(i.json ?? {}) };
-    delete j.anexo;
+    for (const campo of ADITIVOS) delete j[campo];
     return j;
   }));
 };
 
-const rodar = (corpo, body) => semAnexo(executar(corpo, body));
+const rodar = (corpo, body) => semAditivos(executar(corpo, body));
 
 const CASOS = [
   ['grupo', { sender: { identifier: '5511999@g.us' }, content: 'oi' }],
@@ -146,6 +155,43 @@ if (faltando.length === 0) {
   checar('extensao derivada da URL, não do campo extension',
     j.anexo?.extensao === 'oga', String(j.anexo?.extensao));
   checar('conversation_id lido do payload real', j.conversation_id === 1864, String(j.conversation_id));
+}
+
+// ---------------------------------------------------------------------------
+// O `chatwoot_inbox_id`, contra o mesmo webhook REAL
+// ---------------------------------------------------------------------------
+// Migração 54: o roteamento passou a ser pelo PAR (conta, caixa). Sem estas
+// asserções o campo sairia da comparação de equivalência e não seria testado em
+// lugar nenhum — que é a armadilha de ter uma lista de isenções.
+//
+// O payload é o de 12/08, e nele a inbox aparece nos DOIS lugares
+// (`conversation.inbox_id` e `inbox.id`), os dois valendo 189. É de onde saiu o
+// número que a migração grava no `estudyou-sendbox`.
+{
+  const real = JSON.parse(fs.readFileSync('tests/fixtures/webhook-audio.json', 'utf8'));
+  const j = executar(depois, real)?.[0]?.json ?? {};
+  checar('inbox_id do payload real = 189', j.chatwoot_inbox_id === 189, String(j.chatwoot_inbox_id));
+  checar('e o account do mesmo payload = 1', j.chatwoot_account_id === 1, String(j.chatwoot_account_id));
+
+  // A ORDEM DAS DUAS FONTES importa, e nenhum payload real tem as duas
+  // divergindo — então ela se prova com payload sintético. `conversation` é o
+  // objeto que todo evento de mensagem carrega; `body.inbox` é o reforço.
+  const soConversa = executar(depois, { conversation: { id: 9, inbox_id: 11 }, content: 'oi' })?.[0]?.json ?? {};
+  checar('lê de conversation.inbox_id', soConversa.chatwoot_inbox_id === 11, String(soConversa.chatwoot_inbox_id));
+
+  const soInbox = executar(depois, { inbox: { id: 22 }, content: 'oi' })?.[0]?.json ?? {};
+  checar('cai para body.inbox.id quando conversation não tem',
+    soInbox.chatwoot_inbox_id === 22, String(soInbox.chatwoot_inbox_id));
+
+  const ambos = executar(depois, { conversation: { inbox_id: 11 }, inbox: { id: 22 }, content: 'oi' })?.[0]?.json ?? {};
+  checar('com as duas, conversation.inbox_id vence', ambos.chatwoot_inbox_id === 11, String(ambos.chatwoot_inbox_id));
+
+  // NULO, e não um valor de reserva. Chutar aqui faria o webhook resolver o
+  // tenant errado em silêncio; nulo faz a função estourar 22023, que é o que se
+  // quer — o mesmo raciocínio do casamento estrito na migração 54.
+  const nenhum = executar(depois, { content: 'oi' })?.[0]?.json ?? {};
+  checar('sem inbox no payload, o campo vai NULO (nunca um chute)',
+    nenhum.chatwoot_inbox_id === null, String(nenhum.chatwoot_inbox_id));
 }
 
 // O filtro tem que estar injetado de verdade, e não sobrar a DIRETIVA.

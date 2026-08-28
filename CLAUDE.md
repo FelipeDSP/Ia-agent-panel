@@ -249,8 +249,35 @@ perde trabalho de cadastro que ninguém consegue devolver.
 
 - **`DROP FUNCTION` APAGA TODOS OS GRANTS. Recriar restaura só o que o script
   listar.** É a quinta armadilha da mesma família (28, 32, 37, 40, 41) e a
-  primeira cujo modo de falha **não** é ambiguidade de aridade: a chamada resolve
-  certo e morre em `permission denied for function`.
+  primeira cujo modo de falha **não** é ambiguidade de aridade.
+
+  **CORREÇÃO (2026-08-28): o modo de falha estava escrito errado aqui.** A
+  frase era "a chamada resolve certo e morre em `permission denied for
+  function`". Isso é o que acontece com quem **revoga e esquece um role** — foi
+  o caso da 40 e da 41. Não é o que acontece com quem esquece o bloco inteiro.
+  Medido, na migração 54, com uma função de brinquedo:
+
+  ```
+  drop function f(bigint,bigint); create f(bigint,bigint);   -- sem grant nenhum
+  acl -> =X/postgres | postgres=X | anon=X | authenticated=X | service_role=X
+  has_function_privilege('n8n_agent', ...) -> TRUE
+  ```
+
+  As `ALTER DEFAULT PRIVILEGES` deste projeto dão `EXECUTE` a **PUBLIC**, `anon`
+  e `authenticated` no instante do `create` — é a mesma nota do `arwdDxtm` mais
+  acima, só que para funções. Então **esquecer o bloco de grants não deixa o
+  agente sem acesso: deixa a função ABERTA**, e o `n8n_agent` continua chamando,
+  herdando por PUBLIC. Uma `SECURITY DEFINER` que escreve, executável pela chave
+  publicável do navegador, sem nada quebrar — que é exatamente o que a 43 teve
+  de ir catar depois.
+
+  Consequência prática, e é ela que muda o que se faz: **a pergunta "o
+  `n8n_agent` consegue chamar?" responde SIM nos dois mundos** — no certo e no
+  escancarado. Ela não distingue nada sozinha. O que distingue é o `revoke`
+  estar lá e o ACL bater com o das irmãs.
+
+  Por isso o `revoke` vem **antes** do `grant`, sempre, e não é redundância:
+  sem ele o `grant` é decoração sobre um objeto que já nasceu público.
 
   Toda `api_n8n_*` precisa de **duas** linhas, não uma:
 
@@ -272,7 +299,10 @@ perde trabalho de cadastro que ninguém consegue devolver.
   do drop**, ou comparar com as funções irmãs, nunca com a própria expectativa.
 
   E chamar como superusuário não vale como teste: `postgres` ignora grant. A
-  prova é `set local role n8n_agent` e chamar.
+  prova é `set local role n8n_agent` e chamar. Mas note, pela correção acima,
+  que **nem essa prova basta sozinha**: ela fica verde também na função aberta.
+  Chamar prova que o agente não quebrou; o diff de ACL prova que mais ninguém
+  entrou junto. São duas medidas e nenhuma substitui a outra.
 
   **E o FILTRO da conferência é uma suposição como qualquer outra.** Em
   2026-08-24 a migração 52 saiu com `contato_exibivel` em
@@ -431,14 +461,18 @@ trocar o tamanho do chunk sem medir: quebra calado.
   que explica a armadilha que ele caça. A proteção contra auto-casamento está
   escrita e está certa; o que a matou foi o arquivo virar CRLF: `split('
 ')`
-  deixa um `` no fim da linha, e em JavaScript **`.` não casa ``** (é
+  deixa um `
+` no fim da linha, e em JavaScript **`.` não casa `
+`** (é
   terminador de linha), então `/\/\/.*$/` não encontra onde ancorar e não
   strippa comentário nenhum. `/\/\/.*$/.test("  // x")` é `true`;
-  `.test("  // x")` é `false`.
+  `.test("  // x
+")` é `false`.
 
   Ninguém editou nada — o git mudou o fim de linha (174 arquivos do repo estão
   em CRLF contra 96 em LF) e a guarda morreu **sem aparecer em diff**. Então:
-  **todo varredor de arquivo usa `split(/?
+  **todo varredor de arquivo usa `split(/
+?
 /)`**, nunca `split('
 ')`, e a
   sabotagem que prova um varredor tem de rodar nos DOIS fins de linha. Item

@@ -85,12 +85,26 @@ begin
 
   set local role n8n_agent;
 
-  select count(*) into v_n from public.api_n8n_tenant_por_chatwoot(56);
+  -- ASSINATURA ATUALIZADA NA MIGRACAO 54: a funcao passou a receber o PAR
+  -- (conta, caixa). Varrido junto com o schema porque teste e consumidor da
+  -- assinatura como o n8n e — e este aqui nao reclamaria sozinho.
+  --
+  -- >>> ESTE BLOCO JA ESTAVA MORTO ANTES DA 54, e continua. <<<
+  -- A conta 56 era a Acqua Lavanderia, que foi DESCONECTADA (chatwoot_account_id
+  -- nulo desde entao). Entao `v_n` vem 0 e este bloco reporta FALHOU por conta
+  -- propria, sem defeito nenhum no codigo. Este arquivo nao esta em nenhum
+  -- script `teste:*`, entao ninguem roda e ninguem ve.
+  --
+  -- Nao consertei aqui de proposito: escolher outra conta de referencia e
+  -- resolver seed por identificador fixo, que e justamente o que
+  -- `npm run teste:seed-independente` reprova. O conserto certo e portar este
+  -- arquivo para `tests/lib/tenants-efemeros.mjs`, e isso e fatia propria.
+  select count(*) into v_n from public.api_n8n_tenant_por_chatwoot(56, 279);
   if v_n <> 1 then
-    raise warning 'FALHOU: chatwoot 56 resolveu % tenants', v_n;
+    raise warning 'FALHOU: chatwoot (56, 279) resolveu % tenants', v_n;
     v_falhas := v_falhas + 1;
   else
-    raise notice 'OK: chatwoot 56 -> 1 tenant';
+    raise notice 'OK: chatwoot (56, 279) -> 1 tenant';
   end if;
 
   -- Nenhum documento de outro tenant, mesmo pedindo limite alto
@@ -159,7 +173,7 @@ begin
 
   begin
     set local role anon;
-    perform * from public.api_n8n_tenant_por_chatwoot(56);
+    perform * from public.api_n8n_tenant_por_chatwoot(56, 279);
     raise warning 'FALHOU: anon chamou a API';
     v_falhas := v_falhas + 1;
   exception when insufficient_privilege then

@@ -59,9 +59,15 @@ Mesmo assim confira antes de subir.
 
 Estas repetem `CLAUDE.md` e `docs/ADICIONAR-TOOL.md` porque são as que quebram calado:
 
-- **`tenant_id` sempre do fluxo, nunca do `$fromAI`.** Resolvido de
-  `chatwoot_account_id` via `api_n8n_tenant_por_chatwoot`. Idem `conversation_id`
-  e `account_id`, que vêm do `Extrair e Filtrar`.
+- **`tenant_id` sempre do fluxo, nunca do `$fromAI`.** Resolvido do PAR
+  `(chatwoot_account_id, chatwoot_inbox_id)` via `api_n8n_tenant_por_chatwoot`
+  — conta sozinha não identifica tenant desde a migração 54, porque o bot do
+  Chatwoot é ligado a uma caixa e dois agentes cabem na mesma conta. Idem
+  `conversation_id` e `account_id`, que vêm do `Extrair e Filtrar`.
+- **A caixa nunca é chutada.** `Extrair e Filtrar` lê
+  `body.conversation.inbox_id ?? body.inbox.id` e passa `null` se não houver.
+  A função estoura `22023` em caixa nula de propósito: valor de reserva faria o
+  webhook resolver o tenant ERRADO em silêncio, que é pior que não responder.
 - **`queryReplacement` do nó Postgres sempre em array:** `={{ [ a, b ] }}`.
   String com vírgula é dividida em parâmetros e a query quebra em silêncio.
 - **Query com parâmetro = statement único.** Extended query protocol recusa
