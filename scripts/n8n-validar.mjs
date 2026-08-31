@@ -9,6 +9,9 @@
  *   4. query com multiplos statements + parametro       (extended query protocol)
  *   5. onError engolindo erro em no de log/billing
  *   6. tenant_id vindo de $fromAI                       (vazamento cross-tenant)
+ *   7. campo lido do trigger que o trigger nao declara
+ *   8. no de banco sem credencial                        (o `Consulta Pausa`, 10 dias)
+ *   9. id de credencial em forma de placeholder
  *
  * Uso:  node scripts/n8n-validar.mjs n8n/workflows/*.json
  * Sai com codigo 1 se achar problema — da pra usar em CI.
@@ -317,6 +320,73 @@ for (const caminho of arquivos) {
       'sem `name` (ou vazio) — export da UI nunca sai assim, e quem pareia por nome '
       + 'passa a reportar este workflow como ausente da instancia'
     );
+  }
+
+  /*
+   * 8. NO QUE FALA COM UM SERVICO E NAO TEM CREDENCIAL.
+   *
+   * O `Consulta Pausa` do agente principal nasceu assim em 21/08, no MESMO
+   * commit que criou o portao de pausa, e ficou dez dias. Os outros nove nos
+   * postgres do gerador recebem `CRED_PG` explicito; aquele foi empurrado sem.
+   *
+   * Nada pegava, e vale entender por que: o JSON e valido, o no existe, a query
+   * esta certa, o `$('...')` aponta para no que existe. Todas as regras acima
+   * olham EXPRESSAO e TOPOLOGIA. Nenhuma perguntava se o no tem com o que se
+   * conectar. Quem achou foi o diff contra a instancia, dez dias depois, e por
+   * acaso — a instancia estava certa e o REPO errado, que e o sentido oposto do
+   * que este projeto costuma assumir.
+   *
+   * O estrago nao e de runtime distante: e no import. Quem importasse o arquivo
+   * do repo trocaria um portao de pausa funcionando por um no sem credencial.
+   */
+  const CRED_POR_TIPO = {
+    'n8n-nodes-base.postgres': 'postgres',
+    'n8n-nodes-base.redis': 'redis',
+  };
+  for (const n of nodes) {
+    const exigida = CRED_POR_TIPO[n.type];
+    if (!exigida) continue;
+    if (!n.credentials || !n.credentials[exigida]) {
+      problemas.push(
+        `"${n.name}": no ${n.type.replace('n8n-nodes-base.', '')} SEM credencial `
+        + `\`${exigida}\` — importar este arquivo deixa o no sem com que se conectar`
+      );
+    }
+  }
+
+  /*
+   * 9. ID DE CREDENCIAL QUE E PLACEHOLDER.
+   *
+   * Id de credencial do n8n e um nanoid de 16 caracteres alfanumericos
+   * (`MehTUROZlPmHG8kW`, `gx2yKmYvYBBJ2Yhl`). Qualquer outra coisa e marcador
+   * que alguem deixou para preencher depois — e o n8n IMPORTA assim mesmo,
+   * sem reclamar, deixando a quebra para o runtime.
+   *
+   * A EXCECAO E DECLARADA E DATADA, nao inferida. Um placeholder conhecido, com
+   * motivo e gatilho escritos, informa; um placeholder novo reprova. Sem a lista,
+   * a unica alternativa seria a suite ficar vermelha por um item ja decidido e
+   * adiado — que e como se ensina todo mundo a ignorar vermelho.
+   */
+  const ID_DE_CREDENCIAL = /^[A-Za-z0-9]{16}$/;
+  const PLACEHOLDERS_CONHECIDOS = {
+    // Declarado em 31/08. Some quando a rotacao do segredo acontecer — e ai
+    // esta regra passa a reprovar. Ver docs/PENDENCIA-SEGREDO-FOTO.md.
+    FOTO_SECRET_HEADER: 'rotacao do x-foto-secret pendente (PENDENCIA-SEGREDO-FOTO.md)',
+  };
+  for (const n of nodes) {
+    for (const [tipo, c] of Object.entries(n.credentials ?? {})) {
+      const id = c && c.id;
+      if (typeof id !== 'string' || ID_DE_CREDENCIAL.test(id)) continue;
+      const motivo = PLACEHOLDERS_CONHECIDOS[id];
+      if (motivo) {
+        console.log(`  AVISO     "${n.name}": credencial ${tipo} com placeholder \`${id}\` — ${motivo}`);
+        continue;
+      }
+      problemas.push(
+        `"${n.name}": credencial ${tipo} com id \`${id}\`, que nao tem forma de id do n8n `
+        + '— o import aceita e a quebra so aparece em runtime'
+      );
+    }
   }
 
   if (problemas.length === 0) {

@@ -172,6 +172,10 @@ documentação e material de referência.
 > saído sem a etiqueta de simulação.
 - [`n8n-cutover.md`](n8n/n8n-cutover.md) — cutover do agente para este banco.
 - [`n8n-limpar-memoria.md`](n8n/n8n-limpar-memoria.md) — limpeza da memória do agente.
+- [`RETRATO-N8N-INSTANCIA-31-08.md`](RETRATO-N8N-INSTANCIA-31-08.md) — primeira conferência COMPLETA da
+  instância contra o repo (9 de 9, os oito sub-workflows inclusive). Separa as 15 divergências de ruído
+  das 6 reais, traz a pasta que tem 15 workflows e mostra 10, e registra a inversão: no `Consulta Pausa`
+  a **instância estava certa e o repo errado**, por dez dias.
 
 ## Auditorias — [`auditorias/`](auditorias/)
 Relatórios de auditoria pontuais (confiabilidade, dados, débito técnico, dependências,

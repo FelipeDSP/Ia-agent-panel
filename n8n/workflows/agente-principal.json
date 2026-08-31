@@ -1978,6 +1978,12 @@
       ],
       "name": "Consulta Pausa",
       "id": "consulta-pausa0000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
       "notes": "Portao unico, antes do Roteia Acao. Ate 21/08 so o ramo processar era protegido, e midia e bloqueado falavam por cima do atendimento humano. A regra NAO esta aqui: a funcao delega a public.pausa_vigente (migracao 47), que tem os outros leitores. Devolve SEMPRE uma linha — zero linhas pararia o fluxo em silencio e o agente nunca responderia.",
       "notesInFlow": true
     },

@@ -1032,6 +1032,15 @@ w.nodes.push({
   position: [3136, 4720],
   name: 'Consulta Pausa',
   id: idDe('consulta-pausa'),
+  // ESTA LINHA FALTOU DE 21/08 A 31/08, e o arquivo do repo ficou dez dias
+  // impossivel de importar sem quebrar o proprio portao que ele criou. Os
+  // outros nove nos postgres deste gerador recebem `CRED_PG` explicito; este
+  // nasceu sem, no commit c4514d0, que e o commit do portao. Nada pegava: o
+  // JSON e valido, o no existe, a query esta certa. Quem achou foi o diff
+  // contra a instancia (31/08) -- a instancia estava CERTA e o repo errado.
+  // A guarda agora e a regra 8 do `n8n-validar.mjs`, que reprova no de banco
+  // sem credencial.
+  credentials: CRED_PG,
   notes:
     'Portao unico, antes do Roteia Acao. Ate 21/08 so o ramo processar era protegido, e midia e ' +
     'bloqueado falavam por cima do atendimento humano. A regra NAO esta aqui: a funcao delega a ' +
