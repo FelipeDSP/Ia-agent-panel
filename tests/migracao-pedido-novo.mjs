@@ -46,8 +46,8 @@ if (!URL_BANCO) {
   process.exit(64);
 }
 
-const MIG = path.join(RAIZ, 'supabase/migrations/20260828170000_55_pedido_novo_apos_fechar.sql');
-const RBK = path.join(RAIZ, 'supabase/migrations/20260828170000_55_pedido_novo_apos_fechar_rollback.sql');
+const MIG = path.join(RAIZ, 'supabase/migrations/20260831093000_55_pedido_novo_apos_fechar.sql');
+const RBK = path.join(RAIZ, 'supabase/migrations/20260831093000_55_pedido_novo_apos_fechar_rollback.sql');
 
 /** O arquivo traz `begin`/`commit`; aqui a transação é nossa e não pode fechar. */
 const semTx = (s) => s.replace(/^\s*begin\s*;\s*$/gim, '').replace(/^\s*commit\s*;\s*$/gim, '');

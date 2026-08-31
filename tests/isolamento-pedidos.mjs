@@ -238,9 +238,22 @@ async function main() {
     }
     // Já com privilégio (como o n8n teria), o filtro interno é o que isola.
     {
+      // PROPRIEDADE, E NAO A FRASE. Isto casava a string 'Nao ha pedido aberto',
+      // e a migracao 55 trocou o texto por 'Nao ha pedido nesta conversa' — o
+      // isolamento seguiu perfeito e a assercao ficou vermelha. Casar mensagem e
+      // medir redacao. O que isola e B nao enxergar NADA de A.
+      //
+      // E "nao ve" e afirmacao negativa: sem a contraprova ela passa igual se a
+      // conversa estiver vazia por qualquer motivo.
+      const proprio = String((await admin.rpc('api_n8n_ver_pedido',
+        { p_tenant_id: A.id, p_conversation_id: CONV_A })).data);
+      checar('CONTRAPROVA: A enxerga o proprio pedido nessa mesma conversa',
+        proprio.includes(prod.A.nome), proprio.slice(0, 60));
+
       const { data } = await admin.rpc('api_n8n_ver_pedido', { p_tenant_id: B.id, p_conversation_id: CONV_A });
+      const texto = String(data);
       checar('B com a MESMA conversation_id de A não vê o pedido de A',
-        String(data).includes('Nao ha pedido aberto'), String(data).slice(0, 50));
+        !texto.includes(prod.A.nome), texto.slice(0, 60));
     }
     {
       const { data } = await admin.rpc('api_n8n_adicionar_item', {
@@ -254,7 +267,11 @@ async function main() {
     }
     {
       const { data } = await admin.rpc('api_n8n_cancelar_pedido', { p_tenant_id: B.id, p_conversation_id: CONV_A });
-      checar('B não cancela pedido de A', String(data).includes('Nao ha pedido aberto'));
+      // De novo: nao a frase, e sim "a resposta nao AFIRMA que cancelou". A
+      // prova de verdade e a linha seguinte, que le o banco. A contraprova de
+      // que cancelar funciona mesmo esta no fim deste arquivo.
+      checar('B não cancela pedido de A', !/^Carrinho descartado/i.test(String(data).trim()),
+        String(data).slice(0, 70));
       const { data: chk } = await admin.from('pedidos').select('status').eq('id', pedidoA.id).single();
       checar('pedido de A continua rascunho', chk.status === 'rascunho', `status=${chk.status}`);
     }
@@ -275,6 +292,17 @@ async function main() {
       const { count } = await admin.from('pedidos')
         .select('id', { count: 'exact', head: true }).eq('tenant_id', C.id);
       checar('terceiro tenant segue sem pedido nenhum', (count ?? 0) === 0, `${count} pedido(s)`);
+    }
+    {
+      // CONTRAPROVA DO CANCELAMENTO, por ultimo porque muda estado: se cancelar
+      // nao funcionasse para NINGUEM, o "B nao cancela pedido de A" la em cima
+      // passaria por vacuidade. Aqui A cancela o proprio carrinho e o banco
+      // confirma.
+      const { data } = await admin.rpc('api_n8n_cancelar_pedido',
+        { p_tenant_id: A.id, p_conversation_id: CONV_A });
+      const { data: dep } = await admin.from('pedidos').select('status').eq('id', pedidoA.id).single();
+      checar('CONTRAPROVA: A cancela o PROPRIO carrinho e o banco muda',
+        dep?.status === 'cancelado', `resposta=${String(data).slice(0, 40)} status=${dep?.status}`);
     }
   } finally {
     console.log('\n  Limpando...');

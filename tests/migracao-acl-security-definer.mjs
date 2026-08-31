@@ -34,6 +34,19 @@ const lim = (f) =>
 const M43 = lim('20260818180000_43_fechar_acl_security_definer.sql');
 const R43 = lim('20260818180000_43_fechar_acl_security_definer_rollback.sql');
 
+/*
+ * A CADEIA, e nao o elo. A 43 concede/revoga em `pedido_aberto_da_conversa`,
+ * que a migracao 55 dropou: replayar a 43 sozinha contra o banco de hoje falha
+ * com `42883 function does not exist`. E a mesma classe do caso
+ * `migracao-audio` no CLAUDE.md -- replay de um elo contra um banco que ja viu
+ * o elo seguinte.
+ *
+ * O rollback da 55 e idempotente e poe o banco no estado pre-55 tendo ela sido
+ * aplicada ou nao, entao ele serve tambem para NAO afirmar o calendario: este
+ * arquivo nao precisa saber se a 55 ja subiu.
+ */
+const R55 = lim('20260831093000_55_pedido_novo_apos_fechar_rollback.sql');
+
 if (!process.env.SUPABASE_DB_URL) {
   console.error('SUPABASE_DB_URL ausente. Rode com --env-file=.env.local');
   process.exit(1);
@@ -86,6 +99,10 @@ await c.connect();
 await c.query('begin');
 
 try {
+  // Volta ao mundo em que a 43 vive (ver a nota do R55, acima). Tudo dentro
+  // da transacao abortada: producao nao ve nada disto.
+  await c.query(R55);
+
   console.log('\n== Migração 43: fechar ACL das SECURITY DEFINER ==\n');
 
   await c.query(`set local request.jwt.claims = '{"app_metadata":{"papel":"super_admin"}}'`);

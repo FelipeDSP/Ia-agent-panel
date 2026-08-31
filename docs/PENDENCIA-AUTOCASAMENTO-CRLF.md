@@ -1,7 +1,12 @@
 # Pendência — o teste que caça "regex casando com comentário" foi pego por isso, via CRLF
 
-**Estado:** achado em 2026-08-24 pela primeira execução de `npm run teste`.
-**Não consertado.** `teste:comparacoes-tipo` está vermelho, 6/1.
+**Estado:** achada em 2026-08-24 pela primeira execução de `npm run teste`.
+**RESOLVIDA** no mesmo dia (commit `fdf700f`); doc fechado em 2026-08-31.
+`teste:comparacoes-tipo` 10/0. Ver "Fechada", no fim.
+
+**O texto abaixo é o do dia do achado, preservado**: o que ele mede — a
+armadilha e por que ela passou — continua valendo, e é por isso que o arquivo
+fica em vez de ser apagado.
 
 **Gatilho:** agora. É o único vermelho da suíte que é defeito de teste e não de
 arranjo, e o conserto é de uma linha — mas o que ele ensina é maior que ele.
@@ -84,3 +89,23 @@ come o `\r` — está a salvo por acidente, não por escolha. Vale trocar os doi
 Não silenciar a linha 105 nem reescrever o comentário para não conter o padrão.
 O comentário é a documentação da armadilha; tirá-lo para o teste passar seria
 apagar a única explicação de por que a proteção existe.
+
+---
+
+## Fechada
+
+**Resolvida em 2026-08-24, 10:34, pelo commit `fdf700f`** ("CRLF nos varredores e
+estado arranjado no teste de foto: suite em 49/49"). Conferido em 2026-08-31: o
+conserto e o que este arquivo prescreve, nao um contorno, e o teste esta verde na
+suite inteira (`teste:comparacoes-tipo` 10/0).
+
+**E o motivo de este fecho existir e ele proprio um caso.** O conserto entrou em
+24/08 e este arquivo continuou dizendo **"Nao consertado"** por SETE DIAS. O
+defeito nao estava no codigo — estava aqui, no documento que diz o que esta em
+aberto. E a mesma serie do CLAUDE.md ("afirme PROPRIEDADE, nao estado do mundo"),
+agora um andar acima: o doc de pendencia afirma um estado do mundo (o teste esta
+vermelho) que o proprio trabalho torna falso, e nada reprova quando ele envelhece.
+
+A suite tem runner que roda tudo e acusa vermelho; o indice de pendencias nao tem
+equivalente. Enquanto nao tiver, **fechar o doc e passo do conserto**, no mesmo
+commit — nao tarefa separada para depois.

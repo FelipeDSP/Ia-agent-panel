@@ -54,6 +54,7 @@ const M41 = mig('20260817120000_41_buscar_produtos_total.sql');
 const M38 = mig('20260814160000_38_expirar_pedido_nao_pago.sql');
 const M49 = mig('20260821191500_49_adicionar_item_define.sql');
 const R49 = mig('20260821191500_49_adicionar_item_define_rollback.sql');
+const R55 = mig('20260831093000_55_pedido_novo_apos_fechar_rollback.sql');
 const R25 = mig('20260811185334_25_pedidos_rollback.sql');
 const R26 = mig('20260811185432_26_api_n8n_vendas_rollback.sql');
 
@@ -83,6 +84,19 @@ try {
    * comeca do estado que um ambiente novo teria -- sem a funcao.
    */
   await c.query('drop function if exists public.api_n8n_buscar_produtos(uuid, text)');
+
+  /*
+   * E o mesmo vale do outro lado da cadeia. A 55 trocou
+   * `api_n8n_cancelar_pedido(uuid, bigint)` por `(uuid, bigint, text)`:
+   * replayar a 26 por cima recria a de 2 argumentos AO LADO da de 3, e a
+   * chamada de 2 vira AMBIGUA -- `function api_n8n_cancelar_pedido(unknown,
+   * unknown) is not unique`, que e a familia 28/32/37 do CLAUDE.md aparecendo
+   * por replay em vez de por migracao.
+   *
+   * O rollback da 55 desfaz isso e e idempotente, entao vale tendo a 55 subido
+   * ou nao -- o teste nao afirma o calendario.
+   */
+  await c.query(R55);
   // Ordem em que producao viu: 25, 26, 38, 41, 49.
   await c.query(M25); await c.query(M26); await c.query(M38); await c.query(M41);
 

@@ -1,14 +1,22 @@
 # Pendência — a IA afirma venda que não existe
 
-**Estado:** levantado em 2026-08-28 contra produção, a partir de um teste no
-`estudyou-sendbox`. **Nada foi consertado — nenhum SQL escrito.** Duas decisões
-tomadas em 28/08 (§10): narrar o índice, e a opção 3 do `cancelar_pedido`. O
-desenho da migração está descrito na §11 e é o próximo passo. O pedido nº 1 do
-sendbox e o nº 3 do `emporio` ficam como estão — são a evidência, e estão
-retratados em
+**Estado:** levantado em 2026-08-28 contra producao, a partir de um teste no
+`estudyou-sendbox`. **A migracao 55 foi APLICADA em 2026-08-31**, versao
+`20260831093000`: o indice unico passou a valer so em `rascunho`, o helper virou
+duas funcoes, `cancelar_pedido` ganhou alvo explicito com default no carrinho, e
+as mensagens de retorno foram revistas (§11). Ela nao tocou nenhuma das 12 linhas
+de `pedidos` -- md5 identico antes e depois.
+
+**O que ela NAO resolve, e por isso este arquivo continua aberto:** a fabricacao
+em si (modalidade C, §2 e §3) -- a 55 tira o beco que dava ao modelo um motivo
+para inventar, e nao tira a capacidade de inventar. Continuam abertos tambem o
+handoff contaminado (§8) e os R$ 117,40 afirmados a mais (§7.1). As duas decisoes
+de 28/08 (§10) estao implementadas. O pedido nº 1 do sendbox e o nº 3 do
+`emporio` ficam como estao -- sao a evidencia, e estao retratados em
 [`RETRATO-EVIDENCIA-VENDA-AFIRMADA.md`](RETRATO-EVIDENCIA-VENDA-AFIRMADA.md)
-porque o do `emporio` já venceu as 24 h e muda de `status` sozinho na próxima
-mensagem daquela conversa.
+porque o do `emporio` ja venceu as 24 h e muda de `status` sozinho na proxima
+mensagem daquela conversa. Conferido em 31/08, depois da migracao: os dois
+seguem em `aguardando_pagamento`, com 17990 e 3000.
 
 **Gatilho: já passou.** Não é "antes do próximo cliente de vendas": a varredura
 (§7) achou três ocorrências não tratadas, uma com contato externo, e a taxa é o que

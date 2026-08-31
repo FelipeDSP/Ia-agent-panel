@@ -1,7 +1,12 @@
 # Pendência — `teste:migracao-foto` depende de credencial que ele não arranja
 
-**Estado:** achado em 2026-08-24 pela primeira execução de `npm run teste`.
-**Não consertado.** 25/1.
+**Estado:** achada em 2026-08-24 pela primeira execução de `npm run teste`.
+**RESOLVIDA** no mesmo dia (commit `fdf700f`); doc fechado em 2026-08-31.
+`teste:migracao-foto` 27/0. Ver "Fechada", no fim.
+
+**O texto abaixo é o do dia do achado, preservado**: o que ele mede — a
+armadilha e por que ela passou — continua valendo, e é por isso que o arquivo
+fica em vez de ser apagado.
 
 **Gatilho:** junto com o conserto do `PENDENCIA-AUTOCASAMENTO-CRLF.md` — são os
 dois únicos vermelhos da suíte, e este é o mais barato.
@@ -66,3 +71,23 @@ credencial quando permite) em vez do estado (este tenant por acaso tem uma).
 E vale a contraprova simétrica, que já existe uma linha acima e continua válida:
 *"NÃO devolve credencial na recusa"* — essa é sobre propriedade e não depende de
 nada do mundo.
+
+---
+
+## Fechada
+
+**Resolvida em 2026-08-24, 10:34, pelo commit `fdf700f`** ("CRLF nos varredores e
+estado arranjado no teste de foto: suite em 49/49"). Conferido em 2026-08-31: o
+conserto e o que este arquivo prescreve, nao um contorno, e o teste esta verde na
+suite inteira (`teste:migracao-foto` 27/0).
+
+**E o motivo de este fecho existir e ele proprio um caso.** O conserto entrou em
+24/08 e este arquivo continuou dizendo **"Nao consertado"** por SETE DIAS. O
+defeito nao estava no codigo — estava aqui, no documento que diz o que esta em
+aberto. E a mesma serie do CLAUDE.md ("afirme PROPRIEDADE, nao estado do mundo"),
+agora um andar acima: o doc de pendencia afirma um estado do mundo (o teste esta
+vermelho) que o proprio trabalho torna falso, e nada reprova quando ele envelhece.
+
+A suite tem runner que roda tudo e acusa vermelho; o indice de pendencias nao tem
+equivalente. Enquanto nao tiver, **fechar o doc e passo do conserto**, no mesmo
+commit — nao tarefa separada para depois.

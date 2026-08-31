@@ -1,8 +1,9 @@
-# Ambiente de desenvolvimento — as duas armadilhas que já custaram caro
+# Ambiente de desenvolvimento — as três armadilhas que já custaram caro
 
-Windows + Git Bash + node no mesmo repositório. As duas coisas abaixo não são
-preferência de estilo: cada uma já produziu um defeito que passou despercebido,
-e nenhuma das duas aparece em diff.
+Windows + Git Bash + node no mesmo repositório. As três coisas abaixo não são
+preferência de estilo: cada uma já produziu um defeito que passou despercebido.
+As duas primeiras não aparecem em diff; a terceira aparece, mas **mente sobre
+onde ela está**.
 
 ---
 
@@ -120,3 +121,91 @@ maioria, é bem menor do que "237 contra 120" sugere.
 
 Depois de aplicar, confira pelo `git ls-files --eol` e não pelo que o arquivo diz:
 a linha `i/lf w/lf` tem de valer para os 358 de texto.
+
+---
+
+## 3. node-pg: consulta multi-statement devolve ARRAY, e o erro que você lê não é o seu
+
+**`client.query()` com mais de um comando na string devolve uma LISTA de
+resultados, não um resultado.** `r.rows` é `undefined`. Ler `r.rows[0]` estoura
+`TypeError: Cannot read properties of undefined (reading '0')` — em JavaScript,
+não no Postgres.
+
+Isso sozinho seria banal. O que custa caro é o que acontece quando esse
+`TypeError` cai num `catch` que faz limpeza de conexão.
+
+### O caso (2026-08-31, `tests/migracao-pedido-novo.mjs`)
+
+O helper era este, e o defeito está na ORDEM:
+
+```js
+const r = await c.query(sql, args);
+await c.query('release savepoint sp');            // <- savepoint liberado AQUI
+return { ok: true, valor: r.rows[0] ? ... };      // <- TypeError DEPOIS
+```
+
+O `catch` então tentava `rollback to savepoint sp` — um savepoint que a própria
+linha anterior tinha acabado de liberar. O Postgres respondeu:
+
+```
+savepoint "sp" does not exist
+```
+
+**E foi ESSA a mensagem que apareceu.** O `TypeError`, que é o defeito de
+verdade, foi engolido: o erro da limpeza substituiu o erro original antes de
+qualquer um dos dois ser impresso. O teste morria no passo 0 apontando para
+transação — que estava perfeita.
+
+### Por que isso é caro: a mensagem aponta para o lugar errado
+
+Perseguir a mensagem leva a hipóteses que são todas verificáveis, todas
+verdadeiras, e todas irrelevantes. As que foram medidas antes de achar:
+
+- *"sobrou `commit` no arquivo .sql e ele matou o savepoint"* — medido: **0
+  `begin`, 0 `commit`** depois do strip, e zero ocorrências da palavra;
+- *"savepoint não sobrevive a simple query multi-statement no node-pg"* — sonda
+  isolada: **sobrevive**, o mesmo SQL aplicou e o `release` funcionou;
+- *"o `do $$ ... $$` da migração faz alguma coisa com a transação"* — não faz.
+
+Três medições certas, nenhuma perto do defeito. O que achou em um passo foi
+**imprimir o erro primário dentro do `catch`, antes de tocar na conexão**:
+
+```
+[DBG] erro primario: undefined | Cannot read properties of undefined (reading '0')
+```
+
+`e.code` `undefined` já entrega o jogo: erro do Postgres tem código, erro de
+JavaScript não.
+
+### As regras que saem daí
+
+1. **Limpeza dentro de `catch` vai no `try` dela mesma.** Se o `rollback to
+   savepoint` / `reset role` / `end()` falhar, ele não pode substituir o erro que
+   você estava tratando:
+
+   ```js
+   } catch (e) {
+     try { await c.query('rollback to savepoint sp'); } catch { /* e é o que importa */ }
+     return { ok: false, erro: e.message };
+   }
+   ```
+
+2. **Extraia o valor ANTES de liberar o savepoint.** Enquanto houver linha de
+   código que pode estourar, o savepoint ainda tem trabalho a fazer.
+
+3. **Com multi-statement, o resultado é `r[r.length - 1]`**, e nunca `r.rows`.
+
+4. **Erro sem `e.code` não é do banco.** É o discriminador mais barato que
+   existe, e teria cortado o caminho inteiro.
+
+### A irmã, do mesmo dia e da mesma família
+
+```js
+c.query('set local role n8n_agent; select public.f($1,$2)', [a, b])
+//   -> cannot insert multiple commands into a prepared statement
+```
+
+Com parâmetro, node-pg usa o **protocolo estendido**, que aceita um comando só.
+Sem parâmetro, usa o simples, que aceita vários. Então `set local role` vai em
+`c.query()` próprio, sempre — e essa mensagem, ao contrário da de cima, diz
+exatamente o que é.
