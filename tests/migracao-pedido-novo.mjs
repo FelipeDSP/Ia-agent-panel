@@ -83,11 +83,26 @@ async function tentar(sql, args = []) {
   await c.query('savepoint sp');
   try {
     const r = await c.query(sql, args);
+    /*
+     * CONSULTA MULTI-STATEMENT VOLTA ARRAY, não um resultado. Aplicar um
+     * arquivo .sql inteiro passa por aqui, e `r.rows` é `undefined` — ler
+     * `r.rows[0]` estoura TypeError. Se isso acontecesse DEPOIS do `release`,
+     * o catch iria reverter para um savepoint já liberado e o erro de verdade
+     * ficaria escondido atrás de um `savepoint "sp" does not exist`. Por isso
+     * o valor é extraído ANTES do release, e o catch não confia no savepoint.
+     */
+    const ultimo = Array.isArray(r) ? r[r.length - 1] : r;
+    const linha = ultimo?.rows?.[0] ?? null;
+    const valor = linha ? Object.values(linha)[0] : null;
     await c.query('release savepoint sp');
-    return { ok: true, valor: r.rows[0] ? Object.values(r.rows[0])[0] : null, erro: null };
+    return { ok: true, valor, erro: null };
   } catch (e) {
-    await c.query('rollback to savepoint sp');
-    await c.query('release savepoint sp');
+    try {
+      await c.query('rollback to savepoint sp');
+      await c.query('release savepoint sp');
+    } catch {
+      /* savepoint já saiu de cena; o erro que importa é `e`, não este */
+    }
     return { ok: false, valor: null, erro: e.message };
   }
 }
@@ -133,11 +148,14 @@ try {
   const { rows: prods } = await c.query(
     `insert into public.produtos (tenant_id, nome, preco_centavos, disponivel)
      values ($1, 'sonda A', 1000, true), ($1, 'sonda B', 2500, true)
-     returning id, nome order by nome`,
+     returning id, nome`,
     [TENANT],
   );
-  PRODUTO_A = prods[0].id;
-  PRODUTO_B = prods[1].id;
+  // `returning` não aceita `order by`; a ordem vem da lista de VALUES, mas
+  // depender dela é depender de detalhe de implementação — ordena aqui.
+  const porNome = [...prods].sort((x, y) => x.nome.localeCompare(y.nome));
+  PRODUTO_A = porNome[0].id;
+  PRODUTO_B = porNome[1].id;
   chk('tenant efêmero e dois produtos criados dentro da transação', !!TENANT && !!PRODUTO_B);
 
   // =========================================================================
@@ -340,10 +358,21 @@ try {
     chk('api_n8n_cancelar_pedido tem UMA assinatura viva', assin[0].n === 1, `veio ${assin[0].n}`);
 
     // E a prova funcional: o ACL diz o que contém, chamar diz o que acontece.
-    const comoAgente = await tentar(
-      `set local role n8n_agent; select public.api_n8n_cancelar_pedido($1,$2)`, [TENANT, CONV + 3],
-    );
-    await tentar(`reset role`);
+    // `set local role` vai em comando PRÓPRIO — statement com parâmetro usa o
+    // protocolo estendido, que recusa múltiplos comandos numa string só.
+    await c.query('savepoint agente');
+    let comoAgente = { ok: false, erro: null };
+    try {
+      await c.query('set local role n8n_agent');
+      await c.query(`select public.api_n8n_cancelar_pedido($1,$2)`, [TENANT, CONV + 3]);
+      comoAgente = { ok: true, erro: null };
+    } catch (e) {
+      comoAgente = { ok: false, erro: e.message };
+    }
+    try {
+      await c.query('rollback to savepoint agente');
+      await c.query('release savepoint agente');
+    } catch { /* o role volta com o savepoint */ }
     chk('n8n_agent consegue chamar cancelar_pedido de verdade', comoAgente.ok, comoAgente.erro ?? '');
   }
 
@@ -352,6 +381,17 @@ try {
   // =========================================================================
   {
     // 7a. tem_pedido_pendente apontada só para o carrinho — a invariante.
+    //
+    // A VENDA É ARRANJADA ANTES DO SAVEPOINT, de propósito: `rollback to
+    // savepoint` desfaz TUDO o que veio depois, função e pedido juntos. Se o
+    // pedido nascesse dentro, a checagem de restauração no fim mediria uma
+    // conversa vazia e daria `false` sem defeito nenhum.
+    await tentar(`select public.api_n8n_adicionar_item($1,$2,$3,1,null)`, [TENANT, CONV + 4, PRODUTO_A]);
+    await tentar(`select public.api_n8n_fechar_pedido($1,$2,'{}')`, [TENANT, CONV + 4]);
+    const antesSab = await tentar(`select public.api_n8n_tem_pedido_pendente($1,$2)`, [TENANT, CONV + 4]);
+    chk('7a arranjou o estado: venda fechada e invariante verdadeira ANTES da sabotagem',
+      antesSab.valor === true, `veio ${antesSab.valor}`);
+
     await c.query('savepoint sab');
     await c.query(`
       create or replace function public.api_n8n_tem_pedido_pendente(p_tenant_id uuid, p_conversation_id bigint)
@@ -370,8 +410,6 @@ try {
     );
     chk('sabotagem 7a entrou (a função deixou de citar aguardando_pagamento)', corpo.ve_venda === false);
 
-    await tentar(`select public.api_n8n_adicionar_item($1,$2,$3,1,null)`, [TENANT, CONV + 4, PRODUTO_A]);
-    await tentar(`select public.api_n8n_fechar_pedido($1,$2,'{}')`, [TENANT, CONV + 4]);
     const sab = await tentar(`select public.api_n8n_tem_pedido_pendente($1,$2)`, [TENANT, CONV + 4]);
     chk(
       'sabotagem 7a REPROVA: com a função só olhando o carrinho, a invariante cai',

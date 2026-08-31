@@ -106,13 +106,39 @@ try {
       `select * from public.api_n8n_pode_transcrever($1::uuid, $2::bigint)`, [tenant, CONV]],
     ['api_n8n_tem_pedido_pendente', 'n8n',
       `select public.api_n8n_tem_pedido_pendente($1::uuid, $2::bigint)`, [tenant, CONV]],
-    ['pedido_aberto_da_conversa', 'interna',
-      `select public.pedido_aberto_da_conversa($1::uuid, $2::bigint)`, [tenant, CONV]],
     ['expirar_pedidos_vencidos', 'interna',
       `select public.expirar_pedidos_vencidos($1::uuid, $2::bigint)`, [tenant, CONV]],
     ['pedido_horas_para_expirar', 'interna',
       `select public.pedido_horas_para_expirar($1::uuid)`, [tenant]],
   ];
+
+  // O HELPER INTERNO QUE RESOLVE O PEDIDO DA CONVERSA vem do CATALOGO, nao de
+  // um nome escrito a mao. A migracao 55 troca `pedido_aberto_da_conversa` por
+  // `pedido_rascunho_da_conversa` + `pedido_fechado_da_conversa`, e um nome
+  // fixo aqui viraria `42883 function does not exist` no dia da aplicacao --
+  // que e exatamente o modo de falha que a regra do CLAUDE.md ("ao dropar,
+  // varra `tests/` junto com o schema") existe para evitar.
+  //
+  // DERIVAR NAO PODE VIRAR PULAR. Se nenhum existisse, a lista simplesmente
+  // encolheria e o teste ficaria verde medindo menos -- o defeito da serie do
+  // CLAUDE.md que "pulava todos os casos e imprimia verde". Por isso a
+  // contagem e assercao, nao pressuposto.
+  const { rows: helpersPedido } = await c.query(
+    `select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.prokind = 'f' and p.prosecdef
+        and p.proname in ('pedido_aberto_da_conversa',
+                          'pedido_rascunho_da_conversa', 'pedido_fechado_da_conversa')
+      order by 1`,
+  );
+  chk(
+    'o helper interno que resolve o pedido da conversa existe no catalogo',
+    helpersPedido.length >= 1,
+    `achei ${helpersPedido.length}: ${helpersPedido.map((r) => r.proname).join(', ') || '(nenhum)'}`,
+  );
+  for (const { proname } of helpersPedido) {
+    FUNCOES.push([proname, 'interna',
+      `select public.${proname}($1::uuid, $2::bigint)`, [tenant, CONV]]);
+  }
 
   // -------------------------------------------------------------------------
   console.log('\n-- 1. Antes: o estado que a 43 conserta --\n');

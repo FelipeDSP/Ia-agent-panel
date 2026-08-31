@@ -643,10 +643,19 @@ novo:  unique (tenant_id, conversation_id)
          where status = 'rascunho' and deletado_em is null
 ```
 
-`create unique index concurrently` do novo, conferir, `drop index` do antigo. Nessa
-ordem: com os dois vivos, a garantia é a mais forte dos dois, então a janela é
-segura em qualquer duração. **Nenhum `update` em `pedidos`** — ver §11.5, é
-condição, não preferência.
+`create unique index` do novo, `drop index` do antigo. Nessa ordem: com os dois
+vivos, a garantia é a mais forte dos dois, então a janela é segura em qualquer
+duração. **Nenhum `update` em `pedidos`** — ver §11.5, é condição, não
+preferência.
+
+**Sem `concurrently`, e é escolha, não esquecimento.** `concurrently` existe para
+não travar escrita numa tabela grande; `pedidos` tem **12 linhas**. O que se
+ganharia em bloqueio é zero, e o que se perderia é a transação: `create index
+concurrently` **não pode rodar dentro de um bloco de transação**, então a troca
+deixaria de ser atômica — haveria um instante com os dois índices vivos e outro,
+se algo falhasse entre os dois comandos, com o índice antigo já dropado e o novo
+não. Numa tabela de 12 linhas a troca dentro da transação é estritamente melhor.
+Se um dia `pedidos` crescer, esta conta muda e a decisão muda com ela.
 
 Rollback: recriar o antigo e dropar o novo. Só é possível **enquanto** nenhuma
 conversa tiver ganhado um segundo pedido vivo — depois disso o índice antigo não
