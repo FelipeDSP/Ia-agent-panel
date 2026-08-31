@@ -18,6 +18,7 @@
     "teste:produtos": "node tests/isolamento-produtos.mjs",
     "teste:dinheiro": "node tests/dinheiro.mjs",
     "teste:migracao-vendas": "node tests/migracao-vendas.mjs",
+    "teste:migracao-pedido-novo": "node tests/migracao-pedido-novo.mjs",
     "teste:pedidos": "node tests/isolamento-pedidos.mjs",
     "teste:trava-vendas": "node tests/trava-vendas.mjs",
     "n8n:sincronia": "node scripts/conferir-sincronia-wrapper.mjs",

@@ -185,6 +185,132 @@ try {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // O FILTRO POR PREFIXO ESCONDE OS HELPERS — e ja escondeu duas vezes
+  // ---------------------------------------------------------------------------
+  // As asserções acima que falam de `n8n_agent` varrem `proname like
+  // 'api\_n8n\_%'`. Isso e certo para a pergunta "o agente consegue chamar a
+  // superficie dele?" e CEGO para tudo que a mesma migracao cria ao lado.
+  //
+  // Ja custou duas vezes, e a segunda esta no CLAUDE.md: a migracao 52 criou
+  // `contato_exibivel`, o laco de conferencia percorria o prefixo, o helper nao
+  // tem o prefixo, e ele saiu com `anon=X` — diferente da irma `texto_normalizado`,
+  // de mesma natureza, criada na migracao seguinte. Nao era vazamento (funcao
+  // pura), mas a conferencia nao tinha como saber disso: ela nao o viu.
+  //
+  // A licao registrada la e "confira o que a migracao CRIA, nao o que o nome dela
+  // sugere". Os dois blocos abaixo sao isso, em forma de propriedade.
+  //
+  // POR QUE NAO DA PARA USAR `has_function_privilege` AQUI. Ele responde
+  // "alcanca?", e alcance mistura grant explicito com heranca por PUBLIC. Medido
+  // em 28/08: `n8n_agent` ALCANCA 14 funcoes fora do prefixo, e 12 delas so
+  // porque as `ALTER DEFAULT PRIVILEGES` deste projeto dao EXECUTE a PUBLIC (a
+  // mesma nota do CLAUDE.md sobre a migracao 54). Ou seja, a pergunta "o
+  // n8n_agent alcanca?" responde SIM para quase tudo e nao distingue nada.
+  // O que distingue e o aclitem `n8n_agent=` estar LA, escrito.
+  {
+    // Fora da superficie `api_n8n_*`, o agente so tem grant explicito nestas.
+    // Lista declarada e versionada, com motivo — sao helpers de texto chamados
+    // DENTRO das api_n8n_*, e receberam grant proprio nas migracoes 52 e 53.
+    const HELPERS_COM_GRANT_AO_AGENTE = ['contato_exibivel', 'texto_normalizado'];
+
+    const { rows } = await c.query(
+      `select p.proname
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.prokind = 'f'
+          and p.proname not like 'api\\_n8n\\_%'
+          and exists (select 1 from unnest(coalesce(p.proacl, '{}'::aclitem[])) a
+                       where a::text like 'n8n_agent=%')
+        order by p.proname`,
+    );
+    const novas = rows.map((r) => r.proname).filter((n) => !HELPERS_COM_GRANT_AO_AGENTE.includes(n));
+    checar(
+      'nenhum grant explicito novo a n8n_agent fora do prefixo api_n8n_',
+      novas.length === 0,
+      `${novas.join(', ')} — se e proposital, declare em HELPERS_COM_GRANT_AO_AGENTE com o motivo`,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // A FORMA DO ACL, e nao a lista de nomes
+  // ---------------------------------------------------------------------------
+  // Toda SECURITY DEFINER de `public` cai em UMA de tres formas. Medido em
+  // 28/08 e cobrindo as 34 que existem, com os grupos batendo exatamente:
+  //
+  //   n8n_agent+postgres+service_role  22  — a superficie api_n8n_*
+  //   postgres+service_role             8  — helper interno; quem o chama e uma
+  //                                          SECURITY DEFINER que roda como
+  //                                          `postgres`, entao o agente NAO
+  //                                          precisa de grant proprio
+  //   authenticated+postgres+service_role 4 — RPC que o painel chama com a sessao
+  //
+  // Forma NOVA e falha, e e assim que esta asserção pega o caso que motivou o
+  // bloco anterior: funcao criada sem `revoke` nasce com PUBLIC + `anon` +
+  // `authenticated` (a nota do `arwdDxtm` no CLAUDE.md, versao para funcoes), o
+  // que produz uma quarta forma na hora. Nao depende de alguem lembrar do nome
+  // dela, nem de ela ter prefixo nenhum.
+  {
+    const PAINEL_AUTHENTICATED = [
+      'agendar_podcast', 'billing_consumo_mensal', 'billing_volume_mensal', 'conversa_historico',
+    ];
+    const { rows } = await c.query(
+      `select p.proname,
+              (p.proname like 'api\\_n8n\\_%') as e_superficie,
+              coalesce((select string_agg(split_part(a::text, '=', 1), '+'
+                                          order by split_part(a::text, '=', 1))
+                          from unnest(p.proacl) a), '(NULO)') as forma
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.prokind = 'f' and p.prosecdef
+        order by p.proname`,
+    );
+
+    // Sem isto, um erro no filtro deixaria a varredura vazia e as tres
+    // asserções abaixo passariam por vacuidade — a falha que o repo ja teve.
+    checar(
+      `a varredura de forma achou SECURITY DEFINER em public (${rows.length})`,
+      rows.length >= 30,
+      `so ${rows.length} — o filtro deve estar errado`,
+    );
+
+    const FORMA_SUPERFICIE = 'n8n_agent+postgres+service_role';
+    const FORMA_HELPER = 'postgres+service_role';
+    const FORMA_PAINEL = 'authenticated+postgres+service_role';
+    const CONHECIDAS = [FORMA_SUPERFICIE, FORMA_HELPER, FORMA_PAINEL];
+
+    const formaNova = rows.filter((r) => !CONHECIDAS.includes(r.forma));
+    checar(
+      'nenhuma SECURITY DEFINER tem forma de ACL fora das tres conhecidas',
+      formaNova.length === 0,
+      formaNova.map((r) => `${r.proname} [${r.forma}]`).join(' | '),
+    );
+
+    // A superficie tem de ter a forma da superficie...
+    const superficieTorta = rows.filter((r) => r.e_superficie && r.forma !== FORMA_SUPERFICIE);
+    checar(
+      'toda api_n8n_* tem exatamente a forma da superficie',
+      superficieTorta.length === 0,
+      superficieTorta.map((r) => `${r.proname} [${r.forma}]`).join(' | '),
+    );
+
+    // ...e nada MAIS pode te-la. E o inverso do bloco anterior, pela forma:
+    // helper novo que copie o bloco de grants da irma api_n8n_* cai aqui.
+    const intrusa = rows.filter((r) => !r.e_superficie && r.forma === FORMA_SUPERFICIE);
+    checar(
+      'nenhum helper adotou a forma da superficie (grant a n8n_agent por copia)',
+      intrusa.length === 0,
+      intrusa.map((r) => r.proname).join(', '),
+    );
+
+    const painelTorto = rows.filter(
+      (r) => r.forma === FORMA_PAINEL && !PAINEL_AUTHENTICATED.includes(r.proname),
+    );
+    checar(
+      'nenhuma SECURITY DEFINER nova adotou a forma do painel (authenticated)',
+      painelTorto.length === 0,
+      painelTorto.map((r) => r.proname).join(', '),
+    );
+  }
+
   // PROVA FUNCIONAL, e nao so leitura de catalogo: `has_function_privilege` diz
   // o que o ACL contem, e chamar diz o que acontece. As duas divergem quando o
   // problema esta em outro lugar (search_path, owner, dependencia sem grant).

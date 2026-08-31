@@ -68,6 +68,26 @@ documentação e material de referência.
   vazando sozinho. Traz o desenho do filtro de saida e a prova de que reusar o
   `sanitizar` do `filtro-texto.js` **piora** o caso — ele deixa passar justamente a
   instrucao interna, sem marca nenhuma de que e lixo.
+- [`PENDENCIA-VENDA-AFIRMADA-SEM-TOOL.md`](PENDENCIA-VENDA-AFIRMADA-SEM-TOOL.md) —
+  **a IA afirma venda que nao existe.** Segunda modalidade de falha, AO LADO da §2b
+  do carrinho multi-item e nao por cima dela: la a ferramenta roda e o modelo ignora
+  o retorno; aqui ele **nao chama nada** e escreve chamada e resultado inventados
+  (`chamadas = 1`). **A taxa e o achado, e ela precisa do denominador ao lado:** dos
+  12 pedidos que existem no banco inteiro, 6 exigiram mais de um passo no carrinho e
+  **4 sairam com o cliente sabendo um valor que o banco nao tem** — o caminho de um
+  item so nunca falhou. R$ 117,40 em 3 casos nao tratados. Traz tambem a §8, em que
+  o defeito **contamina o handoff**: a nota privada da transferencia manda so o
+  `resumo` escrito pelo modelo, e o atendente humano — unico ponto do fluxo com
+  poder de pegar a divergencia — recebe a versao contaminada; e a §11, o desenho
+  completo da migracao do indice, com os SEIS chamadores de
+  `pedido_aberto_da_conversa` revisados um a um. Traz os tells forenses para separar retorno real de
+  fabricado (`pedido_em_texto` prefixa `Pedido nº N.`, a fabricacao nao; `produto_id`
+  que nao e UUID nao veio do catalogo), os tres detectores versionados com o buraco
+  de cada um, e a leitura que fecha o assunto do doc acima: **o filtro da 46 escondeu
+  o unico sintoma visivel desta falha** — em 21/08 um cliente recebeu o JSON cru e
+  respondeu "NAO ENTENDI", que foi a unica vez que um humano a viu acontecer. Nao
+  torna o filtro errado, torna-o incompleto: **o detector tinha de ter ido junto, no
+  mesmo commit.**
 - [`PENDENCIA-CATEGORIA-PRODUTO.md`](PENDENCIA-CATEGORIA-PRODUTO.md) — **próxima fatia
   de vendas.** A pergunta aberta ("o que vocês têm?") ainda é respondida por
   `order by nome`, e no Empório sai `1, 10, 11, 12, 13`: não parece amostra, parece
