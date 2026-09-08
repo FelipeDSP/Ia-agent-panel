@@ -8,6 +8,72 @@ mora em linhas vivas de produção, e **uma delas muda sozinha**. Os dois pedido
 abaixo são "para ficar como estão", mas ficar como estão não é uma decisão que
 alguém possa tomar: basta o cliente escrever na conversa.
 
+---
+
+## Conferência de 2026-09-08, 16:20 — a previsão se cumpriu, no outro pedido
+
+Onze dias depois. **Nada aqui foi reescrito: o que mudou vai ao lado do valor
+original**, porque o retrato só serve para isso.
+
+| pedido | previsto em 28/08 | o que aconteceu |
+|---|---|---|
+| `emporio` nº 3 | "vencido há 6 d 15 h; `status` vira `expirado` na próxima mensagem" | **nada mudou.** md5 `b8ec05f7…` **idêntico**, ainda `aguardando_pagamento` |
+| `estudyou-sendbox` nº 1 | "parado há 52 min; nada, até completar 24 h" | **virou `expirado`** em 08/09 16:05:49 |
+
+**O mecanismo estava certo e o alvo estava errado, pelo motivo que este arquivo
+já dava.** A expiração é preguiçosa: roda quando *aquela conversa* age. A conversa
+18 do `emporio` nunca mais agiu — o WAHA daquele cliente está desconectado desde
+25/08 — então o pedido mais vencido do banco segue intocado. A conversa 1864 do
+sendbox recebeu mensagem em 08/09, e aí o nº 1, a essa altura vencido havia onze
+dias, expirou na hora. A frase que previu isso está duas seções abaixo e não
+precisou de correção: *"basta o cliente escrever na conversa"*. O que faltou foi
+tirar dela a conclusão de que **o pedido em risco não é o mais vencido, é o da
+conversa mais provável de receber mensagem.**
+
+**A regra de conferência funcionou exatamente como escrita.** "md5 diferente com
+`total_centavos` igual = só o `status` mudou (a expiração prevista)" — foi isso:
+
+```
+estudyou-sendbox nº 1, em 2026-09-08:
+  status .......... aguardando_pagamento  ->  expirado
+  atualizado_em ... 2026-08-28 11:53:09.341323  ->  2026-09-08 16:05:49.871919
+  total_centavos .. 17990                       (INALTERADO)
+  numero .......... 1                           (INALTERADO)
+  metadados ....... {"entrega": "retirada"}     (INALTERADO)
+  md5 da linha .... e7884720a37f2a28bb12b83aed5cf8b8
+               ->   e952757666eb90e86903ae56b67c2f95
+
+emporio nº 3, em 2026-09-08:
+  md5 da linha .... b8ec05f714a04bfdfb33bfa6aa78eb29   (IDÊNTICO ao de 28/08)
+```
+
+**A prova do valor sobreviveu, que era o ponto.** `total_centavos` e o item não se
+mexeram, e o `pedido_itens` do sendbox segue com `atualizado_em = criado_em`. O
+contraste da seção "O contraste, que é a evidência" continua válido linha por
+linha; só o `status` de uma das duas envelheceu, e envelheceu do jeito previsto.
+
+**Cuidado ao rodar a query de conferência hoje: ela devolve TRÊS linhas, não
+duas.** A mesma conversa 1864 abriu um pedido novo em 08/09, e ele **não é** parte
+deste retrato — é evidência de outro episódio, o da §2.3 da pendência:
+
+```
+tenant .............. estudyou-sendbox
+conversation_id ..... 1864              (mesma conversa do nº 1)
+pedido_id ........... 7b15e47b-58b1-4024-9a61-5a8722fccf4c
+numero .............. null              (nunca foi fechado, apesar do "pedido fechado com sucesso")
+status .............. rascunho
+total_centavos ...... 20970                      (R$ 209,70)
+criado_em ........... 2026-09-08 16:05:49.871919 (America/Sao_Paulo)
+atualizado_em ....... 2026-09-08 16:05:49.871919 (igual ao criado: nunca alterado)
+md5 da linha ........ ccc145d5fb36965258e24b122709d39a
+```
+
+Ele nasceu no **mesmo run** que expirou o nº 1, às 16:05:49 — que é o desenho da
+migração 55 funcionando. **Também não deve ser tocado**, pelo mesmo motivo que os
+outros dois: é a única evidência de venda afirmada sem tool **posterior** à 55.
+
+---
+
 ## O que muda sozinho, e quando
 
 `expirar_pedidos_vencidos` marca `expirado` todo pedido em `aguardando_pagamento`
@@ -23,6 +89,11 @@ tenants. Ela é preguiçosa: roda só de dentro de `pedido_aberto_da_conversa` e
 **O `status` do nº 3 do `emporio` é o único campo em risco.** `total_centavos`,
 os itens e os carimbos não mudam com a expiração — a prova do valor sobrevive. Se
 o `status` importar como prova, é este arquivo que o guarda.
+
+**Desfecho, 08/09:** a linha de baixo é que se cumpriu e a de cima não — o
+`emporio` nº 3 segue intocado (conversa parada, WAHA fora desde 25/08) e o
+sendbox nº 1 expirou às 16:05:49, onze dias depois. **O campo em risco era o
+certo; o pedido, não.** Ver a conferência acima.
 
 Os outros três do `emporio` (nº 1 conversa 3, nº 2 conversa 13, nº 4 conversa 21)
 também estão vencidos e não são evidência deste doc; ficam citados na §11.5 da
@@ -49,20 +120,31 @@ tenant .............. estudyou-sendbox
 conversation_id ..... 1864          (contato: "Felipe")
 pedido_id ........... f579df18-8dea-4148-8377-cde42ff47c13
 numero .............. 1
-status .............. aguardando_pagamento
-total_centavos ...... 17990                      (R$ 179,90)
-metadados ........... {"entrega": "retirada"}
-deletado_em ......... null
+status .............. aguardando_pagamento    -> expirado          (08/09)
+total_centavos ...... 17990                      (R$ 179,90)   inalterado
+metadados ........... {"entrega": "retirada"}                  inalterado
+deletado_em ......... null                                     inalterado
 criado_em ........... 2026-08-28 11:51:53.637863 (America/Sao_Paulo)
-atualizado_em ....... 2026-08-28 11:53:09.341323 (America/Sao_Paulo)
+atualizado_em ....... 2026-08-28 11:53:09.341323 -> 2026-09-08 16:05:49.871919
 md5 da linha ........ e7884720a37f2a28bb12b83aed5cf8b8
+               ->     e952757666eb90e86903ae56b67c2f95        (08/09)
 ```
+
+As duas colunas são o retrato de 28/08 e a conferência de 08/09. **O valor de
+28/08 é o que este arquivo guarda**; o de 08/09 está ao lado para mostrar que só
+o `status` e o carimbo andaram.
 
 ## `pedido_itens`
 
 **São duas linhas no total — uma por pedido.** Esse é o ponto: a conversa do
 `emporio` prometeu duas linhas e a do sendbox prometeu duas linhas, e cada pedido
 tem uma.
+
+**Continuam sendo estas duas, em 08/09** — nenhuma das duas foi alterada
+(`atualizado_em = criado_em` nas duas). O `rascunho` aberto em 08/09 trouxe uma
+terceira linha para `pedido_itens` (`3x 1 - Treinamento de NR 01 on-line`), que é
+dele e não destes dois; a query desta seção, se filtrar por conversa, vai trazê-la
+junto.
 
 ```
 tenant .............. emporio          (pedido nº 3)
@@ -120,6 +202,11 @@ select p.numero, p.status, p.total_centavos,
 md5 diferente com `total_centavos` igual = só o `status` mudou (a expiração
 prevista). md5 diferente **com `total_centavos` diferente** = alguém mexeu no
 pedido, e aí o retrato acima é o que havia antes.
+
+**Desde 08/09 ela devolve três linhas.** A terceira é o `rascunho` novo da mesma
+conversa 1864 (`7b15e47b`, R$ 209,70), que não faz parte deste retrato — está
+transcrito na conferência acima e pertence à §2.3 da pendência. Filtrar por
+`p.numero is not null` devolve as duas originais, se for o que você quer.
 
 ## O que este arquivo NÃO guarda
 
