@@ -193,6 +193,12 @@ for (const caminho of arquivos) {
       { no: 'Remove Lidos do Acumulo', campo: 'tail', porque: 'LPOP x RPOP — RPOP removeria a mensagem errada do acumulo' },
       { no: 'Baixa Anexo', campo: 'options.response.response.outputPropertyName', porque: 'nome do binario que a transcricao consome' },
       { no: 'Redis Chat Memory', campo: 'contextWindowLength', porque: 'tamanho da memoria = custo por mensagem' },
+      // `sessionTTL` ausente NAO e "vale por default do n8n" no sentido brando:
+      // o default e 0, que significa NUNCA EXPIRAR. A chave da conversa 1864 do
+      // `estudyou-sendbox` carregou contexto por 14 dias, e uma fabricacao de
+      // 19:07:33 foi relida como fato uma hora depois. Ver a 2.4 da
+      // docs/PENDENCIA-VENDA-AFIRMADA-SEM-TOOL.md.
+      { no: 'Redis Chat Memory', campo: 'sessionTTL', porque: 'ausente = chave que nunca expira; memoria envenenada sobrevive dias' },
       { no: 'Transcreve', campo: 'bodyParameters', porque: 'response_format=verbose_json e o que traz a duracao cobrada' },
     ];
 

@@ -572,7 +572,8 @@
       "parameters": {
         "sessionIdType": "customKey",
         "sessionKey": "=tenant_{{ $('Resolve Tenant').first().json.tenant_id }}_memory_{{ $('Extrair e Filtrar').first().json.conversation_id }}",
-        "contextWindowLength": 20
+        "contextWindowLength": 20,
+        "sessionTTL": 2400
       },
       "type": "@n8n/n8n-nodes-langchain.memoryRedisChat",
       "typeVersion": 1.5,

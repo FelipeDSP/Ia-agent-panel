@@ -609,6 +609,76 @@ if (semComentarios.includes("$('AI Agent")) {
 // ---------------------------------------------------------------------------
 no('Redis Chat Memory').parameters.contextWindowLength = 20;
 
+/*
+ * TTL DA MEMORIA. Ate 08/09/2026 nao havia: a chave do Redis nunca expirava, e
+ * a da conversa 1864 do `estudyou-sendbox` carregava contexto desde 25/08 --
+ * 14 dias, ~64 itens. Ver docs/PENDENCIA-VENDA-AFIRMADA-SEM-TOOL.md 2.4.
+ *
+ * O QUE O TTL FAZ, medido no codigo que roda e nao deduzido. O no importa
+ * `RedisChatMessageHistory` de `@langchain/redis`; em `dist/chat_histories.cjs`
+ * (versao 1.1.3):
+ *
+ *     async addMessage(message) {
+ *       ...
+ *       await this.client.lPush(this.sessionId, JSON.stringify(messageToAdd[0]));
+ *       if (this.sessionTTL) await this.client.expire(this.sessionId, this.sessionTTL);
+ *     }
+ *
+ * `EXPIRE` roda em TODA escrita e o Redis RESETA o prazo. `getMessages()` nao
+ * chama `expire` -- conferido, zero ocorrencias. Entao e TTL DESLIZANTE POR
+ * ESCRITA, nao prazo fixo desde a criacao. Como o agente escreve a cada turno
+ * (pergunta + resposta), conversa ativa NUNCA perde a memoria no meio: o
+ * relogio so corre durante o silencio. Sem isso a escolha seria outra -- um
+ * prazo fixo cortaria uma negociacao de 45 min pela metade, que e pior que nao
+ * ter TTL nenhum.
+ *
+ * POR QUE 2400 (40 min), e nao os 2 h que pareciam mais seguros para venda.
+ * Levantado sobre os 264 intervalos entre mensagens do mesmo cliente na mesma
+ * conversa (fora o loop bot-a-bot da conv 20 do `emporio`): mediana 0,6 min,
+ * p75 2,6 min, p90 61,2 min, p95 23,5 h. A distribuicao e bimodal e quase nao
+ * tem massa na faixa que a decisao discute -- 6 gaps entre 40 min e 2 h, 3
+ * entre 2 h e 4 h, contra 214 abaixo de 5 min.
+ *
+ * Por CONVERSA (30 no total), o corte seria: 40 min -> 14, 2 h -> 14, 4 h ->
+ * 12. Ou seja, **2 h e dominado por 40 min**: corta exatamente as mesmas 14 e
+ * protege estritamente menos, porque uma memoria envenenada sobrevive de 40 a
+ * 120 min com ele. Nao ha trade-off entre os dois, so um lado pior.
+ *
+ * OS DOIS CASOS QUE DECIDIRAM, e eles apontam para lados opostos:
+ *
+ *  - `estudyou-sendbox` 1864, 08/09: 61,2 min de silencio entre a fabricacao
+ *    das 19:07:33 e o turno das 20:08:48 que a releu como fato e fechou um
+ *    pedido de R$ 279,60 inexistente. 40 min teria cortado; 2 h e 4 h nao;
+ *  - `emporio` 25, 24/08: carrinho de R$ 88,00 criado as 18:21:33 (chamadas=3,
+ *    escrita real), 161 min de silencio, cliente volta com "Oi" as 21:02:34 e
+ *    recebe "Quer continuar com seu pedido do queijo frescal temperado?" --
+ *    chamadas=1, puro Redis, e CERTO. 40 min e 2 h cortariam; 4 h nao.
+ *
+ * E o segundo caso pesa menos do que parece, que e o que desempata: ele
+ * acertou SEM consultar o pedido. MEMORIA EXPIRADA NAO PERDE O PEDIDO -- o
+ * rascunho fica em `pedidos` e `pedido_aberto_da_conversa`/`ver_pedido` o
+ * recuperam. Com memoria fria o agente teria de chamar a tool, que e o
+ * comportamento que se quer. O 1864 e o `emporio` 25 sao o MESMO turno --
+ * estado de pedido respondido de memoria, sem tocar no banco --, e a unica
+ * diferenca e se um turno anterior envenenou.
+ *
+ * CUSTO: nao decide. A memoria e 6-7% dos tokens de entrada e uma chamada
+ * extra custa +4.585 (~94%), entao a RAZAO e ruim; mas os absolutos, no volume
+ * de hoje, sao US$ 0,047 de memoria em todo o trafego real contra US$ 0,055 de
+ * chamadas frias com 40 min. Empate abaixo de um dolar nos dois sentidos.
+ *
+ * O QUE O TTL NAO RESOLVE, e esta escrito aqui para nao virar promessa:
+ * fabricacao dentro da MESMA sessao -- as duas de 08/09 estao a 35 SEGUNDOS
+ * uma da outra. TTL limita quanto tempo um veneno sobrevive, nao a chance de
+ * haver veneno. E nao alcanca a chave `_acumulo`, que e escrita pelos nos
+ * Redis base e tambem nao tem TTL.
+ *
+ * PENDENTE DE CONFERENCIA NA INSTANCIA: o trecho acima foi lido do `master` do
+ * n8n e do pacote publicado no npm, NAO da versao instalada. Se la o TTL for
+ * fixo em vez de deslizante, a escolha muda. Conferir na janela de import.
+ */
+no('Redis Chat Memory').parameters.sessionTTL = 2400; // 40 min
+
 // ---------------------------------------------------------------------------
 // 8. Modulo de audio: transcricao antes do fluxo comum
 // ---------------------------------------------------------------------------
