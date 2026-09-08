@@ -26,6 +26,7 @@
 import fs from 'node:fs';
 import pg from 'pg';
 import { fileURLToPath } from 'node:url';
+import { neutralizar } from './lib/pedidos-vivos-55.mjs';
 
 const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 const conn = fs.readFileSync(RAIZ+'.env.local', 'utf8').match(/SUPABASE_DB_URL=(.*)/)[1].trim();
@@ -96,6 +97,15 @@ try {
    * O rollback da 55 desfaz isso e e idempotente, entao vale tendo a 55 subido
    * ou nao -- o teste nao afirma o calendario.
    */
+
+  /*
+   * O rollback da 55 recusa banco com conversa de dois pedidos vivos -- que e
+   * operacao NORMAL desde 31/08, nao anomalia. O teste ARRANJA o estado em vez
+   * de torcer para producao nao ter vendido duas vezes na mesma conversa: os
+   * excedentes sao cancelados DENTRO desta transacao e voltam com o rollback
+   * final. Ver tests/lib/pedidos-vivos-55.mjs.
+   */
+  await neutralizar(c);
   await c.query(R55);
   // Ordem em que producao viu: 25, 26, 38, 41, 49.
   await c.query(M25); await c.query(M26); await c.query(M38); await c.query(M41);

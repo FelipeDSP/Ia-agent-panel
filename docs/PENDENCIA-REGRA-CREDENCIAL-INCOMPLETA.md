@@ -67,33 +67,12 @@ mundo, a exceção é declarada e visível.
 
 ## Achado adjacente — o gerador MUTA o JSON, não o gera
 
-Descoberto ao sabotar a regra nova do `sessionTTL`, e vale registrar porque
-contradiz uma frase que este projeto vem repetindo.
+Descoberto ao sabotar a regra nova do `sessionTTL`, e virou **item próprio**:
+[`PENDENCIA-GERADOR-CAMPO-ORFAO.md`](PENDENCIA-GERADOR-CAMPO-ORFAO.md).
 
-`scripts/gerar-principal.mjs` começa com:
-
-```js
-const ARQ = path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json');
-const w = JSON.parse(fs.readFileSync(ARQ, 'utf8'));
-```
-
-Ele **lê o próprio arquivo de saída e o muta em cima**, e depois reescreve. Não
-gera do zero. Duas consequências, e a segunda não estava escrita em lugar nenhum:
-
-- **a frase "o gerador reescreve o JSON, então conserto só no arquivo dura até a
-  próxima geração" está certa só para SOBRESCRITA.** Vale para campo que o
-  gerador seta. Para campo que ele **não** seta, o arquivo é a única fonte, e o
-  valor sobrevive a todas as gerações;
-- **portanto "tirar a linha do gerador e regerar" NÃO é sabotagem válida.**
-  Foi a primeira que tentei: comentei
-  `no('Redis Chat Memory').parameters.sessionTTL = 2400`, regerei, e o campo
-  continuou lá — a mutação não entrou, e um observador desatento leria isso como
-  "a regra não pega". A sabotagem que vale é **tirar o campo do JSON** e rodar o
-  validador: aí ele sai com código 1 e a mensagem certa. Conferido nos dois
-  sentidos, com o md5 do arquivo restaurado batendo com o de antes.
-
-O risco que isso abre e que ninguém está medindo: **um campo posto à mão no
-`agente-principal.json` sobrevive para sempre sem nunca aparecer no gerador.** É
-deriva dentro do próprio repo, da mesma família da deriva contra a instância que
-o `n8n:diff` caça — só que sem detector nenhum. O `n8n:sincronia` compara o
-arquivo com o gerador, mas para o wrapper, não para o workflow inteiro.
+Em uma linha: `scripts/gerar-principal.mjs` lê o próprio arquivo de saída e o
+muta, então campo que ele **não** seta sobrevive a toda geração — deriva dentro
+do repositório, que nem o `n8n:sincronia` nem o `n8n:diff` pegam. A conexão com
+esta pendência é a sabotagem: **"tirar a linha do gerador e regerar" não mutou
+nada**, e parar ali teria virado "a regra não pega". A forma válida é tirar o
+campo do JSON. O CLAUDE.md ganhou a seção "O gerador do workflow do n8n".

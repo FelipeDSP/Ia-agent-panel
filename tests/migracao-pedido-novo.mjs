@@ -31,6 +31,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Client } from 'pg';
+import { neutralizar } from './lib/pedidos-vivos-55.mjs';
 
 const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 const env = fs.readFileSync(path.join(RAIZ, '.env.local'), 'utf8');
@@ -134,6 +135,19 @@ try {
   console.log('\n-- 0. Estado pré-migração, via rollback (não via calendário) --\n');
   // =========================================================================
   {
+
+    /*
+     * O rollback da 55 recusa banco com conversa de dois pedidos vivos -- que e
+     * operacao NORMAL desde 31/08, nao anomalia. O teste ARRANJA o estado em vez
+     * de torcer para producao nao ter vendido duas vezes na mesma conversa: os
+     * excedentes sao cancelados DENTRO desta transacao e voltam com o rollback
+     * final. Ver tests/lib/pedidos-vivos-55.mjs.
+     */
+    const neutro = await neutralizar(c);
+    if (neutro.conversas > 0) {
+      console.log(`  ..    arranjado: ${neutro.cancelados} pedido(s) vivo(s) excedente(s) `
+        + `cancelados em ${neutro.conversas} conversa(s), dentro da transacao`);
+    }
     const r = await aplicar(sqlRb);
     chk('o rollback da 55 aplica sobre o estado atual, seja ele qual for', r.ok, r.erro ?? '');
     if (!r.ok) throw new Error('sem estado pré-migração não há o que medir');
@@ -532,6 +546,35 @@ try {
       !r.ok && /ROLLBACK DA 55 IMPOSSIVEL/i.test(String(r.erro)),
       String(r.erro).slice(0, 160),
     );
+
+    /*
+     * 8c. E o helper que os TRES testes usam no passo 0 desfaz exatamente este
+     * estado. A prova roda sobre estado ARRANJADO aqui, e nao sobre o que
+     * producao por acaso tem: ela continua valendo no dia em que ninguem tiver
+     * vendido duas vezes na mesma conversa -- que e o dia em que uma prova
+     * dependente de producao viraria vacua sem avisar.
+     */
+    const neutro = await neutralizar(c);
+    chk('8c neutralizar() cancelou o excedente — a mutação entrou',
+      neutro.conversas >= 1 && neutro.cancelados >= 1,
+      `conversas=${neutro.conversas} cancelados=${neutro.cancelados}`);
+
+    const { rows: [n8c] } = await c.query(
+      `select count(*)::int n from public.pedidos
+        where tenant_id=$1 and conversation_id=$2 and status in ('rascunho','aguardando_pagamento')`,
+      [TENANT, CONV + 6]);
+    chk('8c sobrou UM pedido vivo, não zero — cancela o carrinho, preserva a venda',
+      n8c.n === 1, `veio ${n8c.n}`);
+
+    const { rows: [v8c] } = await c.query(
+      `select status from public.pedidos
+        where tenant_id=$1 and conversation_id=$2 and status in ('rascunho','aguardando_pagamento')`,
+      [TENANT, CONV + 6]);
+    chk('8c o que sobrou é a VENDA fechada, não o carrinho',
+      v8c?.status === 'aguardando_pagamento', `sobrou ${v8c?.status}`);
+
+    const r8c = await aplicar(sqlRb);
+    chk('8c e agora o rollback da 55 aplica sobre o mesmo banco', r8c.ok, r8c.erro ?? '');
   }
 } catch (e) {
   falhas.push(`ERRO INESPERADO: ${e.message}`);

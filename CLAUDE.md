@@ -340,7 +340,6 @@ perde trabalho de cadastro que ninguém consegue devolver.
   erro. Mudar `CHUNK_ALVO_CHARS` hoje exige re-subir cada documento à mão.
 
 ## Busca vetorial
-
 O índice `idx_kb_embedding` é HNSW **global**, sem `tenant_id`. Toda query real
 filtra por tenant, e nessa combinação o planner descarta o HNSW: ele resolve por
 `idx_kb_origem` e ordena os vetores do tenant em memória. Foi verificado com
@@ -369,6 +368,37 @@ Se for mexer, os caminhos que preservam o recall são:
 Nos dois casos, re-rode o teste de recall (`npm run teste:recall`) antes e depois
 e compare os números. Trocar plano de busca vetorial sem medir recall é como
 trocar o tamanho do chunk sem medir: quebra calado.
+
+## O gerador do workflow do n8n
+
+`scripts/gerar-principal.mjs` **não gera do zero — ele lê o próprio arquivo de
+saída e o muta**:
+
+```js
+const ARQ = path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json');
+const w = JSON.parse(fs.readFileSync(ARQ, 'utf8'));
+```
+
+A frase que este projeto vinha repetindo — *"o gerador reescreve o JSON, então
+conserto só no arquivo dura até a próxima geração"* — vale **só para
+sobrescrita**. Para campo que o gerador SETA, ela está certa. Para campo que ele
+não seta, o arquivo é a única fonte, e o valor **sobrevive a todas as gerações**.
+
+Duas consequências, e a segunda não tinha nome antes de 2026-09-08:
+
+- **"tirar a linha do gerador e regerar" NÃO é sabotagem válida.** Foi a primeira
+  tentada ao escrever a regra do `sessionTTL`: a linha foi comentada, o gerador
+  rodou, e o campo continuou no JSON — a mutação **não entrou**. Parar ali teria
+  virado "a regra não pega", que é o falso verde exato contra o qual a seção de
+  sabotagem existe. A sabotagem válida é **tirar o campo do JSON** e rodar o
+  validador: exit 1 com a mensagem certa, exit 0 depois de restaurar, e o md5 do
+  arquivo restaurado batendo com o de antes;
+- **campo posto à mão no `agente-principal.json` é imortal e invisível.** Ele
+  nunca aparece no gerador, nunca some numa regeração, e o `n8n:sincronia` não o
+  pega porque compara o **wrapper** com o gerador, não o workflow inteiro. É
+  deriva dentro do próprio repositório, da mesma família da deriva contra a
+  instância que o `n8n:diff` caça, e sem detector nenhum hoje. Item próprio em
+  `docs/PENDENCIA-GERADOR-CAMPO-ORFAO.md`.
 
 ## Testes
 
@@ -455,6 +485,43 @@ trocar o tamanho do chunk sem medir: quebra calado.
   transação abortada, que é idempotente e põe o banco no estado pré-migração
   tendo ela sido aplicada ou não. Se o teste de migração não começa com o
   rollback, ele está afirmando o calendário.
+
+  **E a regra do rollback-primeiro TEM uma exceção, descoberta em 2026-09-08.**
+  Ela é escrita como propriedade porque a próxima migração desta forma bate no
+  mesmo lugar:
+
+  > **Migração que AMPLIA o permitido não tem rollback replayável contra
+  > produção viva.** O rollback recria a restrição mais estreita, e qualquer
+  > estado criado legalmente depois da migração passa a impedi-lo. Quanto mais
+  > a migração funciona, menos o rollback dela roda.
+
+  A 55 é a primeira: ela deixou uma conversa ter um carrinho **e** uma venda
+  fechada, e o índice antigo (`uq_pedidos_conversa_aberta`) proíbe exatamente
+  isso. O rollback aborta com mensagem própria — o que está certo, e é a única
+  forma honesta, porque as duas saídas mexem em pedido de cliente. Mas os três
+  testes que replayam esse rollback (`teste:acl-secdef`,
+  `teste:migracao-pedido-novo`, `teste:migracao-vendas`) ficaram reféns do
+  estado de produção: em 08/09 um teste de venda deixou a conversa 1864 do
+  `estudyou-sendbox` com dois pedidos vivos e os três ficaram **vermelhos sem
+  defeito nenhum** — vermelhos porque o sistema funcionou, que é o caso da nota
+  "Afirme PROPRIEDADE" acima chegando pelo caminho do rollback.
+
+  **Não é defeito da migração nem dos testes: é a regra que deixou de valer para
+  esta forma de migração.** O conserto é o mesmo corolário de sempre, um nível
+  acima: **o teste ARRANJA o estado pré-migração em vez de torcer para ele
+  existir.** `tests/lib/pedidos-vivos-55.mjs` cancela os pedidos vivos
+  excedentes dentro da transação abortada, antes de replayar o rollback, e
+  **estoura se não resolver** — helper que não muta nada e devolve sucesso é a
+  mesma armadilha da sabotagem que não mutou. A prova de que ele funciona roda
+  sobre estado arranjado pelo próprio teste (bloco 8c de
+  `migracao-pedido-novo`), não sobre o que produção por acaso tem: no dia em que
+  ninguém tiver vendido duas vezes na mesma conversa, uma prova dependente de
+  produção viraria vácua sem avisar.
+
+  Ao escrever uma migração que amplia o permitido: o rollback continua sendo
+  obrigatório e continua devendo abortar com mensagem própria, mas **o teste
+  precisa do arranjo junto**, na mesma entrega. Sem ele a suíte fica verde até
+  o primeiro cliente usar a capacidade nova.
 
   **E o CRLF derrubou uma guarda de verdade, não só uma sabotagem.** Em
   2026-08-24 o `teste:comparacoes-tipo` passou a acusar o **próprio comentário**

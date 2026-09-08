@@ -26,6 +26,7 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { neutralizar } from './lib/pedidos-vivos-55.mjs';
 
 const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 const lim = (f) =>
@@ -101,6 +102,15 @@ await c.query('begin');
 try {
   // Volta ao mundo em que a 43 vive (ver a nota do R55, acima). Tudo dentro
   // da transacao abortada: producao nao ve nada disto.
+
+  /*
+   * O rollback da 55 recusa banco com conversa de dois pedidos vivos -- que e
+   * operacao NORMAL desde 31/08, nao anomalia. O teste ARRANJA o estado em vez
+   * de torcer para producao nao ter vendido duas vezes na mesma conversa: os
+   * excedentes sao cancelados DENTRO desta transacao e voltam com o rollback
+   * final. Ver tests/lib/pedidos-vivos-55.mjs.
+   */
+  await neutralizar(c);
   await c.query(R55);
 
   console.log('\n== Migração 43: fechar ACL das SECURITY DEFINER ==\n');
