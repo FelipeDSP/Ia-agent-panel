@@ -2,10 +2,14 @@
 
 **Estado:** achado em 2026-08-31, na primeira varredura completa da instância do
 n8n contra o repositório. **Não consertado, e não dá para consertar editando
-arquivo** — o segredo em uso já saiu do lugar onde deveria estar.
+arquivo** — o segredo em uso já saiu do lugar onde deveria estar. **Conferido em
+2026-09-08: continua igual na instância**, valor literal no nó `Assina URL`,
+credencial `Header Auth account 4`.
 
-**Gatilho: agora.** Não é "quando alguém reclamar": o segredo vaza a cada export
-do workflow, e um export já aconteceu (o desta varredura).
+**Gatilho: agora, e a previsão já se cumpriu.** Não é "quando alguém reclamar":
+o segredo vaza a cada export do workflow. Em 31/08 isso era um risco previsto com
+um caso; em **08/09 aconteceu a segunda vez**, em oito dias, numa conferência de
+rotina que precisava baixar os workflows. Ver a §"O que se mediu".
 
 ## O que se mediu
 
@@ -23,6 +27,29 @@ export leva o segredo junto** — quem exportar o workflow pela UI, quem puxar p
 API, quem tirar backup. Aconteceu em 31/08: a varredura baixou o segredo para
 `~/Downloads` sem que ninguém tivesse essa intenção.
 
+**Aconteceu de novo em 08/09, e é a previsão desta pendência se cumprindo em oito
+dias.** A frase acima — "todo export leva o segredo junto" — foi escrita em 31/08
+como risco. Em 08/09, uma conferência de rotina da instância contra o repositório
+(`diff-n8n-instancia.mjs --completo`, que exige baixar os workflows) levou o
+segredo para `~/Downloads` pela **segunda** vez. Ninguém quis exportar o segredo:
+quiseram conferir se a instância bate com o repo, que é trabalho normal e vai se
+repetir. **É esse o argumento para a rotação sair da fila** — não é um acidente
+que se evita com cuidado, é uma consequência de uma tarefa que precisa acontecer.
+Enquanto o segredo for parâmetro de nó, toda conferência futura o copia de novo.
+
+Os arquivos de 08/09 foram apagados no mesmo dia (os dois de `~/Downloads` e a
+cópia do scratch), e a varredura depois confirmou que só restou o **nome** da
+credencial no repo, sem valor. Apagar continua não desfazendo nada: vale o que
+está escrito na seção seguinte.
+
+**E a linha de 31/08 abaixo estava errada, o que piora o quadro.** Ela dizia que
+o `~/Downloads/n8n-instancia-31-08.json` tinha sido "apagado em 31/08". Em 08/09
+ele **ainda estava lá** — 439.701 bytes, carimbo `2026-08-31 11:14`, com o
+segredo dentro —, e só foi apagado agora. Oito dias, não zero. O tamanho anotado
+lá (11,7 MB) também não é o do arquivo encontrado; não dá para saber se houve
+dois arquivos ou se o número foi anotado errado, e por isso a linha foi corrigida
+para o que se **mediu**, não para o que se supõe.
+
 Credencial do n8n não sai em export (o `/rest` devolve só `{id, name}`). Parâmetro
 de nó sai inteiro. **É essa a diferença, e é a única que importa aqui.**
 
@@ -32,9 +59,12 @@ O segredo em uso hoje já esteve em:
 
 - o JSON do workflow na instância, legível por quem tem acesso à UI;
 - qualquer export anterior desse workflow, em qualquer máquina;
-- `~/Downloads/n8n-instancia-31-08.json` (11,7 MB, apagado em 31/08 — mas
-  apagado depois de existir);
-- o diretório de scratch da sessão que fez a varredura.
+- `~/Downloads/n8n-instancia-31-08.json` — anotado aqui como "apagado em 31/08",
+  mas **conferido em 08/09: ainda existia**, 439.701 bytes, carimbo
+  `2026-08-31 11:14`. Apagado só em 08/09, depois de oito dias em disco;
+- `~/Downloads/n8n-instancia-2026-09-08.json` — o export da conferência de 08/09,
+  416.577 bytes, apagado no mesmo dia;
+- o diretório de scratch das duas sessões que fizeram varredura.
 
 Trocar o JSON para usar credencial **não desfaz nada disso**. O valor continua
 válido enquanto a Edge Function o aceitar. Só a rotação encerra a exposição.

@@ -177,6 +177,99 @@ E o tell 1 aparece outra vez, agora no turno de 19:06:58: "Pedido fechado com
 sucesso" sem citar número, quando um fechamento real atribui `numero` e o retorno
 o traria. `numero` continua nulo.
 
+### 2.4 A memória envenenada — a fabricação vira premissa do turno seguinte
+
+Ainda 08/09, mesma conversa 1864, uma hora depois. **É a evidência mais forte que
+este doc tem, e é n = 1.**
+
+```
+19:07:33  "Adicionei 1 NR 06... Total: R$ 279,60"          chamadas=1   FABRICADO (§2.3)
+                        ── 61 minutos de silêncio ──
+20:08:48  "Seu pedido está assim: 3x NR 01 + 1x NR 06      chamadas=1   REPETE A FABRICAÇÃO
+           | Total: R$ 279,60 | Como deseja a entrega?"                 COMO SE FOSSE FATO
+20:09:13  "Pedido fechado com sucesso para entrega!        chamadas=1   FABRICADO de novo,
+           ... Totalizando R$ 279,60."                                  em cima do anterior
+```
+
+**A terceira é pior que as duas primeiras, e por um motivo novo.** As de §2.3 são
+o modelo inventando um resultado. Esta é o modelo **lendo a própria invenção como
+histórico** e construindo em cima: o NR 06 nunca existiu no banco, mas existia na
+memória do Redis, então o valor cresceu e o "fechamento" saiu com R$ 279,60 —
+contra um `rascunho` de R$ 209,70 que nunca mudou. A fabricação deixou de ser um
+turno ruim e virou **estado**.
+
+#### O experimento — memória limpa, zero fabricação
+
+Entre 20:09:13 e 20:13:43 a memória da conversa foi limpa pelo painel. O teste foi
+refeito na mesma conversa, com o mesmo prompt, o mesmo agente e o mesmo catálogo:
+
+| | antes da limpeza | depois |
+|---|---|---|
+| turnos que afirmam escrita | 4, **todos `chamadas = 1`** | 9 turnos, `chamadas` 2, 4, 2, 8, 1, 2, 2, 2, 2 |
+| fabricações | **4** | **0** |
+| o banco confirma o que foi dito? | não | **sim, em todas** |
+
+Resultado no banco, conferido: **pedido nº 2**, `aguardando_pagamento`, R$ 209,70,
+`3x 1 - Treinamento de NR 01 on-line`, fechado às 20:17:25; e um `rascunho` novo
+de R$ 69,90, `1x 10 - Curso de NR 20 Iniciação on-line`, aberto às 20:18:43.
+
+Dois detalhes que valem contra a leitura preguiçosa deste quadro:
+
+- **não é "todos com `chamadas = 2`".** Houve um `chamadas = 1` depois da limpeza,
+  às 20:17:07 — *"Você pediu: 3x Treinamento de NR 01 on-line — Total: R$ 209,70.
+  Confirmo o pedido assim?"*. É recitação de memória e **está certa**: bate com o
+  rascunho daquele instante. Turno de memória não é o defeito; turno de memória
+  **suja** é;
+- **o tell 1 da §3 apareceu do lado bom.** O fechamento real às 20:17:28 disse
+  *"Pedido nº 2 finalizado"* — citou o número, que só a tool devolve. Os quatro
+  fabricados nunca citaram número nenhum.
+
+**E a migração 55 foi finalmente exercitada por acidente:** a mesma conversa ficou
+com uma venda fechada (nº 2) e um carrinho aberto ao mesmo tempo, que era
+exatamente o que o índice único proibia antes dela (§11.1).
+
+#### O peso certo disto, que é menos do que parece
+
+**Memória envenenada AGRAVA a modalidade C. Não é a causa.** Três razões para não
+promover isto a lei:
+
+1. **n = 1.** Um ciclo sujo e um ciclo limpo, na mesma conversa, no mesmo dia. Não
+   houve controle: o segundo teste também teve mensagens diferentes, e o modelo
+   pode ter ido bem por motivo nenhum. Repetir com memória suja de propósito é o
+   que transformaria isto em medição;
+2. **nenhum TTL pegaria as duas primeiras.** As fabricações de 19:06:58 e 19:07:33
+   estão a **35 segundos** uma da outra, dentro da mesma sessão viva. Só a
+   terceira veio depois de silêncio (61 minutos). Memória limpa não impede
+   fabricar — impede **acumular**;
+3. **o mesmo comportamento já apareceu com a memória CERTA, e ninguém reclamou.**
+   `emporio` conversa 25, 24/08: carrinho criado às 18:21:33 (`chamadas = 3`,
+   escrita real), 161 minutos de silêncio, e às 21:02:34 o cliente volta com "Oi"
+   — a resposta *"Quer continuar com seu pedido do queijo frescal temperado?"* sai
+   com **`chamadas = 1`**, puro Redis. Estava certa. **É o mesmo turno da 20:08:48
+   do sendbox**: estado de pedido respondido de memória, sem tocar no banco. A
+   única diferença é se um turno anterior envenenou a memória ou não.
+
+O terceiro item é o que muda o desenho, e por isso está aqui e não numa nota: **o
+defeito não é a memória durar, é o modelo responder sobre o pedido sem consultar o
+pedido.** Enquanto isso valer, a memória é uma aposta cuja precisão depende de
+nenhum turno anterior ter errado — e a §7.2 mede que 21,7 % dos turnos de
+confirmação erram.
+
+#### A causa técnica da memória suja, medida
+
+`Redis Chat Memory` no `agente-principal.json`:
+
+```
+sessionIdType:        customKey
+sessionKey:           tenant_{{tenant_id}}_memory_{{conversation_id}}
+contextWindowLength:  20
+sessionTTL:           (AUSENTE)
+```
+
+Sem `sessionTTL` a chave **nunca expira**. A do sendbox 1864 carregava contexto
+desde 25/08 — 14 dias, ~64 itens na lista. O desenho do TTL, o que ele resolve e o
+que não, estão fora deste doc: é decisão em aberto, e a §12 registra o estado.
+
 ---
 
 ## 3. Os tells forenses — distinguir texto real de inventado pela ESTRUTURA
@@ -1232,9 +1325,13 @@ migração já está em produção ou não, que é o nono caso da série no CLAU
 - **a memória do Redis fica envenenada** — o `Redis Chat Memory` é escrito pelo nó
   do agent, antes do `Estima Tokens`, então guarda a saída **bruta**, com o bloco
   fabricado dentro. É o que o `VAZAMENTO-USED-TOOLS.md` já registra em "O que ele
-  NÃO pega". **Não medido aqui** (não houve leitura do Redis nesta investigação);
-  é a explicação mais provável de o defeito ter durado três turnos no sendbox, não
-  um fato estabelecido;
+  NÃO pega". **Deixou de ser hipótese em 08/09** (§2.4): a fabricação de 19:07:33
+  foi relida como fato uma hora depois e o modelo fechou um pedido de R$ 279,60
+  que o banco nunca teve; limpar a memória pelo painel e refazer o teste na mesma
+  conversa deu **zero fabricação em 9 turnos**. Continua sendo **n = 1** e continua
+  não explicando as duas fabricações separadas por 35 segundos. O nó não tem
+  `sessionTTL`, então a chave nunca expira — a do sendbox tinha 14 dias. **O TTL
+  está desenhado e não escrito**, e a decisão é do Felipe;
 - **o detector não tem quem o rode.** D1/D2/D3/D4 são queries num doc, que é
   exatamente o estado em que a query de frequência do `VAZAMENTO-USED-TOOLS.md`
   passou oito dias. Virar `npm run teste:*` exige decidir o que é falha e o que é
