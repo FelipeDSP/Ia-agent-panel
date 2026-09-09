@@ -48,6 +48,11 @@
 
 begin;
 
+drop function if exists public.api_n8n_estado_pedido(uuid, bigint, text, integer);
+-- A assinatura de TRES argumentos nunca chegou a producao (a 56 nao foi
+-- aplicada antes desta revisao), mas o drop dela fica aqui de graca: se um
+-- ambiente tiver a versao antiga, dropar so a nova deixaria as DUAS vivas e a
+-- chamada viraria ambigua — a familia 28/32/37/40/41 pela porta do rollback.
 drop function if exists public.api_n8n_estado_pedido(uuid, bigint, text);
 
 drop index if exists public.idx_mensagens_log_portao;

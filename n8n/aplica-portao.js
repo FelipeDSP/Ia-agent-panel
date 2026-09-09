@@ -76,7 +76,14 @@ const est = (() => {
 const textoModelo = String(est.output ?? '');
 
 // O que o banco disse. Nomes iguais aos da funcao `api_n8n_estado_pedido`.
-const temRascunho = estado.tem_rascunho === true;
+//
+// `tem_pedido`, e nao `tem_rascunho`: a referencia passou a ser o pedido TOCADO
+// no turno, em qualquer status, e so entao o rascunho. Sem isso o turno do
+// FECHAMENTO ficava sem referencia — o `fechar_pedido` tira o rascunho no exato
+// turno em que o valor final e dito ao cliente, e foi por ali que o R$ 42,50 de
+// 21/08 escapou.
+const temPedido = estado.tem_pedido === true;
+const statusPedido = estado.pedido_status ?? null;
 const totalBanco = Number.isFinite(estado.total_centavos) ? estado.total_centavos : 0;
 const itens = Array.isArray(estado.itens) ? estado.itens : [];
 const escreveuNesteTurno = estado.escreveu_neste_turno === true;
@@ -225,7 +232,7 @@ const regra1Barra = afirmou && !escreveuNesteTurno;
 // So avalia com rascunho e total maior que zero: sem isso nao ha com o que
 // comparar, e a mensagem de pre-venda ("o pao de queijo sai por R$ 1,50") deixa
 // de ser candidata a divergencia por nao existir referencia.
-const regra2Avaliavel = candidata && temRascunho && totalBanco > 0;
+const regra2Avaliavel = candidata && temPedido && totalBanco > 0;
 const totais = regra2Avaliavel ? totaisAfirmados(textoModelo) : [];
 const totalAfirmado = totais.length ? Math.max(...totais) : null;
 const regra2Avaliada = regra2Avaliavel && totalAfirmado !== null;
@@ -245,7 +252,7 @@ const veredito = regra1Barra ? 'barrado_regra_1' : (regra2Barra ? 'barrado_regra
 // mesmo jeito que `transferir_humano` guarda horario e notificacao. Nao foi
 // feito: e trabalho proprio, e ate la um tenant de tom formal recebe este texto.
 function mensagemSubstituta() {
-  if (!temRascunho) {
+  if (!temPedido) {
     return [
       'Deixa eu confirmar uma coisa antes de seguir 😊',
       '',
@@ -266,7 +273,7 @@ function mensagemSubstituta() {
 // O bloco vai quando o estado MUDOU neste turno, ou quando o portao barrou.
 // Nao vai em toda mensagem: repetir o pedido a cada linha da conversa vira
 // ruido e treina o cliente a nao ler.
-const anexaBloco = !barrou && escreveuNesteTurno && temRascunho;
+const anexaBloco = !barrou && escreveuNesteTurno && temPedido;
 
 let saida;
 if (barrou) {
@@ -291,7 +298,7 @@ const notaPrivada = transferir
       '🤖 *Portao de venda: duas mensagens barradas seguidas*',
       '',
       '*Estado de fato (banco):*',
-      temRascunho ? blocoPedido() : 'Nenhum pedido aberto nesta conversa.',
+      temPedido ? blocoPedido() : 'Nenhum pedido aberto nesta conversa.',
       '',
       '*O que o agente afirmou (nao enviado ao cliente):*',
       textoModelo.trim() || '(vazio)',
@@ -326,7 +333,8 @@ componentes.portao = {
   candidata,
   afirmou_efeito_consumado: afirmou,
   escreveu_neste_turno: escreveuNesteTurno,
-  tem_rascunho: temRascunho,
+  tem_pedido: temPedido,
+  pedido_status: statusPedido,
   total_banco_centavos: totalBanco,
   total_afirmado_centavos: totalAfirmado,
   bloco_anexado: anexaBloco,

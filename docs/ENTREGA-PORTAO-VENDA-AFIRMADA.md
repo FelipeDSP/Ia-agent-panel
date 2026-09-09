@@ -1,7 +1,8 @@
 # Entrega — portão de venda afirmada + narração por código
 
-**Estado: ENTREGUE, NADA APLICADO.** Migração não rodada em produção, workflow
-não importado, gerador não executado. Tudo abaixo está no repositório.
+**Estado: ENTREGUE. Migração NÃO aplicada, workflow NÃO importado.** O gerador
+foi executado — ensinar uma guarda exige rodar o que ela guarda —, e a execução
+fechou o `n8n:sincronia` que estava vermelho. Tudo abaixo está no repositório.
 
 | artefato | arquivo |
 |---|---|
@@ -10,8 +11,10 @@ não importado, gerador não executado. Tudo abaixo está no repositório.
 | corpo do nó (fonte) | `n8n/aplica-portao.js` |
 | workflow pronto para importar | `n8n/workflows/agente-principal.json` (64 nós, +4) |
 | script que o monta | `scripts/aplicar-portao-venda.mjs` |
-| teste dos dois vereditos | `npm run teste:portao-venda` — 42/42 |
-| teste da migração | `npm run teste:migracao-portao` — 34/34 |
+| teste dos dois vereditos | `npm run teste:portao-venda` — 45/45 |
+| teste da migração | `npm run teste:migracao-portao` — 45/45 |
+| arranjo do vínculo Chatwoot | `tests/lib/caixa-54.mjs` |
+| suíte completa | `npm run teste` — **55 de 55** |
 
 ---
 
@@ -76,29 +79,59 @@ mensagem **passa**.
 
 ---
 
-## 3. Cobertura medida — 3 dos 4 casos reais, e o quarto dito de frente
+## 3. Cobertura medida — os QUATRO casos reais
 
 ```
 R$ 60,00  (emporio/1636, 20/08)  -> barrado_regra_1
 R$ 249,80 (sendbox, 28/08)       -> barrado_regra_1
 R$ 279,60 (sendbox, 08/09)       -> barrado_regra_1
-R$ 42,50  (emporio/18, 21/08)    -> passou
+R$ 42,50  (emporio/18, 21/08)    -> barrado_regra_2
 ```
 
 E os três turnos do caso do `emporio` de 08/09 — inclusive o *"seu pedido
 ficou:"* que **nenhum dos quatro detectores pegava** — são barrados.
 
-**Por que o R$ 42,50 escapa, e é consequência direta de uma decisão do
-enunciado.** Naquele turno a tool RODOU (`chamadas = 4`) e fechou o pedido de
-R$ 30,00; o texto publicou R$ 42,50. Como o `fechar_pedido` transformou o
-rascunho em `aguardando_pagamento`, no instante da consulta **não há rascunho** —
-e "sempre o rascunho, pedido fechado é passado" é regra do enunciado. Regra 1 não
-pega porque houve escrita; Regra 2 não avalia porque não há referência.
+**O R$ 42,50 escapava, e a correção foi trocar a referência.** A versão anterior
+consultava "sempre o rascunho", e o `fechar_pedido` transforma o rascunho em
+`aguardando_pagamento` **no mesmo turno em que o valor final é dito ao cliente**
+— então no instante da consulta não havia rascunho e a regra 2 ficava sem
+referência justamente no turno do fechamento.
 
-Não mudei a regra: a decisão está escrita e tem motivo. Fica registrado que o
-preço dela é **um caso em quatro**, e que ele é da modalidade B sobre pedido
-recém-fechado. Fechar esse buraco pediria comparar também contra o pedido fechado
-**na janela do próprio turno** — desenho novo, não ajuste.
+Agora a referência é o **pedido TOCADO na janela**, em qualquer status, e só
+depois o rascunho. Isso cobre fechamento e cancelamento pelo mesmo caminho. O
+teste tem o espelho obrigatório: mesmo fechamento com valor **certo** passa —
+sem ele, o verde poderia vir de "fechamento sempre barra".
+
+---
+
+## 3b. O teto da janela, e o primeiro turno
+
+`escreveu_neste_turno` compara a última mutação do pedido contra a última saída
+registrada. **Essa borda sozinha é larga demais**, e a medição diz quanto:
+
+| | |
+|---|---:|
+| intervalo entre saídas consecutivas — mediana | 41 s |
+| — p95 | 103.898 s (28,9 h) |
+| — **máximo** | **18 dias** |
+| escrita → turno que a narrou — mediana | 2,3 s |
+| — **máximo** | **10,0 s** |
+
+Sem teto, uma conversa parada duas semanas leria qualquer mutação daquele período
+como "escreveu neste turno" e passaria a fabricação. É a mesma forma do defeito
+que a §6 da pendência registra na D2, onde `atualizado_em` movido pela expiração
+fez um pedido engolir a conversa de onze dias depois.
+
+O teto entrou como parâmetro, `p_teto_segundos`, default **300 s** — 30× o
+máximo observado, com folga para debounce (até 15 s), agente lento e retry, e
+ainda assim cortando a janela de 18 dias para 5 minutos. A borda usada é
+`greatest(última saída, now() − teto)`: em conversa ativa a saída limita; em
+conversa que voltou depois de dias, o teto.
+
+**E o primeiro turno sai de graça.** Sem saída anterior, `max` é nulo e o teto
+vira a única borda — que é o comportamento certo: um rascunho pendurado de uma
+sessão antiga deixa de contar como escrita de agora. Era o furo do `-infinity`
+sozinho, e o teste o cobre nos dois sentidos.
 
 ---
 
@@ -154,9 +187,87 @@ segue respondendo até um humano falar. Fica aberto.
 
 ---
 
+## 5b. O gerador aprendeu as três referências — e a guarda derruba a geração
+
+O `gerar-principal.mjs` agora conhece as três, aponta-as conforme a montagem
+(com portão → `Aplica Portao`; sem portão → `Estima Tokens`) e **valida antes de
+escrever**.
+
+**E aqui apareceu o defeito que justifica a guarda existir.** A primeira geração
+depois do portão saiu com o 10º elemento voltando a ler do `Estima Tokens` — o
+portão montado, o cliente recebendo o texto certo, e **o veredito nunca chegando
+ao banco**. Causa: existe um bloco na seção 9 do gerador que **reconstrói o
+`queryReplacement` inteiro**, com os nomes cravados, e ele roda *depois* da
+seção que aponta. A primeira versão da guarda validava logo após apontar, não
+via o bloco tardio, e imprimia "3 de 3" sobre um estado que o disco não teria.
+
+Duas correções, e a segunda é a lição: o bloco tardio passou a usar
+`FONTE_SAIDA`, e **a guarda mudou de lugar — roda no fim, sobre o objeto final,
+imediatamente antes do `writeFileSync`.** Guarda que valida estado intermediário
+não guarda nada.
+
+Ela confere: as três lendo da fonte certa; nenhum vestígio do apontamento
+antigo; nenhum `$('AI Agent')` de volta; o array com 10 elementos e `output` no
+3º, `componentes_json` no 10º; `tokens_entrada`/`tokens_saida` ainda vindo do
+`Estima Tokens`; e, com portão, a cadeia de três saltos existindo de fato.
+
+Sabotada — reintroduzindo o apontamento antigo no bloco tardio:
+
+```
+ERRO: as referencias de saida estao erradas. O portao viraria decoracao.
+  - Registra Mensagem: o 10o elemento (componentes_json) nao le de "Aplica Portao"
+  - Registra Mensagem.queryReplacement ainda referencia "Estima Tokens" — apontamento antigo reintroduzido
+Nada foi escrito.
+exit=1
+```
+
+E o md5 do workflow ficou **idêntico** — a geração morre sem tocar no arquivo.
+
+---
+
+## 5c. Os dois testes vermelhos: quem estava velho era a migração
+
+Eu vinha chamando de "pré-existentes da migração 54", que é a explicação mais
+confortável possível e não diz nada. Medido:
+
+```
+(produção) ceejaar           conta 60, caixa 281
+(produção) emporio           conta 59, caixa 279
+(produção) estudyou-sendbox  conta 57, caixa 282
+```
+
+A migração 54 tem backfill com valores cravados e um `raise` que confere o
+próprio resultado — ela procura `estudyou-sendbox` na **conta 1** e crava a
+caixa **189**. O tenant foi religado pelo painel em 09/09 09:22, que é operação
+normal: a tela existe para isso. O backfill não pega nada, `v_sendbox` sai nulo,
+a migração aborta, e os dois testes que a replayam morrem antes da primeira
+asserção.
+
+**Quem está velho é a migração, não a produção.** E o arquivo da 54 não pode ser
+reescrito: ele já rodou, e o texto tem de continuar sendo o que rodou.
+
+O conserto é o corolário que o `CLAUDE.md` já registra e que o
+`pedidos-vivos-55.mjs` já aplicou uma vez: **o teste ARRANJA o estado que vai
+medir.** `tests/lib/caixa-54.mjs` devolve os tenants ao vínculo de 28/08 dentro
+da transação abortada, **e estoura se não resolver** — helper que não muta nada
+e devolve sucesso é a mesma armadilha da sabotagem que não mutou.
+
+E o teste passou a **dizer qual dos dois está certo**, em vez de classificar como
+herança: uma seção 0 lê produção antes do replay, afirma a *propriedade* (todo
+tenant conectado tem vínculo completo e resolve só ele) e imprime a divergência
+como nota, com o ponteiro para o helper.
+
+Não é vermelho herdado. Era um teste afirmando estado do mundo, o defeito nº 8 e
+nº 9 da contagem — agora pela porta do backfill de migração.
+
+---
+
 ## 6. O que ficou pendente de autorização
 
-**`n8n:sincronia` está vermelho, e não é deste trabalho.** A entrega anterior
+**`n8n:sincronia` FECHOU.** Ensinar o gerador exigiu executá-lo — não há como
+verificar uma guarda sem rodar o que ela guarda —, e a execução re-derivou o
+wrapper dentro do `Estima Tokens`. `59 passaram, 0 falharam`; o workflow voltou a
+ser coerente com o gerador. O que segue abaixo era o estado anterior: A entrega anterior
 cortou do system message a instrução *"repita esse resumo, os itens e o total"* —
 o item que este enunciado também pede, e que **já está aplicado**. O que falta é
 uma execução do `gerar-principal.mjs` para re-derivar o wrapper dentro do

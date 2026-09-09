@@ -516,8 +516,11 @@ for (const tool of [...TOOLS_BASICO, ...TOOLS_VENDAS]) {
 // ---------------------------------------------------------------------------
 // `$('AI Agent')` aparecia em tres nos, e a pior nao era a obvia: o
 // `Envia Mensagem Chatwoot` tambem referenciava. Com dois agents, UM DOS PERFIS
-// PARARIA DE RESPONDER AO CLIENTE. Todos passam a ler do `Estima Tokens`, que e
-// no unico e sempre esta no caminho, e ja devolve `output`.
+// PARARIA DE RESPONDER AO CLIENTE. Todos passam a ler de um no unico que sempre
+// esta no caminho e ja devolve `output`.
+//
+// QUAL no unico depende de o portao de venda afirmada estar montado — ver a
+// secao 6c logo abaixo, que e quem decide e quem GUARDA.
 
 let trocas = 0;
 for (const n of w.nodes) {
@@ -528,6 +531,59 @@ for (const n of w.nodes) {
     n.parameters = JSON.parse(depois);
     trocas++;
   }
+}
+
+// ---------------------------------------------------------------------------
+// 6c. AS TRES REFERENCIAS DE SAIDA — e a guarda que falha alto
+// ---------------------------------------------------------------------------
+// ESTA E A SECAO QUE IMPEDE O PORTAO DE VIRAR DECORACAO.
+//
+// `Envia Mensagem Chatwoot` e `Registra Mensagem` NAO leem o no anterior: os
+// dois puxam POR NOME. Inserir um no no meio da cadeia nao intercepta nada — a
+// mensagem sai como o modelo escreveu, o portao roda e ninguem usa o resultado.
+// E o modo de falha e SILENCIOSO: tudo funciona, so que sem portao.
+//
+// SAO TRES, e a terceira nao e obvia:
+//
+//   1. `Envia Mensagem Chatwoot` -> parameters.body            (o que o cliente le)
+//   2. `Registra Mensagem`       -> queryReplacement, 3o elem  (o que o banco grava)
+//   3. `Registra Mensagem`       -> queryReplacement, 10o elem (o VEREDITO)
+//
+// Trocar so a 1 e a 2 deixa o portao funcionando e o veredito nunca chegando ao
+// banco -- a mesma cegueira que a docs/VAZAMENTO-USED-TOOLS.md registra, onde o
+// filtro passou a gravar o texto limpo e a consulta de frequencia ficou cega.
+//
+// E `tokens_entrada`/`tokens_saida` (4o e 5o) NAO entram na lista: eles medem o
+// que a OpenAI cobrou pelo texto que o MODELO gerou. Aponta-los para o portao
+// faria o rateio contar o texto substituto, que ninguem gerou por token.
+//
+// O ALVO DEPENDE DA MONTAGEM, e por isso a guarda tem dois lados: com o portao
+// presente o alvo e `Aplica Portao`; sem ele, `Estima Tokens`. Um workflow com
+// o portao montado e as referencias no `Estima Tokens` esta QUEBRADO em silencio,
+// e e exatamente esse estado que esta secao recusa a gravar.
+
+const TEM_PORTAO = w.nodes.some((n) => n.name === 'Aplica Portao');
+const FONTE_SAIDA = TEM_PORTAO ? 'Aplica Portao' : 'Estima Tokens';
+
+{
+  const envia = no('Envia Mensagem Chatwoot');
+  const registra = no('Registra Mensagem');
+  const outro = TEM_PORTAO ? 'Estima Tokens' : 'Aplica Portao';
+
+  // Aponta (idempotente): so `output` e `componentes_json`.
+  envia.parameters.body = envia.parameters.body
+    .split(`$('${outro}').first().json.output`)
+    .join(`$('${FONTE_SAIDA}').first().json.output`);
+
+  registra.parameters.options.queryReplacement = registra.parameters.options.queryReplacement
+    .split(`$('${outro}').first().json.output`)
+    .join(`$('${FONTE_SAIDA}').first().json.output`)
+    .split(`$('${outro}').first().json.componentes_json`)
+    .join(`$('${FONTE_SAIDA}').first().json.componentes_json`);
+
+  // A GUARDA NAO MORA AQUI — ver a secao 9b, no fim. Aqui so aponta, porque o
+  // bloco que reconstroi o `queryReplacement` do `Registra Mensagem` roda DEPOIS
+  // desta secao e passaria por cima de qualquer validacao feita agora.
 }
 
 // ---------------------------------------------------------------------------
@@ -1263,12 +1319,83 @@ w.connections['Enviar Foto do Produto'] = {
   reg.parameters.query =
     "SELECT public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'entrada', $7::text, 0, 0, $6::text, $8::numeric, $9::text, null::jsonb) AS log_entrada,\n" +
     "       public.api_n8n_registrar_mensagem($1::uuid, $2::bigint, 'saida', $3::text, $4::int, $5::int, $6::text, null::numeric, $9::text, $10::jsonb) AS log_saida;";
+  // ATENCAO: este bloco RECONSTROI o array inteiro, entao e ele — e nao a
+  // secao 6c — quem decide de onde vem `output` e `componentes_json`. A 6c
+  // aponta cedo e este bloco passava por cima: o portao ficava montado com o
+  // 10o elemento ainda lendo do `Estima Tokens`, e o veredito nunca chegava ao
+  // banco. Foi assim na primeira geracao depois do portao, e o guard da 6c nao
+  // pegou porque rodava ANTES daqui. Por isso o guard agora roda no fim, sobre
+  // o objeto FINAL (secao 9b), e por isso `FONTE_SAIDA` e usada aqui.
   reg.parameters.options.queryReplacement =
     "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id, " +
-    "$('Estima Tokens').first().json.output, $('Estima Tokens').first().json.tokens_entrada, " +
+    `$('${FONTE_SAIDA}').first().json.output, $('Estima Tokens').first().json.tokens_entrada, ` +
     "$('Estima Tokens').first().json.tokens_saida, $('Resolve Tenant').first().json.modelo, " +
     "$('Lista Depois').first().json.lista_depois, $('Mensagem Pronta').first().json.audio_segundos, " +
-    "$execution.id, $('Estima Tokens').first().json.componentes_json ] }}";
+    `$execution.id, $('${FONTE_SAIDA}').first().json.componentes_json ] }}`;
+}
+
+// ---------------------------------------------------------------------------
+// 9b. A GUARDA DAS TRES REFERENCIAS — no fim, sobre o objeto FINAL
+// ---------------------------------------------------------------------------
+// Ela roda AQUI, e nao junto do apontamento, porque o bloco que reconstroi o
+// `queryReplacement` do `Registra Mensagem` vem depois da secao 6c e ja passou
+// por cima dela uma vez. Guarda que valida estado intermediario nao guarda
+// nada: valida o que vai para o disco.
+{
+  const erros = [];
+  const envia = no('Envia Mensagem Chatwoot');
+  const registra = no('Registra Mensagem');
+  const outro = TEM_PORTAO ? 'Estima Tokens' : 'Aplica Portao';
+  // ---- a guarda. NAO avisa: derruba a geracao. --------------------------
+  const body = envia.parameters.body;
+  const qr = registra.parameters.options.queryReplacement;
+
+  if (!body.includes(`$('${FONTE_SAIDA}').first().json.output`)) {
+    erros.push(`Envia Mensagem Chatwoot.body nao le de "${FONTE_SAIDA}"`);
+  }
+  if (!qr.includes(`$('${FONTE_SAIDA}').first().json.output`)) {
+    erros.push(`Registra Mensagem: o 3o elemento (output) nao le de "${FONTE_SAIDA}"`);
+  }
+  if (!qr.includes(`$('${FONTE_SAIDA}').first().json.componentes_json`)) {
+    erros.push(`Registra Mensagem: o 10o elemento (componentes_json) nao le de "${FONTE_SAIDA}"`);
+  }
+  // o apontamento ANTIGO nao pode sobreviver em nenhum dos dois
+  for (const [rotulo, txt] of [['Envia Mensagem Chatwoot.body', body], ['Registra Mensagem.queryReplacement', qr]]) {
+    if (txt.includes(`$('${outro}').first().json.output`)
+      || txt.includes(`$('${outro}').first().json.componentes_json`)) {
+      erros.push(`${rotulo} ainda referencia "${outro}" — apontamento antigo reintroduzido`);
+    }
+    if (txt.includes("$('AI Agent')")) {
+      erros.push(`${rotulo} voltou a referenciar $('AI Agent') — com dois agents, um perfil para de responder`);
+    }
+  }
+  // a ORDEM do array e contrato com o SQL ($3 = output, $10 = componentes)
+  const elems = qr.replace(/^=\{\{\s*\[/, '').replace(/\]\s*\}\}$/, '').split(',').map((x) => x.trim());
+  if (elems.length !== 10) erros.push(`Registra Mensagem: queryReplacement com ${elems.length} elementos, esperava 10`);
+  if (!/\.output$/.test(elems[2] ?? '')) erros.push('Registra Mensagem: o 3o elemento deixou de ser `output`');
+  if (!/\.componentes_json$/.test(elems[9] ?? '')) erros.push('Registra Mensagem: o 10o elemento deixou de ser `componentes_json`');
+  // e os tokens NAO podem ter migrado junto
+  for (const campo of ['tokens_entrada', 'tokens_saida']) {
+    if (!qr.includes(`$('Estima Tokens').first().json.${campo}`)) {
+      erros.push(`Registra Mensagem: ${campo} deveria continuar vindo do Estima Tokens`);
+    }
+  }
+  // com portao, a cadeia tem de existir de fato
+  if (TEM_PORTAO) {
+    const salto = (de) => w.connections[de]?.main?.[0]?.[0]?.node;
+    if (salto('Estima Tokens') !== 'Estado do Pedido') erros.push('cadeia: Estima Tokens nao leva a Estado do Pedido');
+    if (salto('Estado do Pedido') !== 'Aplica Portao') erros.push('cadeia: Estado do Pedido nao leva a Aplica Portao');
+    if (salto('Aplica Portao') !== 'Credencial (resposta)') erros.push('cadeia: Aplica Portao nao volta a Credencial (resposta)');
+  }
+
+  if (erros.length) {
+    console.error('\nERRO: as referencias de saida estao erradas. O portao viraria decoracao.\n');
+    for (const e of erros) console.error('  - ' + e);
+    console.error('\nNada foi escrito.\n');
+    process.exit(1);
+  }
+
+  console.log(`  referencias de saida: 3 de 3 lendo de "${FONTE_SAIDA}"`);
 }
 
 const novosNoCanvas = restaurarLayout();

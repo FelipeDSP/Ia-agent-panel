@@ -43,9 +43,9 @@ const FONTE_TXT = fs.readFileSync(FONTE, 'utf8');
 // ----------------------------------------------------------------------------
 // Estados de banco, como `api_n8n_estado_pedido` os devolve
 // ----------------------------------------------------------------------------
-const semPedido = { tem_rascunho: false, total_centavos: 0, itens: [], escreveu_neste_turno: false, barrou_anterior: false };
+const semPedido = { tem_pedido: false, pedido_status: null, total_centavos: 0, itens: [], escreveu_neste_turno: false, barrou_anterior: false };
 const rascunho = (totalCentavos, itens, escreveu = false, barrouAnterior = false) => ({
-  tem_rascunho: true, total_centavos: totalCentavos, itens,
+  tem_pedido: true, pedido_status: 'rascunho', total_centavos: totalCentavos, itens,
   escreveu_neste_turno: escreveu, barrou_anterior: barrouAnterior,
 });
 const item = (nome, qtd, unit) => ({ nome, quantidade: qtd, preco_unit_centavos: unit, subtotal_centavos: unit * qtd });
@@ -88,12 +88,29 @@ chk('sendbox 28/08 nao avalia a regra 2 (nao ha com o que comparar)', caso24980.
 
 // CASO 1 (§7.1 item 1) — `emporio` conv 18, 21/08 21:43:01, chamadas = 4.
 // A tool RODOU e fechou o pedido de R$ 30,00; o texto publicou R$ 42,50.
-// O pedido virou `aguardando_pagamento`, entao nao ha rascunho.
-const caso4250 = rodar(FONTE_TXT, {
-  texto: 'Seu pedido está fechado com 20 pães de queijo tradicionais e 10 pães franceses, totalizando R$ 42,50. Pode passar para retirar pela manhã na nossa loja.',
-  estado: { ...semPedido, escreveu_neste_turno: true },
+//
+// Este e o caso que a versao "sempre o rascunho" deixava escapar: o
+// `fechar_pedido` transforma o rascunho em `aguardando_pagamento` NO MESMO
+// TURNO em que o valor final e dito, entao no instante da consulta nao havia
+// rascunho e a regra 2 ficava sem referencia. Com a referencia por PEDIDO
+// TOCADO no turno, o pedido recem-fechado continua sendo a referencia.
+const fechadoAgora = {
+  tem_pedido: true, pedido_status: 'aguardando_pagamento', total_centavos: 3000,
+  itens: [item('11 - Pão de queijo tradicional', 20, 150)],
+  escreveu_neste_turno: true, barrou_anterior: false,
+};
+const caso4250 = rodar(FONTE_TXT, { texto: 'Seu pedido está fechado com 20 pães de queijo tradicionais e 10 pães franceses, totalizando R$ 42,50. Pode passar para retirar pela manhã na nossa loja.', estado: fechadoAgora });
+chk('21/08 (R$ 42,50 x R$ 30,00, pedido FECHADO no turno) barra pela regra 2',
+  caso4250._portao.veredito === 'barrado_regra_2', caso4250._portao.veredito);
+chk('21/08 a regra 1 NAO barra — a tool rodou de verdade', caso4250._portao.escreveu_neste_turno === true);
+
+// E o espelho: mesmo fechamento, valor CERTO -> passa. Sem isto, o verde acima
+// poderia vir de "fechamento sempre barra".
+const fechadoCerto = rodar(FONTE_TXT, {
+  texto: 'Seu pedido está fechado com 20 pães de queijo tradicionais, totalizando R$ 30,00. Pode passar para retirar pela manhã.',
+  estado: fechadoAgora,
 });
-console.log('    (caso 21/08, R$ 42,50: veredito = ' + caso4250._portao.veredito + ')');
+chk('fechamento com valor CERTO passa', fechadoCerto._portao.veredito === 'passou', fechadoCerto._portao.veredito);
 
 // ============================================================================
 console.log('\n== 2. Os tres turnos do caso do emporio de 08/09 ==\n');
@@ -290,7 +307,7 @@ const cobertura = [
 for (const [rotulo, v] of cobertura) console.log(`    ${rotulo.padEnd(34)} -> ${v}`);
 const pegos = cobertura.filter(([, v]) => v.startsWith('barrado')).length;
 console.log(`\n    barrados: ${pegos} de 4`);
-chk('pelo menos os tres casos com rascunho-ou-sem-escrita sao barrados', pegos >= 3, `pegos=${pegos}`);
+chk('os QUATRO casos reais sao barrados', pegos === 4, `pegos=${pegos}`);
 
 console.log(`\n------------------------------------------------------------`);
 console.log(`  ${ok} passaram, ${falhas} falharam`);

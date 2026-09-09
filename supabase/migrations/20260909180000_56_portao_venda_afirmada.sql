@@ -131,11 +131,14 @@ create index if not exists idx_mensagens_log_portao
 create or replace function public.api_n8n_estado_pedido(
   p_tenant_id       uuid,
   p_conversation_id bigint,
-  p_perfil          text default 'vendas'
+  p_perfil          text default 'vendas',
+  p_teto_segundos   integer default 300
 )
 returns table (
-  tem_rascunho          boolean,
+  tem_pedido            boolean,
   pedido_id             uuid,
+  pedido_status         text,
+  pedido_numero         integer,
   total_centavos        integer,
   itens                 jsonb,
   escreveu_neste_turno  boolean,
@@ -147,93 +150,110 @@ security definer
 set search_path to 'public'
 as $function$
 declare
-  v_pedido        uuid;
-  v_total         integer;
-  v_mutacao       timestamptz;
-  v_ultima_saida  timestamptz;
-  v_itens         jsonb;
-  v_barrou        boolean;
+  v_limite     timestamptz;
+  v_tocado     uuid;
+  v_ref        uuid;
+  v_status     text;
+  v_numero     integer;
+  v_total      integer;
+  v_itens      jsonb;
+  v_barrou     boolean;
 begin
   perform public.n8n_assert_tenant(p_tenant_id);
 
-  -- Perfil que nao vende nao tem pedido: sai sem tocar em `pedidos`. E a
-  -- economia do caminho unico, feita aqui e nao por IF de topologia.
   if coalesce(p_perfil, '') <> 'vendas' then
-    return query select false, null::uuid, 0, '[]'::jsonb, false, false;
+    return query select false, null::uuid, null::text, null::integer, 0, '[]'::jsonb, false, false;
     return;
   end if;
 
-  -- SEMPRE o rascunho. Pedido fechado e passado: ele ja teve o bloco dele
-  -- quando fechou, e comparar o texto de agora contra um pedido encerrado
-  -- produziria divergencia que nao e defeito.
+  -- ------------------------------------------------------------------
+  -- O LIMITE DA JANELA — DUAS BORDAS, E A DE CIMA NAO E ENFEITE
+  -- ------------------------------------------------------------------
+  -- A borda de baixo e a ultima saida ja registrada: `Registra Mensagem` roda
+  -- DEPOIS do portao, entao ela e a do turno anterior, e "mutou depois dela"
+  -- cobre o turno inteiro, inclusive as tool calls.
   --
-  -- Filtro explicito de tenant_id, e nao so RLS (regra 6). `limit 1` porque a
-  -- migracao 55 deixou o indice unico valer so em `rascunho`: ha no maximo um.
-  select p.id, p.total_centavos
-    into v_pedido, v_total
+  -- Sozinha, ela e larga demais. Medido em 2026-09-09 sobre `mensagens_log`:
+  -- o intervalo entre saidas consecutivas tem MEDIANA de 41 s, mas p95 de
+  -- 103.898 s (28,9 h) e MAXIMO de 18 DIAS. Sem teto, uma conversa que ficou
+  -- parada duas semanas leria qualquer mutacao daquele periodo como "escreveu
+  -- neste turno" — e passaria uma fabricacao por isso. E a mesma forma do
+  -- defeito que a §6 da PENDENCIA-VENDA-AFIRMADA-SEM-TOOL registra na D2, onde
+  -- `atualizado_em` movido pela expiracao fez um pedido engolir a conversa de
+  -- onze dias depois.
+  --
+  -- O teto sai da outra ponta da mesma medicao: a distancia entre a escrita e o
+  -- turno que a narrou, nas 22 escritas do historico, e de 1,3 s (minimo),
+  -- 2,3 s (mediana), 7,3 s (p95) e 10,0 s (MAXIMO). O default de 300 s e 30x o
+  -- maximo observado — folga para debounce (ate 15 s), agente lento e retry —
+  -- e ainda assim corta a janela de 18 dias para 5 minutos.
+  --
+  -- `greatest` das duas: manda a borda MAIS RECENTE. Em conversa ativa a ultima
+  -- saida e que limita (41 s de mediana); em conversa que voltou depois de dias,
+  -- o teto e que limita.
+  v_limite := greatest(
+    coalesce((select max(m.criado_em)
+                from public.mensagens_log m
+               where m.tenant_id = p_tenant_id
+                 and m.conversation_id = p_conversation_id
+                 and m.direcao = 'saida'), '-infinity'::timestamptz),
+    now() - make_interval(secs => greatest(coalesce(p_teto_segundos, 300), 1))
+  );
+
+  -- PRIMEIRO TURNO DA CONVERSA: nao ha saida anterior, entao `max` e nulo e o
+  -- `coalesce` devolve `-infinity` — e ai o `greatest` faz o TETO ser a unica
+  -- borda. E o comportamento certo, e nao um acidente: no primeiro turno a
+  -- unica escrita que pode ter sido feita por ESTE turno e uma de segundos
+  -- atras. Um pedido que ja existia na conversa antes da primeira fala do bot
+  -- (rascunho pendurado de uma sessao antiga) NAO conta como escrita de agora,
+  -- que era exatamente o furo do `-infinity` sozinho.
+
+  -- ------------------------------------------------------------------
+  -- A REFERENCIA: O PEDIDO TOCADO NO TURNO, E SO ENTAO O RASCUNHO
+  -- ------------------------------------------------------------------
+  -- Antes esta funcao devolvia SEMPRE o rascunho, e isso deixava escapar a
+  -- ocorrencia de 21/08 (`emporio` conv 18, R$ 42,50): a tool RODOU, o
+  -- `fechar_pedido` transformou o rascunho em `aguardando_pagamento`, e no
+  -- instante da consulta nao havia mais rascunho nenhum — a regra 2 ficava sem
+  -- referencia justamente no turno do fechamento, que e quando o valor final e
+  -- dito ao cliente.
+  --
+  -- Agora a referencia e o pedido TOCADO nesta janela, em qualquer status. Isso
+  -- cobre o fechamento (o pedido acabou de virar `aguardando_pagamento` e ainda
+  -- e o pedido do turno) e cobre o cancelamento pelo mesmo caminho.
+  --
+  -- `deletado_em is null` porque soft delete e o padrao do projeto para pedido
+  -- removido de proposito.
+  select p.id into v_tocado
     from public.pedidos p
    where p.tenant_id = p_tenant_id
      and p.conversation_id = p_conversation_id
-     and p.status = 'rascunho'
      and p.deletado_em is null
-   limit 1;
-
-  if v_pedido is null then
-    -- Sem rascunho ainda pode haver "barrou_anterior": a conversa pode ter sido
-    -- barrada por regra 1 (afirmou sem escrever) justamente por nao ter pedido.
-    select coalesce((m.portao ->> 'veredito') like 'barrado%', false)
-      into v_barrou
-      from public.mensagens_log m
-     where m.tenant_id = p_tenant_id
-       and m.conversation_id = p_conversation_id
-       and m.direcao = 'saida'
-     order by m.criado_em desc
-     limit 1;
-
-    return query select false, null::uuid, 0, '[]'::jsonb, false, coalesce(v_barrou, false);
-    return;
-  end if;
-
-  -- Ultima mutacao do pedido. `greatest` com os itens nao e redundancia
-  -- defensiva a toa: hoje `pedidos_recalcula_total` faz `update public.pedidos`
-  -- a cada insert/update/delete de item, e `trg_pedidos_upd` carimba
-  -- `atualizado_em` — entao `p.atualizado_em` JA cobre item. O `greatest`
-  -- mantem a leitura certa se um dia esse encadeamento mudar, e custa nada.
-  select greatest(
+     and greatest(
            p.atualizado_em,
            coalesce((select max(i.atualizado_em)
                        from public.pedido_itens i
                       where i.pedido_id = p.id
                         and i.tenant_id = p_tenant_id), p.atualizado_em)
-         )
-    into v_mutacao
-    from public.pedidos p
-   where p.id = v_pedido
-     and p.tenant_id = p_tenant_id;
+         ) > v_limite
+   order by p.atualizado_em desc
+   limit 1;
 
-  -- O instante de referencia: a saida mais recente JA registrada. `Registra
-  -- Mensagem` roda depois do portao, entao esta e a do turno anterior.
-  select max(m.criado_em)
-    into v_ultima_saida
-    from public.mensagens_log m
-   where m.tenant_id = p_tenant_id
-     and m.conversation_id = p_conversation_id
-     and m.direcao = 'saida';
-
-  -- Itens em CENTAVOS. `nome_snapshot` e o nome congelado no momento da venda e
-  -- nao e recalculado aqui de proposito.
-  select coalesce(jsonb_agg(
-           jsonb_build_object(
-             'nome',                   i.nome_snapshot,
-             'quantidade',             i.quantidade,
-             'preco_unit_centavos',    i.preco_unit_centavos,
-             'subtotal_centavos',      (i.preco_unit_centavos::bigint * i.quantidade)::integer
-           ) order by i.criado_em
-         ), '[]'::jsonb)
-    into v_itens
-    from public.pedido_itens i
-   where i.pedido_id = v_pedido
-     and i.tenant_id = p_tenant_id;
+  -- Sem pedido tocado, a referencia volta a ser o rascunho: ele e o que o
+  -- cliente esta montando, e e contra ele que um total recitado deve bater.
+  -- A migracao 55 deixou o indice unico valer so em `rascunho`, entao ha no
+  -- maximo um.
+  if v_tocado is null then
+    select p.id into v_ref
+      from public.pedidos p
+     where p.tenant_id = p_tenant_id
+       and p.conversation_id = p_conversation_id
+       and p.status = 'rascunho'
+       and p.deletado_em is null
+     limit 1;
+  else
+    v_ref := v_tocado;
+  end if;
 
   select coalesce((m.portao ->> 'veredito') like 'barrado%', false)
     into v_barrou
@@ -244,12 +264,35 @@ begin
    order by m.criado_em desc
    limit 1;
 
+  if v_ref is null then
+    return query select false, null::uuid, null::text, null::integer, 0, '[]'::jsonb,
+                        false, coalesce(v_barrou, false);
+    return;
+  end if;
+
+  select p.status, p.numero, coalesce(p.total_centavos, 0)
+    into v_status, v_numero, v_total
+    from public.pedidos p
+   where p.id = v_ref and p.tenant_id = p_tenant_id;
+
+  -- Itens em CENTAVOS. `nome_snapshot` e o nome congelado na venda; nao e
+  -- recalculado aqui de proposito.
+  select coalesce(jsonb_agg(
+           jsonb_build_object(
+             'nome',                i.nome_snapshot,
+             'quantidade',          i.quantidade,
+             'preco_unit_centavos', i.preco_unit_centavos,
+             'subtotal_centavos',   (i.preco_unit_centavos::bigint * i.quantidade)::integer
+           ) order by i.criado_em
+         ), '[]'::jsonb)
+    into v_itens
+    from public.pedido_itens i
+   where i.pedido_id = v_ref
+     and i.tenant_id = p_tenant_id;
+
   return query
-    select true,
-           v_pedido,
-           coalesce(v_total, 0),
-           v_itens,
-           v_mutacao > coalesce(v_ultima_saida, '-infinity'::timestamptz),
+    select true, v_ref, v_status, v_numero, v_total, v_itens,
+           v_tocado is not null,
            coalesce(v_barrou, false);
 end;
 $function$;
@@ -368,15 +411,15 @@ $function$;
 -- `api_n8n_registrar_mensagem` NAO aparece aqui de proposito: ela nao foi
 -- dropada, entao os grants dela seguem intactos. Tocar neles seria arriscar o
 -- estrago das migracoes 40 e 41 sem necessidade nenhuma.
-revoke all on function public.api_n8n_estado_pedido(uuid, bigint, text) from public;
-revoke all on function public.api_n8n_estado_pedido(uuid, bigint, text) from anon;
-revoke all on function public.api_n8n_estado_pedido(uuid, bigint, text) from authenticated;
+revoke all on function public.api_n8n_estado_pedido(uuid, bigint, text, integer) from public;
+revoke all on function public.api_n8n_estado_pedido(uuid, bigint, text, integer) from anon;
+revoke all on function public.api_n8n_estado_pedido(uuid, bigint, text, integer) from authenticated;
 
 -- `service_role` e o role do PostgREST/supabase-js. `n8n_agent` e o role com que
 -- o n8n CONECTA — e a linha que faltou na 40 e na 41, derrubando o catalogo do
 -- emporio. `npm run teste:grants-n8n` varre `api_n8n_*` por padrao, entao esta
 -- entra sozinha na varredura.
-grant execute on function public.api_n8n_estado_pedido(uuid, bigint, text) to service_role;
-grant execute on function public.api_n8n_estado_pedido(uuid, bigint, text) to n8n_agent;
+grant execute on function public.api_n8n_estado_pedido(uuid, bigint, text, integer) to service_role;
+grant execute on function public.api_n8n_estado_pedido(uuid, bigint, text, integer) to n8n_agent;
 
 commit;

@@ -66,12 +66,12 @@ const chk = (nome, cond, detalhe) => {
     const tid = t.rows[0].id;
     await c.query('savepoint sp_role');
     await c.query('set local role n8n_agent');
-    const r = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid, 999999::bigint, 'vendas')`, [tid]);
+    const r = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid, 999999::bigint, 'vendas', 300)`, [tid]);
     chk('n8n_agent chama e recebe linha', r.rows.length === 1);
-    chk('conversa sem pedido -> tem_rascunho falso', r.rows[0].tem_rascunho === false);
+    chk('conversa sem pedido -> tem_pedido falso', r.rows[0].tem_pedido === false);
     chk('conversa sem pedido -> itens vazio', JSON.stringify(r.rows[0].itens) === '[]');
-    const rb = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid, 999999::bigint, 'basico')`, [tid]);
-    chk('perfil basico devolve vazio', rb.rows[0].tem_rascunho === false && rb.rows[0].total_centavos === 0);
+    const rb = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid, 999999::bigint, 'basico', 300)`, [tid]);
+    chk('perfil basico devolve vazio', rb.rows[0].tem_pedido === false && rb.rows[0].total_centavos === 0);
     await c.query('rollback to savepoint sp_role');
 
     // ------------------------------------------------------------------
@@ -87,8 +87,8 @@ const chk = (nome, cond, detalhe) => {
       `insert into public.pedido_itens (tenant_id, pedido_id, produto_id, nome_snapshot, preco_unit_centavos, quantidade)
        values ($1,$2,$3,'Item de teste do portao',1500,10)`, [tid, ped.rows[0].id, prod.rows[0].id]);
 
-    let e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas')`, [tid, conv]);
-    chk('tem_rascunho verdadeiro', e.rows[0].tem_rascunho === true);
+    let e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas',300)`, [tid, conv]);
+    chk('tem_pedido verdadeiro', e.rows[0].tem_pedido === true);
     chk('total recalculado pelo trigger = 15000', e.rows[0].total_centavos === 15000, String(e.rows[0].total_centavos));
     chk('um item, em centavos', e.rows[0].itens.length === 1 && e.rows[0].itens[0].subtotal_centavos === 15000);
     chk('nome_snapshot preservado', e.rows[0].itens[0].nome === 'Item de teste do portao');
@@ -96,7 +96,7 @@ const chk = (nome, cond, detalhe) => {
 
     // agora registra uma saida DEPOIS da mutacao: o proximo turno nao escreveu
     await c.query(`select public.api_n8n_registrar_mensagem($1::uuid,$2::bigint,'saida','oi',0,0,'m',null,null,null::jsonb)`, [tid, conv]);
-    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas')`, [tid, conv]);
+    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas',300)`, [tid, conv]);
     chk('depois de uma saida -> escreveu_neste_turno FALSO', e.rows[0].escreveu_neste_turno === false);
 
     // e uma mutacao nova volta a marcar escrita.
@@ -109,9 +109,109 @@ const chk = (nome, cond, detalhe) => {
     await c.query(`update public.mensagens_log set criado_em = now() - interval '10 min'
                     where tenant_id=$1 and conversation_id=$2 and direcao='saida'`, [tid, conv]);
     await c.query(`update public.pedido_itens set quantidade=11 where pedido_id=$1`, [ped.rows[0].id]);
-    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas')`, [tid, conv]);
+    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas',300)`, [tid, conv]);
     chk('mutacao de ITEM marca escrita neste turno', e.rows[0].escreveu_neste_turno === true);
     chk('total seguiu o item (11 x 1500)', e.rows[0].total_centavos === 16500, String(e.rows[0].total_centavos));
+
+    // ------------------------------------------------------------------
+    console.log('\n-- 5b. O TETO da janela, e o primeiro turno --');
+    // Sem teto, a borda de baixo e a ultima saida — que pode estar a 18 DIAS
+    // (maximo medido em `mensagens_log`). Uma mutacao antiga passaria por
+    // "escreveu neste turno" e deixaria a fabricacao passar.
+    // ARRANJAR UM PEDIDO ANTIGO **COM ITENS** NAO TEM CAMINHO NORMAL, e a
+    // descoberta vale mais que o teste:
+    //
+    //   - por UPDATE nao da: `trg_pedidos_upd` e `trg_pedido_itens_upd` sao
+    //     BEFORE UPDATE e chamam `set_atualizado_em`, entao qualquer tentativa
+    //     de RECUAR `atualizado_em` e sobrescrita por `now()`, em silencio;
+    //   - por INSERT com data explicita tambem nao: inserir o ITEM dispara
+    //     `trg_pedido_itens_total` (AFTER INSERT) -> `pedidos_recalcula_total`
+    //     -> `update public.pedidos` -> `trg_pedidos_upd` -> `now()`. O pai e
+    //     recarimbado pelo filho.
+    //
+    // Medido: com as duas datas plantadas no insert, o item ficou em D-20 e o
+    // pedido voltou para hoje.
+    //
+    // Isso e boa noticia em PRODUCAO — e justamente o que faz `escreveu_neste_
+    // turno` enxergar escrita de item —, e no teste obriga a desligar o trigger.
+    // `set local session_replication_role = replica` desliga trigger de usuario
+    // so nesta transacao, sem DDL e sem lock de tabela (o `alter table ...
+    // disable trigger` pegaria ACCESS EXCLUSIVE numa tabela de producao).
+    const convVelho = 987657;
+    const pedVelho = await c.query(
+      `insert into public.pedidos (tenant_id, conversation_id, status, total_centavos, criado_em, atualizado_em)
+       values ($1,$2,'rascunho',0, now() - interval '20 days', now() - interval '20 days') returning id`,
+      [tid, convVelho]);
+    await c.query(
+      `insert into public.pedido_itens (tenant_id, pedido_id, produto_id, nome_snapshot, preco_unit_centavos, quantidade)
+       values ($1,$2,$3,'Item velho',1500,10)`,
+      [tid, pedVelho.rows[0].id, prod.rows[0].id]);
+    await c.query(`set local session_replication_role = replica`);
+    await c.query(`update public.pedidos set atualizado_em = now() - interval '20 days' where id=$1`, [pedVelho.rows[0].id]);
+    await c.query(`update public.pedido_itens set atualizado_em = now() - interval '20 days' where pedido_id=$1`, [pedVelho.rows[0].id]);
+    await c.query(`set local session_replication_role = origin`);
+    // confirma que a mutacao ENTROU antes de acreditar no resultado
+    const conf = await c.query(`select atualizado_em < now() - interval '19 days' as recuou from public.pedidos where id=$1`, [pedVelho.rows[0].id]);
+    chk('o arranjo entrou: o pedido recuou no tempo', conf.rows[0].recuou === true);
+    // e a saida anterior tambem e antiga: sem teto, a janela teria 30 dias
+    await c.query(
+      `insert into public.mensagens_log (tenant_id, conversation_id, direcao, conteudo, criado_em)
+       values ($1,$2,'saida','antiga', now() - interval '30 days')`, [tid, convVelho]);
+    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas',300)`, [tid, convVelho]);
+    chk('mutacao de 20 dias atras NAO conta como escrita do turno (teto de 300s)',
+        e.rows[0].escreveu_neste_turno === false);
+    chk('mas o pedido continua sendo referencia (cai no rascunho)', e.rows[0].tem_pedido === true);
+
+    // Com teto largo, a MESMA mutacao volta a contar — prova que quem decidiu
+    // foi o teto, e nao outra coisa que por acaso mudou junto.
+    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas',2592000)`, [tid, convVelho]);
+    chk('com teto de 30 dias a mesma mutacao volta a contar (o teto e que decidiu)',
+        e.rows[0].escreveu_neste_turno === true);
+
+    // PRIMEIRO TURNO: sem saida nenhuma, so o teto limita.
+    const convNovo = 987655;
+    const pedNovo = await c.query(
+      `insert into public.pedidos (tenant_id, conversation_id, status, total_centavos)
+       values ($1,$2,'rascunho',0) returning id`, [tid, convNovo]);
+    await c.query(
+      `insert into public.pedido_itens (tenant_id, pedido_id, produto_id, nome_snapshot, preco_unit_centavos, quantidade)
+       values ($1,$2,$3,'Item primeiro turno',500,2)`, [tid, pedNovo.rows[0].id, prod.rows[0].id]);
+    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas',300)`, [tid, convNovo]);
+    chk('primeiro turno, pedido criado agora -> escreveu_neste_turno verdadeiro',
+        e.rows[0].escreveu_neste_turno === true);
+    // De novo por INSERT, pelo mesmo motivo do bloco acima: conversa NOVA (sem
+    // nenhuma saida registrada) com um rascunho pendurado de dois dias atras.
+    const convPendurado = 987658;
+    const pedPend = await c.query(
+      `insert into public.pedidos (tenant_id, conversation_id, status, total_centavos, criado_em, atualizado_em)
+       values ($1,$2,'rascunho',0, now() - interval '2 days', now() - interval '2 days') returning id`,
+      [tid, convPendurado]);
+    await c.query(
+      `insert into public.pedido_itens (tenant_id, pedido_id, produto_id, nome_snapshot, preco_unit_centavos, quantidade)
+       values ($1,$2,$3,'Pendurado',500,2)`, [tid, pedPend.rows[0].id, prod.rows[0].id]);
+    await c.query(`set local session_replication_role = replica`);
+    await c.query(`update public.pedidos set atualizado_em = now() - interval '2 days' where id=$1`, [pedPend.rows[0].id]);
+    await c.query(`update public.pedido_itens set atualizado_em = now() - interval '2 days' where pedido_id=$1`, [pedPend.rows[0].id]);
+    await c.query(`set local session_replication_role = origin`);
+    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas',300)`, [tid, convPendurado]);
+    chk('primeiro turno com rascunho VELHO -> NAO conta como escrita (furo do -infinity)',
+        e.rows[0].escreveu_neste_turno === false);
+
+    // ------------------------------------------------------------------
+    console.log('\n-- 5c. Referencia: o pedido TOCADO no turno, nao so o rascunho --');
+    const convF = 987656;
+    const pedF = await c.query(
+      `insert into public.pedidos (tenant_id, conversation_id, status, numero, total_centavos)
+       values ($1,$2,'aguardando_pagamento',9911,0) returning id`, [tid, convF]);
+    await c.query(
+      `insert into public.pedido_itens (tenant_id, pedido_id, produto_id, nome_snapshot, preco_unit_centavos, quantidade)
+       values ($1,$2,$3,'Pao de queijo',150,20)`, [tid, pedF.rows[0].id, prod.rows[0].id]);
+    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas',300)`, [tid, convF]);
+    chk('pedido FECHADO tocado no turno vira a referencia', e.rows[0].tem_pedido === true);
+    chk('e vem com o status certo', e.rows[0].pedido_status === 'aguardando_pagamento', e.rows[0].pedido_status);
+    chk('e com o numero', e.rows[0].pedido_numero === 9911, String(e.rows[0].pedido_numero));
+    chk('e com o total do banco (R$ 30,00)', e.rows[0].total_centavos === 3000, String(e.rows[0].total_centavos));
+    chk('era exatamente o caso que "sempre o rascunho" perdia', e.rows[0].escreveu_neste_turno === true);
 
     // ------------------------------------------------------------------
     console.log('\n-- 6. O veredito viaja no componentes e vira coluna --');
@@ -120,12 +220,12 @@ const chk = (nome, cond, detalhe) => {
     const g = await c.query(`select portao from public.mensagens_log
                               where tenant_id=$1 and execucao_id='exec-portao-1' and direcao='saida'`, [tid]);
     chk('coluna portao preenchida a partir do componentes', g.rows[0].portao?.veredito === 'barrado_regra_2');
-    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas')`, [tid, conv]);
+    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas',300)`, [tid, conv]);
     chk('barrou_anterior verdadeiro depois de uma barrada', e.rows[0].barrou_anterior === true);
 
     await c.query(`select public.api_n8n_registrar_mensagem($1::uuid,$2::bigint,'saida','ok',0,0,'m',null,'exec-portao-2',
                     $3::jsonb)`, [tid, conv, JSON.stringify({ chamadas: 1, portao: { veredito: 'passou' } })]);
-    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas')`, [tid, conv]);
+    e = await c.query(`select * from public.api_n8n_estado_pedido($1::uuid,$2::bigint,'vendas',300)`, [tid, conv]);
     chk('barrou_anterior FALSO depois de um passou', e.rows[0].barrou_anterior === false);
 
     // chave ausente / tipo errado nao levanta e nao preenche
