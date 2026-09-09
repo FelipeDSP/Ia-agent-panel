@@ -11,7 +11,7 @@ fechou o `n8n:sincronia` que estava vermelho. Tudo abaixo está no repositório.
 | corpo do nó (fonte) | `n8n/aplica-portao.js` |
 | workflow pronto para importar | `n8n/workflows/agente-principal.json` (64 nós, +4) |
 | script que o monta | `scripts/aplicar-portao-venda.mjs` |
-| teste dos dois vereditos | `npm run teste:portao-venda` — 45/45 |
+| teste dos dois vereditos | `npm run teste:portao-venda` — 48/48, contra o `jsCode` do nó |
 | teste da migração | `npm run teste:migracao-portao` — 45/45 |
 | arranjo do vínculo Chatwoot | `tests/lib/caixa-54.mjs` |
 | suíte completa | `npm run teste` — **55 de 55** |
@@ -259,6 +259,91 @@ como nota, com o ponteiro para o helper.
 
 Não é vermelho herdado. Era um teste afirmando estado do mundo, o defeito nº 8 e
 nº 9 da contagem — agora pela porta do backfill de migração.
+
+---
+
+---
+
+## 5d. O nó ficou com a versão antiga do código, e nada pegou
+
+**O defeito.** O commit `e48b7a7` renomeou `tem_rascunho` → `tem_pedido` em
+`n8n/aplica-portao.js` e **não rodou o injetor**. O nó `Aplica Portao` no
+`agente-principal.json` continuou com a versão anterior, lendo um campo que a
+migração 56 não devolve mais.
+
+Medido antes do conserto: arquivo com 16.911 caracteres, `jsCode` com 16.505; o
+nó tinha `tem_rascunho` 2× e `tem_pedido` 0×, o arquivo o inverso.
+
+**O efeito se importado**, e é a parte que assusta: `estado.tem_rascunho` fica
+`undefined` em toda execução, `regra2Avaliavel` e `anexaBloco` ficam
+permanentemente falsos. A regra 2 nunca avalia, o bloco 📋 nunca é anexado, e a
+substituta diz sempre "Nenhum pedido aberto nesta conversa" — com o corte do
+"repita esse resumo" já no system message, o cliente ficaria sem resumo nenhum.
+**E a regra 1 continuaria funcionando, com 3 dos 4 casos ainda barrando: o portão
+pareceria estar trabalhando.**
+
+**Por que nada pegou, e é o que muda daqui em diante.**
+
+- `n8n:sincronia` comparava o `systemMessage` dos agents com os wrappers
+  extraídos do `jsCode` — e **nenhum corpo de nó Code com o arquivo de onde ele
+  sai**. Passava 59/59 com o arquivo alterado;
+- `teste:portao-venda` carregava o **arquivo-fonte**. A intenção estava certa
+  (testar o original, não uma cópia da lógica) e o alvo errado: o que roda em
+  produção é a cópia no JSON. Os 45/45 eram sobre um código que não subiria.
+
+**Os dois consertos, com sabotagem.**
+
+`n8n:sincronia` ganhou a seção 9, genérica por pares. `Aplica Portao` é
+comparado **byte a byte** com seu arquivo; `Estima Tokens` é comparado por
+pedaços (o gerador substitui `__WRAPPERS__` e `__PERFIS_S__`, então byte a byte
+não serve). Fim de linha normalizado nos dois lados — o repo oscila entre CRLF e
+LF e isso não é deriva de lógica.
+
+```
+sabotagem: altera o arquivo   -> 60 passaram, 1 falharam, exit 1
+           nomeia o par       -> "Aplica Portao == n8n/aplica-portao.js — arquivo 16913, no 16911"
+           restaurado         -> exit 0, md5 de volta ao original
+```
+
+`teste:portao-venda` passou a carregar o **`jsCode` do nó**, afirmando a
+identidade com o arquivo **antes** de rodar as fixtures. Rodar só a identidade
+não bastaria: com o injetor esquecido, ela falha e nenhuma regra chega a ser
+exercitada.
+
+Sabotado recolocando o defeito no nó, o teste reproduz o sintoma exato:
+
+```
+FALHA jsCode do no == n8n/aplica-portao.js
+OK    1636 (R$ 60,00 x R$ 25,00) barra          <- a regra 1 ainda funciona
+FALHA 1636 le o total afirmado em centavos — null
+FALHA 1636 marca a regra 2 como AVALIADA
+```
+
+**E o injetor tinha um segundo defeito, achado ao rodá-lo:** ele cravava CRLF na
+serialização, e o `gerar-principal.mjs` grava em LF. A guarda de round-trip dele
+abortou — corretamente — assim que o gerador rodou depois. Agora o fim de linha
+é **detectado**, não cravado, e os dois convivem em qualquer ordem.
+
+---
+
+## 5e. Limite conhecido: a guarda das três referências é circular
+
+`TEM_PORTAO` sai do **próprio arquivo** que a guarda protege. Um
+`agente-principal.json` exportado da instância **sem** o portão faz `TEM_PORTAO`
+sair falso, a guarda passa a exigir que as três referências leiam do
+`Estima Tokens` — e **aprova, imprimindo verde, o estado anterior ao portão**.
+Ela não distingue "ainda não foi montado" de "perdeu o portão".
+
+Não há como fechar isso dentro do gerador: a fonte de verdade sobre o que
+*deveria* existir é externa ao arquivo. O que fecharia é uma declaração
+versionada (um `esperado.json`, ou o `PERFIS` listando nós obrigatórios), e isso
+é trabalho próprio.
+
+**O que segura hoje, e mora fora do gerador de propósito:** `n8n:sincronia`
+compara o corpo do nó com `n8n/aplica-portao.js` e **reprova se o nó sumir** —
+verificado removendo o nó do workflow: `FALHA no "Aplica Portao" existe`, exit 1.
+O registro está em comentário no próprio `gerar-principal.mjs`, junto do
+`TEM_PORTAO`.
 
 ---
 

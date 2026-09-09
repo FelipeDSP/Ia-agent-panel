@@ -440,6 +440,79 @@ console.log('\n  -- 11. tool de foto --');
     'o gerador deriva do JSON atual; sem remover antes de inserir, duplica a cada rodada');
 }
 
+console.log('\n  -- 9. corpo dos nos Code x arquivo-fonte --');
+// ---------------------------------------------------------------------------
+// POR QUE ESTA SECAO EXISTE: ELA FALTAVA, E O BURACO FOI USADO.
+//
+// Ate 2026-09-09 a sincronia comparava o `systemMessage` dos agents com os
+// WRAPPERS extraidos do `jsCode` do `Estima Tokens` — e mais nada. NENHUM corpo
+// de no Code era comparado com o arquivo de onde ele sai.
+//
+// O resultado: o commit e48b7a7 renomeou `tem_rascunho` -> `tem_pedido` em
+// `n8n/aplica-portao.js` e NAO rodou o injetor, entao o no ficou com a versao
+// anterior. O workflow no repo lia um campo que a migracao 56 nao devolve mais.
+// Se importado: `regra2Avaliavel` e `anexaBloco` permanentemente falsos — a
+// regra 2 nunca avaliaria, o bloco 📋 nunca seria anexado, e a substituta diria
+// sempre "Nenhum pedido aberto". A regra 1 seguiria funcionando e 3 dos 4 casos
+// ainda barrariam, entao o portao PARECERIA estar trabalhando.
+//
+// E a sincronia passava 59/59 com o arquivo alterado. Uma verificacao que nao
+// pode reprovar o defeito que existe nao esta verificando.
+// ---------------------------------------------------------------------------
+{
+  // Pares (arquivo-fonte, no). `exato: true` quando a injecao e copia literal.
+  const PARES = [
+    { arquivo: 'n8n/aplica-portao.js', no: 'Aplica Portao', exato: true },
+    // `Estima Tokens` NAO e exato: o gerador substitui `__WRAPPERS__` e
+    // `__PERFIS_S__` por mapas gerados. A comparacao e por PEDACOS — o texto
+    // entre os marcadores tem de aparecer, na ordem. Pega renomeacao, corte e
+    // edicao pela UI; nao pega mudanca dentro dos mapas, que e o que a secao 1
+    // ja compara.
+    { arquivo: 'n8n/estima-tokens.js', no: 'Estima Tokens', exato: false,
+      marcadores: ['__WRAPPERS__', '__PERFIS_S__'] },
+  ];
+
+  for (const par of PARES) {
+    const alvo = no(par.no);
+    if (!alvo) { checar(`no "${par.no}" existe`, false); continue; }
+    const jsCode = alvo.parameters?.jsCode ?? '';
+
+    let fonte;
+    try {
+      fonte = fs.readFileSync(path.join(RAIZ, par.arquivo), 'utf8');
+    } catch (e) {
+      checar(`${par.arquivo} legivel`, false, e.message);
+      continue;
+    }
+
+    // Normaliza o fim de linha nos DOIS lados. O repo oscila entre CRLF e LF
+    // (`core.autocrlf=true`, sem `.gitattributes`), e uma diferenca so de fim de
+    // linha nao e deriva de conteudo — acusa-la treinaria todo mundo a ignorar
+    // esta secao. Ver a nota do CLAUDE.md sobre CRLF.
+    const nl = (s) => s.replace(/\r\n/g, '\n');
+
+    if (par.exato) {
+      const bate = nl(fonte) === nl(jsCode);
+      checar(`${par.no} == ${par.arquivo} (byte a byte)`, bate,
+        bate ? '' : `arquivo ${nl(fonte).length} chars, no ${nl(jsCode).length} — rode `
+          + 'node scripts/aplicar-portao-venda.mjs');
+    } else {
+      const pedacos = nl(fonte).split(new RegExp(par.marcadores.join('|')));
+      const codigo = nl(jsCode);
+      let pos = 0;
+      let faltou = null;
+      for (const p of pedacos) {
+        if (p === '') continue;
+        const i = codigo.indexOf(p, pos);
+        if (i < 0) { faltou = p.slice(0, 60).replace(/\n/g, ' '); break; }
+        pos = i + p.length;
+      }
+      checar(`${par.no} contem ${par.arquivo} (fora dos marcadores)`, faltou === null,
+        faltou === null ? '' : `trecho ausente: "${faltou}…" — rode node scripts/gerar-principal.mjs`);
+    }
+  }
+}
+
 console.log('\n  -- extras --');
 checar('contextWindowLength = 20', no('Redis Chat Memory')?.parameters?.contextWindowLength === 20);
 for (const a of agents) {

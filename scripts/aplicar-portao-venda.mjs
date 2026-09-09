@@ -36,10 +36,22 @@ const FONTE_PORTAO = path.join(RAIZ, 'n8n', 'aplica-portao.js');
 const original = fs.readFileSync(ARQ, 'utf8');
 const w = JSON.parse(original);
 
-// O arquivo e CRLF. Serializar em LF reescreveria 2785 fins de linha e afogaria
-// a revisao num diff de arquivo inteiro. Conferido: com CRLF o round-trip
-// devolve o arquivo byte a byte.
-const serializar = (obj) => JSON.stringify(obj, null, 2).replace(/\n/g, '\r\n') + '\r\n';
+// O FIM DE LINHA E DETECTADO, NAO CRAVADO — e a primeira versao cravava CRLF.
+//
+// Serializar com o fim de linha errado reescreveria os ~2800 fins de linha do
+// arquivo e afogaria a revisao num diff de arquivo inteiro. Mas cravar CRLF
+// tambem nao serve: o `gerar-principal.mjs` grava com `JSON.stringify(...) +
+// '\n'`, ou seja LF, e o git deste projeto ainda converte na working copy
+// (`core.autocrlf=true`, sem `.gitattributes` — ver AMBIENTE-WINDOWS.md). O
+// arquivo oscila, e a guarda abaixo derrubou este script assim que o gerador
+// rodou depois dele.
+//
+// Detectar e o que faz os dois conviverem em qualquer ordem.
+const CRLF = original.includes('\r\n');
+const serializar = (obj) => {
+  const txt = JSON.stringify(obj, null, 2) + '\n';
+  return CRLF ? txt.replace(/\n/g, '\r\n') : txt;
+};
 if (serializar(w) !== original) {
   throw new Error('round-trip nao devolve o arquivo byte a byte — abortando antes de tocar em nada');
 }

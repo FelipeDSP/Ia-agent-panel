@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FONTE = path.join(RAIZ, 'n8n', 'aplica-portao.js');
+const WORKFLOW = path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json');
 
 let ok = 0;
 let falhas = 0;
@@ -38,7 +39,47 @@ function rodar(fonte, { texto, estado }) {
   return fn($input, $)[0].json;
 }
 
-const FONTE_TXT = fs.readFileSync(FONTE, 'utf8');
+// ----------------------------------------------------------------------------
+// O QUE ESTE TESTE EXERCITA: O CODIGO QUE VAI AO AR
+// ----------------------------------------------------------------------------
+// A primeira versao carregava `n8n/aplica-portao.js`, o arquivo-fonte. A
+// intencao estava certa — testar o original e nao uma copia da logica — e o
+// alvo estava errado: o que roda em producao e a COPIA dentro do `jsCode` do no
+// `Aplica Portao`, e as duas divergiram de verdade.
+//
+// Em 2026-09-09 o commit e48b7a7 renomeou `tem_rascunho` -> `tem_pedido` no
+// arquivo e nao rodou o injetor. O no ficou lendo um campo que a migracao 56 nao
+// devolve mais; se importado, a regra 2 nunca avaliaria e o bloco 📋 nunca seria
+// anexado. E este teste dava 45/45 — sobre um codigo que nao era o que subiria.
+//
+// Agora ele roda as fixtures contra o `jsCode`, e afirma a identidade ANTES.
+// Rodar so a identidade nao bastaria: com o injetor esquecido, a identidade
+// falha e nenhuma regra chega a ser exercitada.
+const FONTE_ARQUIVO = fs.readFileSync(FONTE, 'utf8');
+const FONTE_TXT = (() => {
+  const w = JSON.parse(fs.readFileSync(WORKFLOW, 'utf8'));
+  const no = w.nodes.find((n) => n.name === 'Aplica Portao');
+  if (!no) {
+    console.log('  FALHA no "Aplica Portao" ausente do workflow — nada a exercitar');
+    process.exit(1);
+  }
+  return no.parameters?.jsCode ?? '';
+})();
+
+console.log('\n== 0. O no e o arquivo sao o mesmo codigo ==\n');
+{
+  // Fim de linha normalizado nos dois lados: o repo oscila entre CRLF e LF
+  // (`core.autocrlf=true`, sem `.gitattributes`) e isso nao e deriva de logica.
+  const nl = (x) => x.replace(/\r\n/g, '\n');
+  chk('jsCode do no == n8n/aplica-portao.js',
+    nl(FONTE_ARQUIVO) === nl(FONTE_TXT),
+    `arquivo ${nl(FONTE_ARQUIVO).length} chars, no ${nl(FONTE_TXT).length} — rode node scripts/aplicar-portao-venda.mjs`);
+  // E o campo que a migracao 56 devolve, conferido no CODIGO QUE SOBE.
+  chk('o codigo que sobe le `tem_pedido` (o campo que a migracao 56 devolve)',
+    /estado\.tem_pedido/.test(FONTE_TXT));
+  chk('o codigo que sobe NAO le `estado.tem_rascunho` (removido na migracao 56)',
+    !/estado\.tem_rascunho/.test(FONTE_TXT));
+}
 
 // ----------------------------------------------------------------------------
 // Estados de banco, como `api_n8n_estado_pedido` os devolve

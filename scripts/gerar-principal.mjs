@@ -562,6 +562,24 @@ for (const n of w.nodes) {
 // o portao montado e as referencias no `Estima Tokens` esta QUEBRADO em silencio,
 // e e exatamente esse estado que esta secao recusa a gravar.
 
+// LIMITE CONHECIDO, E ELE E CIRCULAR: `TEM_PORTAO` sai do PROPRIO arquivo que a
+// guarda protege.
+//
+// Se alguem exportar da instancia um `agente-principal.json` SEM o portao e
+// regerar por cima, `TEM_PORTAO` sai falso, a guarda passa a exigir que as tres
+// referencias leiam do `Estima Tokens` — e aprova, imprimindo verde, o estado
+// anterior ao portao. Ela nao consegue distinguir "este workflow nao tem portao
+// porque ainda nao foi montado" de "este workflow perdeu o portao".
+//
+// Nao ha como fechar isso aqui dentro: a unica fonte de verdade sobre o que
+// DEVERIA existir e externa ao arquivo. O que fecharia seria uma declaracao
+// versionada — um `esperado.json`, ou o proprio `PERFIS` listando os nos
+// obrigatorios — e isso e trabalho proprio, nao uma linha.
+//
+// Enquanto nao houver: depois de importar da instancia, confira que o portao
+// esta la ANTES de regerar. `npm run n8n:sincronia` compara o corpo do no com
+// `n8n/aplica-portao.js` e reprova se o no sumir — e a checagem que pega este
+// caso, e ela mora fora do gerador de proposito.
 const TEM_PORTAO = w.nodes.some((n) => n.name === 'Aplica Portao');
 const FONTE_SAIDA = TEM_PORTAO ? 'Aplica Portao' : 'Estima Tokens';
 
