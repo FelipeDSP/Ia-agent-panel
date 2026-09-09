@@ -1,6 +1,7 @@
 // Prova a 56 em TRANSACAO ABORTADA contra producao. Nada e comitado.
 const fs = require('fs');
 const pg = require('pg');
+const path = require('path');
 const RAIZ = require('path').resolve(__dirname, '..');
 const env = fs.readFileSync(RAIZ + '/.env.local', 'utf8');
 const url = env.split(/\r?\n/).find((l) => l.startsWith('SUPABASE_DB_URL='))
@@ -243,6 +244,91 @@ const chk = (nome, cond, detalhe) => {
                                 where ns.nspname='public' and p.proname='api_n8n_estado_pedido'`);
     chk('corpo NAO chama expirar_pedidos_vencidos', !/expirar_pedidos_vencidos/.test(src.rows[0].prosrc));
     chk('corpo filtra tenant_id explicitamente (regra 6)', (src.rows[0].prosrc.match(/tenant_id\s*=\s*p_tenant_id/g) || []).length >= 4);
+
+    // ------------------------------------------------------------------
+    console.log('\n-- 9. A QUERY DO NO, executada contra a funcao real --');
+    // ------------------------------------------------------------------
+    // ESTA E A UNICA VERIFICACAO QUE EXERCITA O PAR DE VERDADE.
+    //
+    // O terceiro defeito da mesma familia (fonte muda, derivado nao acompanha):
+    // o no `Estado do Pedido` pedia `tem_rascunho`, coluna que a migracao 56 nao
+    // tem. Importado, o Postgres responderia `42703` e o no morreria — e ele
+    // esta no CAMINHO UNICO, entre `Estima Tokens` e `Credencial (resposta)`.
+    // Nao seria o portao ficar mudo: seria o AGENTE PARAR, para todo tenant.
+    //
+    // E nada pegava:
+    //   - `n8n:sincronia` compara codigo com codigo, nunca SQL com assinatura;
+    //   - `teste:portao-venda` MOCKA o estado, entao a query nem existe la;
+    //   - este arquivo chamava `select * from`, que nunca exercita a lista de
+    //     colunas que o no escreve.
+    //
+    // Comparar texto com texto tambem nao basta: uma comparacao pode estar
+    // comparando errado. O que fecha e RODAR a string do no, verbatim, contra a
+    // funcao que a migracao acabou de criar nesta transacao.
+    {
+      const wf = JSON.parse(fs.readFileSync(
+        path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
+      const noEstado = wf.nodes.find((n) => n.name === 'Estado do Pedido');
+      chk('o no "Estado do Pedido" existe no workflow', Boolean(noEstado));
+
+      if (noEstado) {
+        const sql = noEstado.parameters.query;
+
+        // 1. roda VERBATIM, com os mesmos tres parametros que o no manda
+        let r;
+        try {
+          r = await c.query(sql, [tid, String(conv), 'vendas']);
+          chk('a query do no EXECUTA contra a funcao da migracao 56', true);
+        } catch (e) {
+          chk('a query do no EXECUTA contra a funcao da migracao 56', false,
+            `${e.code} ${e.message}`);
+        }
+
+        // 2. e devolve exatamente as colunas que o `aplica-portao.js` LE
+        if (r) {
+          const devolvidas = r.fields.map((f) => f.name);
+          const corpo = fs.readFileSync(path.join(RAIZ, 'n8n', 'aplica-portao.js'), 'utf8');
+          const lidas = [...new Set([...corpo.matchAll(/\bestado\.([a-z_]+)/g)].map((m) => m[1]))];
+
+          // lista vazia e erro, nao "nada a conferir" — foi assim que o injetor
+          // gravou um SELECT sem coluna nenhuma e a guarda dele aprovou
+          chk('a extracao achou leituras `estado.X` no portao', lidas.length > 0, `${lidas.length}`);
+
+          const faltando = lidas.filter((x) => !devolvidas.includes(x));
+          chk('toda coluna que o portao LE vem na query do no', faltando.length === 0,
+            faltando.length ? `faltam: ${faltando.join(', ')}` : '');
+
+          const sobrando = devolvidas.filter((x) => !lidas.includes(x));
+          chk('a query nao pede coluna que ninguem le', sobrando.length === 0,
+            sobrando.length ? `sobram: ${sobrando.join(', ')}` : '');
+        }
+      }
+    }
+
+    // ------------------------------------------------------------------
+    console.log('\n-- 9b. SABOTAGEM da query do no --');
+    // ------------------------------------------------------------------
+    // Reintroduz o nome proibido e exige que a execucao REPROVE com 42703. Sem
+    // isto, o bloco acima poderia estar passando por qualquer motivo.
+    {
+      const wf = JSON.parse(fs.readFileSync(
+        path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
+      const sql = wf.nodes.find((n) => n.name === 'Estado do Pedido').parameters.query;
+      const sabotado = sql.replace('tem_pedido', 'tem_rascunho');
+      chk('a sabotagem MUTOU a query (senao o resultado abaixo nao vale nada)',
+        sabotado !== sql, sabotado === sql ? 'a string nao mudou' : '');
+
+      await c.query('savepoint sp_sab');
+      let codigo = null;
+      try {
+        await c.query(sabotado, [tid, String(conv), 'vendas']);
+      } catch (e) {
+        codigo = e.code;
+      }
+      await c.query('rollback to savepoint sp_sab');
+      chk('com `tem_rascunho` o Postgres responde 42703 (coluna inexistente)',
+        codigo === '42703', `codigo=${codigo}`);
+    }
 
     // ------------------------------------------------------------------
     console.log('\n-- 8. O rollback volta atras --');

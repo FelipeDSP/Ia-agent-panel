@@ -68,6 +68,59 @@ const NOVOS = ['Estado do Pedido', 'Aplica Portao', 'Portao Transferiu?', 'Nota 
 w.nodes = w.nodes.filter((n) => !NOVOS.includes(n.name));
 for (const n of NOVOS) delete w.connections[n];
 
+// ---------------------------------------------------------------------------
+// AS COLUNAS QUE O NO PEDE SAEM DO CONSUMIDOR, E SAO CONFERIDAS CONTRA A FONTE
+// ---------------------------------------------------------------------------
+// Duas listas tem de bater, e ate 2026-09-09 nada comparava as duas:
+//
+//   o que o `aplica-portao.js` LE   (estado.X)
+//   o que a migracao 56 DECLARA     (returns table (...))
+//
+// A query do no fica no meio. Ela errou nos dois sentidos de uma vez: pedia
+// `tem_rascunho`, que a funcao nao tem — `42703` no caminho unico, agente mudo
+// para todo tenant —, e nao pedia `pedido_status`, que o JS le e receberia
+// indefinido em silencio.
+const CORPO_PORTAO = fs.readFileSync(FONTE_PORTAO, 'utf8');
+const COLUNAS_LIDAS = [...new Set(
+  [...CORPO_PORTAO.matchAll(/\bestado\.([a-z_]+)/g)].map((m) => m[1]),
+)];
+
+const MIGRACAO = path.join(RAIZ, 'supabase', 'migrations', '20260909180000_56_portao_venda_afirmada.sql');
+const COLUNAS_DECLARADAS = (() => {
+  const sql = fs.readFileSync(MIGRACAO, 'utf8');
+  const m = sql.match(/create or replace function public\.api_n8n_estado_pedido[\s\S]*?returns table \(([\s\S]*?)\)\s*language/i);
+  if (!m) throw new Error('nao achei o `returns table` de api_n8n_estado_pedido na migracao 56');
+  return m[1].split(',').map((l) => l.trim().split(/\s+/)[0]).filter(Boolean);
+})();
+
+{
+  // LISTA VAZIA E ERRO, NAO "nada a conferir". Sem esta linha o script ja gravou
+  // um `SELECT` SEM COLUNA NENHUMA: a regex de extracao tinha sido corrompida
+  // (um `\b` virou o caractere backspace num heredoc), `COLUNAS_LIDAS` saiu
+  // vazia, o `filter` abaixo nao achou nada faltando e a guarda APROVOU.
+  // Asserção vácua aprova qualquer coisa — inclusive o vazio que a produziu.
+  if (COLUNAS_LIDAS.length === 0) {
+    console.error('\nABORTADO: nenhuma leitura `estado.X` encontrada em n8n/aplica-portao.js.');
+    console.error('  Ou o arquivo mudou de forma, ou a extracao quebrou. Nos dois casos');
+    console.error('  seguir gravaria um SELECT sem colunas.\n');
+    process.exit(1);
+  }
+  if (!COLUNAS_LIDAS.includes('tem_pedido')) {
+    console.error('\nABORTADO: `estado.tem_pedido` nao aparece entre as leituras — a extracao');
+    console.error('  esta pegando a coisa errada.\n');
+    process.exit(1);
+  }
+
+  const faltando = COLUNAS_LIDAS.filter((c) => !COLUNAS_DECLARADAS.includes(c));
+  if (faltando.length) {
+    console.error('\nABORTADO: o portao le coluna que a migracao 56 nao declara:');
+    for (const c of faltando) console.error(`   - estado.${c}`);
+    console.error(`\n  a funcao declara: ${COLUNAS_DECLARADAS.join(', ')}\n`);
+    process.exit(1);
+  }
+  console.log(`  colunas derivadas do consumidor: ${COLUNAS_LIDAS.join(', ')}`);
+}
+
 const posEstima = no('Estima Tokens').position;
 
 // ---------------------------------------------------------------------------
@@ -80,7 +133,15 @@ const posEstima = no('Estima Tokens').position;
 w.nodes.push({
   parameters: {
     operation: 'executeQuery',
-    query: 'SELECT tem_rascunho, pedido_id, total_centavos, itens, escreveu_neste_turno, barrou_anterior\n'
+    // A LISTA DE COLUNAS NAO E ESCRITA A MAO — ela sai do que o `aplica-portao.js`
+    // LE. Cravada, ela ja errou duas vezes no mesmo lugar: ficou pedindo
+    // `tem_rascunho` (que a migracao 56 renomeou para `tem_pedido`, o que
+    // derrubaria o no com `42703` no caminho unico, calando o agente de TODOS os
+    // tenants) e esqueceu `pedido_status`, que chegaria indefinido em silencio.
+    //
+    // Derivar do consumidor faz o par nao ter como divergir: acrescentar um
+    // `estado.X` novo no JS passa a acrescentar a coluna aqui sozinho.
+    query: `SELECT ${COLUNAS_LIDAS.join(', ')}\n`
       + '  FROM public.api_n8n_estado_pedido($1::uuid, $2::bigint, $3::text);',
     options: {
       queryReplacement: "={{ [ $('Resolve Tenant').first().json.tenant_id, "

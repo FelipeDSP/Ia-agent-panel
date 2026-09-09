@@ -2103,7 +2103,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT tem_rascunho, pedido_id, total_centavos, itens, escreveu_neste_turno, barrou_anterior\n  FROM public.api_n8n_estado_pedido($1::uuid, $2::bigint, $3::text);",
+        "query": "SELECT tem_pedido, pedido_status, total_centavos, itens, escreveu_neste_turno, barrou_anterior\n  FROM public.api_n8n_estado_pedido($1::uuid, $2::bigint, $3::text);",
         "options": {
           "queryReplacement": "={{ [ $('Resolve Tenant').first().json.tenant_id, $('Extrair e Filtrar').first().json.conversation_id, $('Tools Ativas').first().json.perfil ] }}"
         }

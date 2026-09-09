@@ -12,7 +12,7 @@ fechou o `n8n:sincronia` que estava vermelho. Tudo abaixo está no repositório.
 | workflow pronto para importar | `n8n/workflows/agente-principal.json` (64 nós, +4) |
 | script que o monta | `scripts/aplicar-portao-venda.mjs` |
 | teste dos dois vereditos | `npm run teste:portao-venda` — 48/48, contra o `jsCode` do nó |
-| teste da migração | `npm run teste:migracao-portao` — 45/45 |
+| teste da migração | `npm run teste:migracao-portao` — 52/52, executa a query do nó |
 | arranjo do vínculo Chatwoot | `tests/lib/caixa-54.mjs` |
 | suíte completa | `npm run teste` — **55 de 55** |
 
@@ -344,6 +344,68 @@ compara o corpo do nó com `n8n/aplica-portao.js` e **reprova se o nó sumir** �
 verificado removendo o nó do workflow: `FALHA no "Aplica Portao" existe`, exit 1.
 O registro está em comentário no próprio `gerar-principal.mjs`, junto do
 `TEM_PORTAO`.
+
+---
+
+---
+
+## 5f. A query do nó pedia coluna inexistente — e derrubaria o agente inteiro
+
+**O terceiro defeito da mesma família, e o mais grave.** O nó `Estado do Pedido`
+pedia `tem_rascunho`, coluna que a migração 56 não tem:
+
+```sql
+SELECT tem_rascunho, pedido_id, total_centavos, itens, escreveu_neste_turno, barrou_anterior
+  FROM public.api_n8n_estado_pedido(...);
+```
+
+Importado, o Postgres responde `42703`, o nó falha — e ele está no **caminho
+único**, entre `Estima Tokens` e `Credencial (resposta)`. Não seria o portão
+ficar mudo: seria **o agente parar de responder, para todo cliente de todo
+tenant**. Origem: a string cravada no `aplicar-portao-venda.mjs`.
+
+**Segundo defeito na mesma query:** ela não pedia `pedido_status`, que o
+`aplica-portao.js` lê. Mesmo com o nome corrigido, o campo chegaria indefinido e
+o diagnóstico gravado no `componentes_json` perderia o status **sem quebrar
+nada** — silencioso.
+
+**Por que nada pegou:** `n8n:sincronia` compara código com código, nunca SQL com
+assinatura; `teste:portao-venda` mocka o estado, então a query nem existe lá; e
+`tests/migracao-portao-venda.cjs` chamava `select * from`, que nunca exercita a
+lista de colunas que o nó escreve.
+
+**O conserto não é escrever a asserção que faltava — é derivar o derivado.** A
+lista de colunas passou a sair do que o consumidor lê:
+
+```js
+const COLUNAS_LIDAS = [...new Set(
+  [...CORPO_PORTAO.matchAll(/estado\.([a-z_]+)/g)].map((m) => m[1]),
+)];
+```
+
+Acrescentar um `estado.X` novo no JS passa a acrescentar a coluna sozinho. E o
+injetor confere as colunas lidas contra o `returns table` da migração, abortando
+se o portão ler algo que a função não declara.
+
+**E o que prova é EXECUTAR, não comparar.** `tests/migracao-portao-venda.cjs`
+ganhou a seção 9: aplica a migração na transação abortada e roda a **string SQL
+do nó, verbatim**, com os mesmos três parâmetros. Depois confere que as colunas
+devolvidas são exatamente as que o portão lê — nos dois sentidos (nenhuma
+faltando, nenhuma sobrando). A seção 9b sabota a própria query e exige `42703`.
+
+Sabotado no arquivo de verdade:
+
+```
+FALHA a query do no EXECUTA contra a funcao da migracao 56 — 42703 column "tem_rascunho" does not exist
+exit=1
+```
+
+**E o conserto trouxe o defeito de novo, na hora.** A extração nasceu com a regex
+corrompida — um `` virou o caractere backspace ao passar por um heredoc —,
+`COLUNAS_LIDAS` saiu **vazia**, o `filter` não achou nada faltando, e a guarda
+**aprovou**, gravando um `SELECT` sem coluna nenhuma. Asserção vácua aprova
+qualquer coisa, inclusive o vazio que a produziu. O injetor agora reprova a lista
+vazia **antes** de comparar. Registrado como o décimo caso no `CLAUDE.md`.
 
 ---
 

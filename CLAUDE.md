@@ -486,6 +486,37 @@ Duas consequências, e a segunda não tinha nome antes de 2026-09-08:
   tendo ela sido aplicada ou não. Se o teste de migração não começa com o
   rollback, ele está afirmando o calendário.
 
+  **DEZ, em 2026-09-09, e este é de uma espécie nova: a propriedade estava
+  certa e era verificada no LUGAR ERRADO.** `tests/portao-venda-afirmada.mjs`
+  afirmava, com todas as letras, *"o código que sobe NÃO lê
+  `estado.tem_rascunho`"* — e passava. Era verdade sobre o arquivo JS. Ao lado,
+  no mesmo workflow, a `query` do nó `Estado do Pedido` pedia exatamente
+  `tem_rascunho`, coluna que a migração 56 não tem. Importado, o Postgres
+  responderia `42703`, o nó morreria, e ele está no CAMINHO ÚNICO: não seria o
+  portão ficar mudo, seria o agente parar de responder para todo tenant.
+
+  O teste não estava frouxo nem tautológico — ele media a coisa certa numa das
+  duas metades do par, e a outra metade não tinha quem a medisse. **Uma
+  asserção verdadeira sobre metade de um par derivado dá a sensação de cobertura
+  que a outra metade não tem.** Foi o terceiro defeito seguido da mesma família
+  (fonte muda, derivado não acompanha, verificação olha um lado só), depois das
+  três referências por nome e do corpo do nó divergindo do `.js`.
+
+  O que fecha não é escrever a asserção que faltava — é **derivar o derivado**:
+  a lista de colunas da query passou a sair do que o consumidor lê
+  (`matchAll(/\bestado\.(\w+)/)`), então o par não tem como divergir. E o que
+  prova é **executar**, não comparar: `tests/migracao-portao-venda.cjs` roda a
+  string SQL do nó, verbatim, contra a função que a migração acabou de criar na
+  transação abortada. Comparação de texto pode estar comparando errado;
+  execução, não.
+
+  **E o conserto trouxe o defeito de novo, na hora.** A extração das colunas
+  nasceu com a regex corrompida (um `\b` virou o caractere backspace num
+  heredoc), `COLUNAS_LIDAS` saiu **vazia**, o `filter` não achou nada faltando —
+  e a guarda **aprovou**, gravando um `SELECT` sem coluna nenhuma. Asserção
+  vácua aprova qualquer coisa, inclusive o vazio que a produziu. Toda guarda
+  que compara listas precisa reprovar a lista VAZIA antes de comparar.
+
   **E a regra do rollback-primeiro TEM uma exceção, descoberta em 2026-09-08.**
   Ela é escrita como propriedade porque a próxima migração desta forma bate no
   mesmo lugar:
