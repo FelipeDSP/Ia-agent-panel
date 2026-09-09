@@ -4,11 +4,15 @@
 (`PENDENCIA-VENDA-AFIRMADA-SEM-TOOL.md` §2.4). **Nada escrito** — as duas saídas
 estão descritas abaixo e a escolha é sua.
 
-**Gatilho: não é urgência, é dívida que só cresce.** Não há incidente conhecido.
-O que há é uma classe de deriva **sem detector**, dentro do próprio repositório,
-num arquivo de 140 KB que ninguém lê inteiro. Cada campo ajustado à mão na UI do
-n8n e colado no JSON entra nessa categoria, e o custo de descobrir depois cresce
-com o tamanho do arquivo.
+**Gatilho: era dívida sem alvo; desde 2026-09-09 tem alvo.** Continua não havendo
+incidente atribuído a isto. O que mudou é que a classe deixou de ser abstrata:
+**sete das oito `description` de ferramenta são órfãs, e nenhum validador do
+repositório olha esse campo** — e são justamente as strings que a
+[`INVESTIGACAO-POR-QUE-FABRICA.md`](INVESTIGACAO-POR-QUE-FABRICA.md) aponta como a
+hipótese mais forte para a fabricação de venda. Ver a seção "O alvo concreto"
+abaixo. Segue sendo uma classe de deriva **sem detector**, dentro do próprio
+repositório, num arquivo de 140 KB que ninguém lê inteiro; a diferença é que agora
+se sabe onde ela dói.
 
 ## O fato
 
@@ -67,6 +71,68 @@ md5 do arquivo restaurado           -> igual ao de antes
 **A lição transferível:** quando a ferramenta que produz o artefato também o lê,
 a sabotagem tem de mirar o **artefato**, não a receita. Mirar a receita mede a
 receita, e o que está sob teste é o artefato.
+## O alvo concreto — 2026-09-09: as descrições de ferramenta
+
+Até aqui este doc dizia *"não há incidente conhecido"* e deixava a pergunta que a
+opção B responderia — **quantos campos órfãos existem?** — em aberto. Ela tem uma
+primeira resposta, e ela não é hipotética.
+
+**Sete das oito `description` de ferramenta do `agente-principal.json` são órfãs.**
+
+| campo | dono | por quê |
+|---|---|---|
+| `description` de `Enviar Foto do Produto` | **o gerador** | ele filtra o nó e faz `w.nodes.push({ parameters: { description: '...' } })` a cada rodada |
+| `description` das outras **7** | **ninguém** | não há uma linha no gerador que as escreva |
+| seção `## Ferramenta: enviar_foto_produto` do system message | **o gerador** | `SECAO_FOTO` + `comSecaoFoto()`, removida e reinserida, idempotente |
+| bullets de `## Regras gerais` | **o gerador** | `REGRAS_TODOS` / `REGRAS_BASICO` + `MARCADORES_REGRAS` |
+| as outras seções `## Ferramenta:` | **ninguém** | o gerador **deriva** os wrappers do texto que já está no JSON (`fixoAtual`) e escreve de volta — carrega o texto adiante sem nunca o autorar |
+
+**E nada guarda `description`.** Medido: `scripts/n8n-validar.mjs` e
+`scripts/conferir-sincronia-wrapper.mjs` não mencionam a palavra uma única vez.
+Zero ocorrências nos dois. Não há regra a sabotar, porque não há regra.
+
+### Por que este alvo muda o peso da pendência
+
+O texto acima não é campo de enfeite. **É o texto que decide se o modelo chama a
+ferramenta ou narra que chamou** — a
+[`INVESTIGACAO-POR-QUE-FABRICA.md`](INVESTIGACAO-POR-QUE-FABRICA.md) §5 mede que
+as duas ferramentas de leitura têm obrigação afirmativa na descrição e acertam,
+e que as três de pedido não têm e fabricam.
+
+Ou seja: a hipótese mais forte sobre a causa da fabricação aponta para um
+conjunto de strings que **ninguém no repositório escreve, ninguém valida, e que
+sobrevivem a qualquer regeração**. A dívida deixou de ser "só cresce" e passou a
+encostar num defeito aberto com cliente real.
+
+E tem a consequência prática imediata, que vale para quem for editar esse texto:
+**as duas metades falham ao contrário.**
+
+```
+texto da FOTO posto no JSON            -> some na próxima geração
+texto das OUTRAS 7 posto no gerador    -> não há linha onde pôr
+```
+
+Errar o lado não dá erro: dá silêncio, nos dois sentidos.
+
+### O que isso acrescenta às opções A e B
+
+Nada muda na recomendação — **B primeiro, A depois se a lista justificar** —, mas
+dois pontos ficam mais firmes:
+
+- **a lista da opção B já tem sete entradas conhecidas antes de o detector
+  existir**, e elas dão um caso de teste pronto: um detector que rode e **não**
+  aponte as sete descrições está errado. É a mesma disciplina da sabotagem — o
+  detector precisa de um resultado esperado antes de ser escrito;
+- **o "o que NÃO fazer" no fim deste doc vale literalmente aqui.** A vontade
+  imediata, ao descobrir isso, é acrescentar ao gerador as sete descrições. Sem a
+  lista completa, isso é a adivinhação que aquele parágrafo proíbe: cada linha
+  acrescentada passa a **sobrescrever** um valor que a instância podia ter
+  ajustado de propósito, e é exatamente assim que o `responsesApiEnabled` virou o
+  motivo de existir o `diff-n8n-instancia.mjs`. Primeiro o diff contra a
+  instância, depois a lista, e só então a decisão.
+
+---
+
 
 ## As duas saídas, e o que cada uma custa
 

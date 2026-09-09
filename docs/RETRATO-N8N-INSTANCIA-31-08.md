@@ -126,6 +126,32 @@ constatação de que o caminho existe e está aberto.
 **O repo já está certo.** O conserto é do lado da instância, importando
 `tool-gerenciar-pedido.json` — **vai na próxima janela de import**.
 
+**Reconferido em 2026-09-09, com export novo: continua exatamente assim.** Nove
+dias, e a janela de import não aconteceu. Medido no
+`Tool - Gerenciar Pedido (Multi-Tenant).json` de 09/09:
+
+```
+instância   Qual Acao?  options   = { fallbackOutput: 3 }      <- declara a 4a saida
+            Qual Acao?  conexoes  = 3 slots                    <- so 3
+            Acao Invalida         = existe, ZERO arestas de entrada
+repo        Qual Acao?  conexoes  = 4 slots, a 4a -> Acao Invalida
+```
+
+O nó `Acao Invalida` é um `Set` que devolveria *"Acao invalida. Use adicionar,
+remover ou ver."*, e o `Retorno` está ligado aos quatro — inclusive a ele. Só o
+switch não alcança. Não é rótulo nem campo omitido por default: é topologia, e o
+`diff-n8n-instancia.mjs` a acusa como divergência de **conexão**, separada das
+outras.
+
+**A distinção da nota acima fica reforçada, não enfraquecida, pela medição de
+09/09:** é caminho **latente, não observado**. As oito fabricações do
+[`PENDENCIA-VENDA-AFIRMADA-SEM-TOOL.md`](PENDENCIA-VENDA-AFIRMADA-SEM-TOOL.md)
+têm todas `chamadas = 1` — a ferramenta **não foi chamada**, então esta saída nem
+chegou a ser exercitada em nenhuma delas. Isto não é a causa daquilo. É um segundo
+jeito, independente, de produzir "a tool rodou e não voltou nada", que é a
+condição em que o modelo narra de memória. Continua valendo consertar, e continua
+não valendo como explicação.
+
 ## A capacidade dormindo do `cancelar_pedido`
 
 A migração 55 trocou `api_n8n_cancelar_pedido` de 2 para 3 argumentos. O nó

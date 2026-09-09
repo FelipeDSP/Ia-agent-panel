@@ -6,10 +6,24 @@ arquivo** — o segredo em uso já saiu do lugar onde deveria estar. **Conferido
 2026-09-08: continua igual na instância**, valor literal no nó `Assina URL`,
 credencial `Header Auth account 4`.
 
-**Gatilho: agora, e a previsão já se cumpriu.** Não é "quando alguém reclamar":
-o segredo vaza a cada export do workflow. Em 31/08 isso era um risco previsto com
-um caso; em **08/09 aconteceu a segunda vez**, em oito dias, numa conferência de
-rotina que precisava baixar os workflows. Ver a §"O que se mediu".
+**Gatilho: agora, e a previsão já se cumpriu TRÊS vezes.** Não é "quando alguém
+reclamar": o segredo vaza a cada export do workflow. Em 31/08 isso era um risco
+previsto com um caso; em **08/09 aconteceu a segunda vez** e em **09/09 a
+terceira** — três em nove dias, todas em conferências de rotina que precisavam
+baixar os workflows. Ver a §"O que se mediu".
+
+**E o que muda a leitura do gatilho é a DIREÇÃO, medida em 09/09.** A tabela
+abaixo dizia que "os dois lados estão errados de formas diferentes", o que sugere
+simetria e não há: **o repo tem o desenho seguro — segredo em credencial — e a
+instância roda o inseguro.** O repo não está errado, está *incompleto* (o id da
+credencial é placeholder); a instância está *insegura*. O conserto de desenho já
+existe escrito e nunca foi importado.
+
+O corolário prático, e ele é contraintuitivo: **importar o arquivo do repo hoje
+não conserta — piora.** O nó trocaria um segredo em texto claro que *funciona*
+por uma credencial que não resolve, e a quebra apareceria em runtime, na primeira
+foto que um cliente pedir (§"O placeholder, enquanto isso"). A ordem é rotação
+primeiro, import depois — nunca o contrário.
 
 ## O que se mediu
 
@@ -41,6 +55,46 @@ Os arquivos de 08/09 foram apagados no mesmo dia (os dois de `~/Downloads` e a
 cópia do scratch), e a varredura depois confirmou que só restou o **nome** da
 credencial no repo, sem valor. Apagar continua não desfazendo nada: vale o que
 está escrito na seção seguinte.
+
+**Terceira vez em 09/09, e o motivo foi de novo trabalho normal.** Um export
+completo dos nove workflows foi baixado para
+`C:\Users\estud\Desktop\export-09-09\` para rodar
+`diff-n8n-instancia.mjs --dir <pasta> --completo` — a conferência que a
+[`INVESTIGACAO-POR-QUE-FABRICA.md`](INVESTIGACAO-POR-QUE-FABRICA.md) §1 exige
+antes de tocar em descrição de ferramenta, porque sete delas são órfãs. O segredo
+veio inteiro dentro de
+`Tool - Enviar Foto do Produto (Multi-Tenant).json`, como das outras duas vezes.
+
+**Três ocorrências, três motivos diferentes, nenhum descuido.** 31/08 foi a
+primeira varredura da instância; 08/09 foi uma conferência de rotina; 09/09 foi um
+pré-requisito declarado de outra investigação. A previsão desta pendência não é
+mais previsão — é a taxa observada de uma tarefa que vai continuar acontecendo.
+**A pasta do Desktop ainda existe e tem o segredo dentro** enquanto não for
+apagada, e apagar continua não desfazendo nada.
+
+### A pergunta que só se responde abrindo a credencial — e ela é passo da rotação
+
+Medido em 09/09, o nó `Assina URL` da instância tem **dois** mecanismos de
+autenticação ao mesmo tempo:
+
+```
+header literal :  x-foto-secret: <64 hex>
+credencial     :  Header Auth account 4   (httpHeaderAuth)
+```
+
+O export traz `{id, name}` da credencial e **nunca o valor**, então daqui não dá
+para saber o que ela injeta. As duas possibilidades levam a passos diferentes:
+
+- **se a credencial também injeta `x-foto-secret`**, o header está sendo mandado
+  **duas vezes** hoje, e qual vence depende de precedência do nó — o que também
+  significa que pode existir um **segundo segredo em uso** que ninguém enumerou,
+  e a rotação tem de trocar os dois;
+- **se ela injeta outro header, ou está vestigial**, o literal é o único portão e
+  o passo 4 abaixo é simplesmente removê-lo.
+
+**Não dá para adiar a resposta para depois da troca**: se houver dois segredos e
+só um for rotacionado, o antigo continua válido e a rotação não terminou. Por isso
+vira passo próprio, **antes** de mexer no nó.
 
 **E a linha de 31/08 abaixo estava errada, o que piora o quadro.** Ela dizia que
 o `~/Downloads/n8n-instancia-31-08.json` tinha sido "apagado em 31/08". Em 08/09
@@ -88,6 +142,13 @@ conhecido é acesso à função.
 
 ## O que a rotação precisa, na ordem
 
+0. **Abrir a credencial `Header Auth account 4` no n8n e anotar qual header ela
+   injeta e com que valor.** É a pergunta da seção acima e é do lado de dentro da
+   UI — nenhum export responde. O resultado decide o resto: **se ela também manda
+   `x-foto-secret`, há dois segredos em uso e os passos 1 e 2 têm de trocar os
+   dois**; se manda outro header ou está vestigial, segue como escrito. Sem este
+   passo, a rotação pode terminar deixando o segredo antigo válido por uma porta
+   que ninguém enumerou.
 1. **Gerar segredo novo** com 32+ caracteres aleatórios. O comprimento importa:
    a função recusa qualquer coisa com menos de 24, e a comparação é por
    igualdade de comprimento antes do byte a byte.

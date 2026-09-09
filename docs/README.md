@@ -88,6 +88,53 @@ documentação e material de referência.
   respondeu "NAO ENTENDI", que foi a unica vez que um humano a viu acontecer. Nao
   torna o filtro errado, torna-o incompleto: **o detector tinha de ter ido junto, no
   mesmo commit.**
+- [`DESENHO-PORTAO-VENDA-AFIRMADA.md`](DESENHO-PORTAO-VENDA-AFIRMADA.md) —
+  **DESENHO, nada aplicado.** O passo seguinte do doc acima: como impedir a mensagem
+  de sair quando ela afirma escrita que nao houve. Confirma que o `Estima Tokens` e o
+  ponto de intercepcao (roda depois do agent, antes do envio, ja corta texto e ja
+  conhece `chamadas`, tenant e conversa) e mede os detectores contra **todo** o
+  historico com denominador: 5970 saidas, 54 afirmam pedido, 22 sao fabricacao. A
+  D1 pega 8 de 15 na janela medivel; alargar a regex sobe para 13 e leva os
+  bloqueios indevidos de 2 para **11**, todos recitacoes de pedido CERTO — porque
+  *"seu pedido ficou: … Total: R$ 15,00"* fabricado e a mesma frase do verdadeiro.
+  **Nenhuma regex separa as duas; o banco separa:** comparar o total afirmado com o
+  total do banco da 12 de 15 com **zero** bloqueio indevido, e e a unica coisa que
+  pega a modalidade B (a tool rodou e o texto mente assim mesmo), que nenhum portao
+  por `chamadas` alcanca. Traz os quatro destinos possiveis (bloquear, transferir,
+  nova rodada, so registrar) com o custo de cada um, e a canalizacao medida: o Code
+  node nao alcanca o Postgres, o `n8n_agent` **nao tem SELECT** em `pedidos`, e o
+  `api_n8n_ver_pedido` — que pareceria a resposta pronta — **escreve** (expira
+  pedido por dentro), entao nao serve no caminho de envio.
+- [`INVESTIGACAO-POR-QUE-FABRICA.md`](INVESTIGACAO-POR-QUE-FABRICA.md) —
+  **INVESTIGACAO, nada construido.** Por que a fabricacao acontece NESTA montagem,
+  que e o que decide se o conserto e generico ou especifico de venda. Abre com o
+  achado que nao era a pergunta: **a contencao do `emporio` foi decidida e NAO esta
+  aplicada** — `Tools Ativas` ainda resolve `vendas` para ele. Quatro hipoteses
+  medidas: o **modelo** esta desconfundido e por testar (8/8 fabricacoes em
+  `gpt-4.1-mini`, zero turnos em qualquer outro modelo em todo o historico), com
+  experimento de dois bracos que custa **US$ 2 a 3** e criterio declarado antes —
+  incluindo a tabela que mostra que 40 turnos limpos provam "no maximo 7 %", nao
+  "resolvido"; as **oito tools** custam 78 tokens cada por chamada, entao o
+  argumento de custo nao existe; o **debounce isolado e FALSIFICADO como
+  explicacao** (311 de 317 turnos chegam isolados, inclusive os que acertam — um
+  constante nao explica um variavel); e as **descricoes de ferramenta** mostram a
+  assimetria que casa com os dados: 2 de 2 tools de LEITURA tem obrigacao
+  afirmativa ("Use SEMPRE... ANTES de"), 0 de 3 tools de PEDIDO tem — e o system
+  message ainda manda "repita os itens e o total" **antes** de chamar, que e
+  literalmente a frase que fabrica. Fecha com a **injecao de estado**: o ponto de
+  injecao ja existe e e de graca, a leitura nao — e e a MESMA leitura que o portao
+  precisa, o que faz prevencao e deteccao pararem de competir. **O achado central
+  nao depende de experimento nenhum: o system message MANDA "repita os itens e o
+  total ANTES de chamar" — e o recital que ele pede e, palavra por palavra, a
+  mensagem fabricada. O modelo esta obedecendo, nao desobedecendo.**
+- [`PENDENCIA-S-DESATUALIZADO.md`](PENDENCIA-S-DESATUALIZADO.md) — o `S` do perfil
+  de vendas (tokens de schema por chamada) foi **medido em 11/08 com 7 ferramentas**
+  e a foto entrou em **12/08**, virando 8. 28 dias de rateio subestimado em ~12,5 %
+  por chamada. Nao afeta cliente — afeta o numero com que a agencia rateia custo —,
+  e e a **reincidencia exata do vies que fez o `Estima Tokens` existir**: subcobra
+  quem usa mais ferramenta. O conserto que importa e o terceiro passo: ligar a
+  contagem de tools ao `S` (`medido_com_tools`), para o gerador reprovar em vez de
+  alguem descobrir um mes depois.
 - [`PENDENCIA-CATEGORIA-PRODUTO.md`](PENDENCIA-CATEGORIA-PRODUTO.md) — **próxima fatia
   de vendas.** A pergunta aberta ("o que vocês têm?") ainda é respondida por
   `order by nome`, e no Empório sai `1, 10, 11, 12, 13`: não parece amostra, parece
