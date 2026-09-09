@@ -24,6 +24,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import pg from 'pg';
+import { arranjarContasPre54 } from './lib/caixa-54.mjs';
 
 if (!process.env.SUPABASE_DB_URL) {
   console.error('SUPABASE_DB_URL ausente. Rode com --env-file=.env.local');
@@ -71,6 +72,18 @@ await c.query('begin');
   const DIR = fileURLToPath(new URL('../supabase/migrations/', import.meta.url));
   const arq = fs.readdirSync(DIR).find((f) => f.endsWith('_54_roteamento_por_caixa.sql'));
   if (!arq) throw new Error('migração 54 não encontrada — este teste depende dela');
+  // O backfill da 54 tem valores cravados do mundo de 28/08 e um `raise` que
+  // confere o proprio resultado. O `estudyou-sendbox` foi religado pelo painel
+  // em 09/09 (conta 57), entao o backfill nao pega nada e a migracao ABORTA —
+  // e este teste morria com `P0001` antes da primeira assercao.
+  // Quem esta velho e a migracao, nao a producao: ver tests/lib/caixa-54.mjs.
+  // O trigger de permissao de `tenants` recusa mexer em vinculo Chatwoot sem
+  // claim de super_admin, e o teste so seta a claim mais abaixo. Setar aqui nao
+  // muda o que ele mede: e o MESMO valor que a linha seguinte do fluxo ja usa,
+  // e `set local` morre com a transacao.
+  await c.query(`set local request.jwt.claims = '{"app_metadata":{"papel":"super_admin"}}'`);
+  const mexidos = await arranjarContasPre54(c);
+  for (const m of mexidos) console.log(`  (arranjo) ${m.slug}: conta ${m.de} -> ${m.para}, so nesta transacao`);
   await c.query(fs.readFileSync(DIR + arq, 'utf8').replace(/^\s*(begin|commit)\s*;\s*$/gim, ''));
 }
 

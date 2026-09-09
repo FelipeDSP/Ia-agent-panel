@@ -48,6 +48,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import pg from 'pg';
+import { arranjarContasPre54, CONTAS_PRE_54 } from './lib/caixa-54.mjs';
 
 if (!process.env.SUPABASE_DB_URL) {
   console.error('\n  SUPABASE_DB_URL ausente. Rode com --env-file=.env.local\n');
@@ -115,6 +116,38 @@ try {
   console.log('\n== Migração 54 — roteamento por (conta, caixa) ==\n');
 
   // -----------------------------------------------------------------------
+  console.log('-- 0. O que PRODUCAO tem hoje, antes de qualquer replay --');
+  //
+  // Lido AQUI porque o rollback da 54 dropa `chatwoot_inbox_id` e depois dele
+  // nao ha mais o que ler. Esta secao nao afirma VALORES: afirma a PROPRIEDADE
+  // que importa para o roteamento — vinculo completo e resolvivel — e IMPRIME o
+  // que encontrou, para uma divergencia com a migracao aparecer como fato e nao
+  // como vermelho sem explicacao.
+  const hoje = await q(
+    `select slug, chatwoot_account_id::text conta, chatwoot_inbox_id::text caixa
+       from public.tenants where deletado_em is null and chatwoot_account_id is not null
+      order by slug`,
+  );
+  for (const r of hoje.rows) console.log(`  (producao) ${r.slug.padEnd(20)} conta ${r.conta}, caixa ${r.caixa}`);
+  chk('todo tenant conectado tem vinculo COMPLETO (conta e caixa)',
+    hoje.rows.every((r) => r.conta !== null && r.caixa !== null),
+    JSON.stringify(hoje.rows.filter((r) => r.caixa === null)));
+  for (const r of hoje.rows) {
+    const res = await resolver(Number(r.conta), Number(r.caixa));
+    chk(`(producao) ${r.slug} resolve por (${r.conta}, ${r.caixa}) e resolve SO ele`,
+      res.rows.length === 1 && res.rows[0].slug === r.slug, JSON.stringify(res.rows));
+  }
+  // O que a migracao 54 encodifica, dito de frente. Nao e assert: e registro.
+  for (const [slug, conta] of Object.entries(CONTAS_PRE_54)) {
+    const atual = hoje.rows.find((r) => r.slug === slug);
+    if (atual && Number(atual.conta) !== conta) {
+      console.log(`  NOTA: "${slug}" esta na conta ${atual.conta}; a migracao 54 encodifica ${conta} (mundo de 28/08).`);
+      console.log('        Quem esta velho e a MIGRACAO — religar tenant pelo painel e operacao normal.');
+      console.log('        O replay abaixo roda sobre estado arranjado; ver tests/lib/caixa-54.mjs.');
+    }
+  }
+
+  // -----------------------------------------------------------------------
   console.log('-- 1. Estado pré-migração, seja ela aplicada ou não --\n');
 
   const pre = await q(ROLLBACK);
@@ -128,6 +161,20 @@ try {
   // -----------------------------------------------------------------------
   console.log('\n-- 2. A migração aplica, e prova o próprio backfill --\n');
 
+  // ARRANJO ANTES DO REPLAY — ver tests/lib/caixa-54.mjs.
+  //
+  // O backfill da 54 tem valores cravados do mundo de 28/08 e um `raise` que
+  // confere o proprio resultado. O `estudyou-sendbox` foi religado pelo painel
+  // em 09/09 para a conta 57, entao o backfill nao pega nada e a migracao
+  // aborta. QUEM ESTA VELHO E A MIGRACAO, NAO A PRODUCAO: religar tenant e
+  // operacao normal, e o arquivo da 54 nao pode ser reescrito porque ja rodou.
+  // O teste arranja o estado que vai medir, como o `pedidos-vivos-55` faz.
+  const mexidos = await arranjarContasPre54(c);
+  for (const m of mexidos) {
+    console.log(`  (arranjo) ${m.slug}: conta ${m.de} -> ${m.para}, so nesta transacao`);
+  }
+  chk('o arranjo pre-54 entrou', mexidos.every((m) => m.de !== m.para), JSON.stringify(mexidos));
+
   const ap = await q(MIGRACAO);
   chk('a migração aplica', ap.ok, ap.ok ? '' : `${ap.code} ${ap.err}`);
   if (!ap.ok) throw new Error('sem migração aplicada não há o que medir');
@@ -139,7 +186,11 @@ try {
   const porSlug = Object.fromEntries(est.rows.map((r) => [r.slug, r]));
   chk('emporio ficou em (59, 279)', porSlug.emporio?.conta === '59' && porSlug.emporio?.caixa === '279',
     JSON.stringify(porSlug.emporio));
-  chk('estudyou-sendbox ficou em (1, 189)', porSlug['estudyou-sendbox']?.conta === '1' && porSlug['estudyou-sendbox']?.caixa === '189',
+  // (1, 189) e o que a 54 escreve SOBRE O ESTADO ARRANJADO acima — nao e uma
+  // afirmacao sobre o que producao tem hoje. O que producao tem e medido na
+  // secao 2b, separadamente, e de proposito.
+  chk('estudyou-sendbox ficou em (1, 189) a partir do estado pre-54 arranjado',
+    porSlug['estudyou-sendbox']?.conta === '1' && porSlug['estudyou-sendbox']?.caixa === '189',
     JSON.stringify(porSlug['estudyou-sendbox']));
   chk('ceejaar foi SOLTO de propósito (não aparece conectado)', porSlug.ceejaar === undefined,
     JSON.stringify(porSlug.ceejaar));
