@@ -38,6 +38,16 @@ documentação e material de referência.
 - [`SIMULACAO-MIGRACAO-V2.md`](SIMULACAO-MIGRACAO-V2.md) — **planejamento, não executado.**
   Migração para um schema v2 (documentos normalizados, CHECK de modelo, HNSW parcial):
   queries afetadas, plano expand/contract e estimativa de 29–45 h.
+- [`ENTREGA-BUSCA-RESULTADO-X-MENCAO.md`](ENTREGA-BUSCA-RESULTADO-X-MENCAO.md) —
+  **migração 59 escrita e testada, NÃO aplicada.** A busca devolvia "é de NR 01" e
+  "menciona NR 01" na mesma lista, sem rótulo: pedido de R$ 69,90 podia virar venda
+  de R$ 199,90 **com todos os números certos** — a classe que o portão da 56 não
+  cobre. Traz por que `phraseto_tsquery` não resolve (medido: continua devolvendo 3),
+  por que "buscar só no nome" custa recall real (19 → 13 em "curso"), a medição de
+  que **nenhum índice novo é preciso** (mesmo plano, mesmos 16 buffers) e a
+  descoberta lateral de que `idx_produtos_busca` está ocioso hoje. A §9 diz qual dos
+  dois lados do único vermelho da suíte está certo, em vez de classificá-lo como
+  herança.
 - [`PENDENCIAS.md`](PENDENCIAS.md) — **o indice das pendencias**, com o gatilho de cada
   uma numa tabela so. Comece por aqui em vez de abrir os nove arquivos.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da

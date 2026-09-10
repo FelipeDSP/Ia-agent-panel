@@ -77,7 +77,8 @@
     "teste:migracao-portao": "node --env-file=.env.local tests/migracao-portao-venda.cjs",
     "teste:sku-categoria": "node --env-file=.env.local tests/migracao-sku-categoria.mjs",
     "teste:iso-sku-categoria": "node --env-file=.env.local tests/isolamento-sku-categoria.mjs",
-    "teste:ordenar-catalogo": "node --import ./tests/lib/ts.mjs tests/ordenar-catalogo.mjs"
+    "teste:ordenar-catalogo": "node --import ./tests/lib/ts.mjs tests/ordenar-catalogo.mjs",
+    "teste:busca-resultado-mencao": "node --env-file=.env.local tests/busca-resultado-mencao.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
