@@ -53,11 +53,24 @@
 --   de `endDate` ou de `active=false`. O enunciado mandava: "Se a documentacao
 --   nao disser com clareza, teste no sandbox — nao assuma."
 --
---   ELA NAO DIZ, E EU NAO TESTEI: nao ha credencial de sandbox do Asaas neste
---   ambiente (`.env.local` nao tem nenhuma chave). A sonda esta escrita e
---   pronta em `scripts/sonda-asaas-expiracao.mjs`; ela NAO roda sozinha e nao
---   entra na suite. Enquanto ela nao rodar, este schema trata o caso como
---   POSSIVEL — e e por isso que existe `fora_do_prazo_em`.
+--   A SONDA RODOU EM 10/09/2026 e a resposta e PARCIAL, entao ela fica escrita
+--   como parcial:
+--
+--     EXPIRADO   (a pergunta original) : NAO MEDIDO. Nao da para produzir um
+--       link expirado sob demanda — o Asaas recusa `endDate` no passado tanto na
+--       CRIACAO quanto no `PUT`. O caminho que resta e `endDate` = hoje e um
+--       `GET` amanha, e ele nao cabe numa sonda que se roda para decidir agora.
+--     DESATIVADO (`active=false`)      : a pagina publica RECUSA, com todas as
+--       letras — "Seu fornecedor desabilitou esse link de pagamento".
+--
+--   Os dois NAO sao a mesma coisa e nao estao escritos como se fossem. Enquanto
+--   `fora_do_prazo` continuar possivel, este schema o trata — e e por isso que
+--   existe `fora_do_prazo_em`. Detalhe completo em
+--   docs/ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md §6.
+--
+--   E MEDIDO NA MESMA RODADA, pela recusa e nao pela doc:
+--   **Pix e boleto tem VALOR MINIMO de R$ 5,00.** Ver a coluna
+--   `tenants.pagamento_minimo_centavos` e o motivo `abaixo_do_minimo`.
 --
 -- ---------------------------------------------------------------------
 -- ALINHAMENTO DA JANELA — o que da para fazer, ja que `endDate` nao serve
@@ -206,6 +219,37 @@ alter table public.tenants
 alter table public.tenants
   add constraint tenants_pagamento_expira_valido
   check (pagamento_expira_minutos between 1 and 10080);   -- 1 min a 7 dias
+
+-- ---------------------------------------------------------------------
+-- O PISO DO PROVEDOR — COLUNA, E NAO CONSTANTE NO CODIGO
+-- ---------------------------------------------------------------------
+-- **Pix e boleto no Asaas tem valor minimo de R$ 5,00.** Nao foi lido em
+-- documentacao: foi o sandbox recusando a criacao em 10/09/2026 com
+-- "O valor minimo para cobrancas via Boleto e Pix e R$ 5,00."
+--
+-- Ele e COLUNA por um motivo que este projeto ja pagou: e numero de TERCEIRO,
+-- pode mudar quando o Asaas quiser, e cravado em codigo vira `S = 622` — medido
+-- certo num dia, silenciosamente errado depois, e sem ninguem para ligar "o
+-- provedor mudou a regra" a "o numero no codigo envelheceu". Aqui muda sem
+-- deploy.
+--
+-- POR TENANT e nao global porque e onde as outras configuracoes de pagamento
+-- ja moram, e porque o dia em que o provedor for outro para um cliente, o piso
+-- e dele. Continua nascendo agencia-only pela mesma lista branca.
+--
+-- QUANTO ISSO MORDE, MEDIDO EM PRODUCAO EM 10/09/2026: dos 14 pedidos ja
+-- feitos, NENHUM ficaria abaixo (menor do `emporio` R$ 12,00, media R$ 32,36;
+-- menor do `sendbox` R$ 69,90). Mas 3 dos 41 produtos do `emporio` custam menos
+-- de R$ 5,00, e o pao de queijo (R$ 1,50) e um deles — dois paes de queijo dao
+-- R$ 3,00 e NAO PODEM SER COBRADOS. Improvavel nao e impossivel.
+alter table public.tenants
+  add column if not exists pagamento_minimo_centavos integer not null default 500;
+
+alter table public.tenants
+  drop constraint if exists tenants_pagamento_minimo_valido;
+alter table public.tenants
+  add constraint tenants_pagamento_minimo_valido
+  check (pagamento_minimo_centavos >= 0);
 
 -- =====================================================================
 -- 3. O VINCULO PEDIDO <-> COBRANCA
@@ -358,9 +402,15 @@ on conflict (tool_nome) do nothing;
 -- Mesma forma de `api_n8n_credencial_chatwoot`: a tool nunca le
 -- `tenant_credenciais` direto; le por esta funcao, que e SECURITY DEFINER e e
 -- o que da acesso a tabela fechada.
+-- `drop` antes do `create`: esta funcao devolve TABLE, e mexer na lista de
+-- colunas depois de aplicada exigiria o drop de qualquer jeito (`42P13`). Com
+-- ele aqui, a migracao e replayavel sobre qualquer versao anterior de si mesma —
+-- e os grants logo abaixo sao obrigatorios porque o drop os apaga.
+drop function if exists public.api_n8n_credencial_asaas(uuid);
+
 create or replace function public.api_n8n_credencial_asaas(p_tenant_id uuid)
 returns table(ativa boolean, ambiente text, base_url text, api_key text,
-              webhook_token text, expira_minutos integer)
+              webhook_token text, expira_minutos integer, minimo_centavos integer)
 language plpgsql
 stable
 security definer
@@ -397,7 +447,8 @@ begin
                 else tc.asaas_api_key_sandbox end,
     case v_amb when 'producao' then tc.asaas_webhook_token_producao
                 else tc.asaas_webhook_token_sandbox end,
-    t.pagamento_expira_minutos
+    t.pagamento_expira_minutos,
+    t.pagamento_minimo_centavos
   from public.tenants t
   left join public.tenant_credenciais tc on tc.tenant_id = t.id
   where t.id = p_tenant_id;
@@ -425,10 +476,37 @@ grant execute on function public.api_n8n_credencial_asaas(uuid) to n8n_agent;
 -- REUSO: chamada duas vezes no mesmo pedido, devolve a MESMA cobranca viva
 -- (`ja_existia = true`) em vez de criar um segundo link. Dois links vivos para
 -- um pedido e o caminho mais curto para cobrar duas vezes.
+--
+-- ---------------------------------------------------------------------
+-- UMA SAIDA SO, E ISSO NAO E ESTILO
+-- ---------------------------------------------------------------------
+-- A primeira versao tinha SETE `return query select` com listas posicionais de
+-- quinze colunas cada. Acrescentar uma coluna significava acertar sete listas na
+-- mao, e uma trocada de posicao entre dois `null::integer` nao da erro nenhum —
+-- da valor no campo errado, em silencio, no caminho do dinheiro. Agora as
+-- decisoes so escrevem `v_motivo`, e a montagem do retorno acontece UMA vez.
+--
+-- ---------------------------------------------------------------------
+-- O PISO DE R$ 5,00 NAO CHEGA AO AGENTE COMO ERRO
+-- ---------------------------------------------------------------------
+-- Pedido abaixo do minimo devolve `motivo = 'abaixo_do_minimo'` com
+-- `minimo_centavos` e `faltam_centavos` — informacao que o modelo sabe tratar.
+-- Deixar o 400 do Asaas ("O valor minimo para cobrancas via Boleto e Pix e
+-- R$ 5,00") chegar cru seria pedir para o modelo improvisar em cima de erro de
+-- integracao, que e exatamente o comportamento que o portao existe para conter.
+--
+-- E o que fazer com ele e decisao de produto, escrita em
+-- docs/ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md §7: cair para o fluxo manual de hoje,
+-- pelo MESMO caminho da recusa por teto. `faltam_centavos` viaja junto para
+-- quem quiser, um dia, oferecer completar o pedido — mas oferecer nao e a
+-- saida escolhida.
+drop function if exists public.api_n8n_gerar_cobranca(uuid, bigint);
+
 create or replace function public.api_n8n_gerar_cobranca(
   p_tenant_id uuid, p_conversation_id bigint)
 returns table(ok boolean, motivo text, cobranca_id uuid, ja_existia boolean,
               pedido_id uuid, pedido_numero integer, valor_centavos integer,
+              minimo_centavos integer, faltam_centavos integer,
               expira_em timestamptz, vence_em date, descricao text,
               referencia_externa text, url text,
               ambiente text, base_url text, api_key text)
@@ -443,111 +521,129 @@ declare
   v_total    integer;
   v_status   text;
   v_cob      record;
-  v_novo     uuid;
   v_expira   timestamptz;
   v_nome     text;
+
+  -- o que a saida unica la embaixo monta
+  v_ok       boolean := false;
+  v_motivo   text;
+  v_cobid    uuid;
+  v_reusou   boolean := false;
+  v_url      text;
+  v_minimo   integer := 0;
+  v_faltam   integer;
 begin
   perform public.n8n_assert_tenant(p_tenant_id);
 
   select * into v_cred from public.api_n8n_credencial_asaas(p_tenant_id);
+  v_minimo := coalesce(v_cred.minimo_centavos, 0);
 
   if not coalesce(v_cred.ativa, false) then
-    return query select false, 'tool_inativa', null::uuid, false, null::uuid, null::integer,
-                        null::integer, null::timestamptz, null::date, null::text, null::text,
-                        null::text, null::text, null::text, null::text;
-    return;
+    v_motivo := 'tool_inativa';
+
+  elsif coalesce(btrim(v_cred.api_key), '') = '' then
+    v_motivo := 'sem_credencial';
+
+  else
+    -- O pedido FECHADO desta conversa. Rascunho nao gera cobranca: o link nasce
+    -- depois do `fechar_pedido`, que e quando o total para de mudar.
+    --
+    -- `for update` serializa duas execucoes na mesma conversa. O debounce ja
+    -- torna isso raro, mas "raro" nao e "impossivel" e o estrago seria dois
+    -- links vivos para um pedido so.
+    select p.id, p.numero, p.total_centavos, p.status
+      into v_pedido, v_numero, v_total, v_status
+    from public.pedidos p
+    where p.tenant_id = p_tenant_id
+      and p.conversation_id = p_conversation_id
+      and p.status in ('aguardando_pagamento', 'pago')
+      and p.deletado_em is null
+    order by p.criado_em desc
+    limit 1
+    for update;
+
+    if v_pedido is null then
+      v_motivo := 'sem_pedido_fechado';
+
+    elsif v_status = 'pago' then
+      v_motivo := 'ja_pago';
+
+    elsif coalesce(v_total, 0) <= 0 then
+      v_motivo := 'total_zero';
+
+    elsif v_total < v_minimo then
+      -- O PISO DO PROVEDOR. Chega ao agente como motivo, nunca como 400 cru.
+      v_motivo := 'abaixo_do_minimo';
+      v_faltam := v_minimo - v_total;
+
+    else
+      -- REUSO: cobranca viva, nao expirada, do mesmo ambiente e do mesmo valor.
+      -- Valor diferente significa que o pedido mudou depois do link; ai o link
+      -- velho nao serve e um novo e gerado.
+      select * into v_cob
+      from public.pedido_cobrancas c
+      where c.tenant_id = p_tenant_id
+        and c.pedido_id = v_pedido
+        and c.ambiente = v_cred.ambiente
+        and c.url is not null
+        and c.pago_em is null
+        and c.falhou_em is null
+        and c.expira_em > now()
+        and c.valor_centavos = v_total
+      order by c.criado_em desc
+      limit 1;
+
+      if found then
+        v_ok     := true;
+        v_motivo := 'reusado';
+        v_cobid  := v_cob.id;
+        v_reusou := true;
+        v_expira := v_cob.expira_em;
+        v_url    := v_cob.url;
+      else
+        v_expira := now()
+                  + make_interval(mins => greatest(coalesce(v_cred.expira_minutos, 30), 1));
+
+        insert into public.pedido_cobrancas
+          (tenant_id, pedido_id, conversation_id, ambiente, valor_centavos, expira_em)
+        values
+          (p_tenant_id, v_pedido, p_conversation_id, v_cred.ambiente, v_total, v_expira)
+        returning id into v_cobid;
+
+        v_ok     := true;
+        v_motivo := 'ok';
+      end if;
+    end if;
   end if;
 
-  if coalesce(btrim(v_cred.api_key), '') = '' then
-    return query select false, 'sem_credencial', null::uuid, false, null::uuid, null::integer,
-                        null::integer, null::timestamptz, null::date, null::text, null::text,
-                        null::text, v_cred.ambiente, v_cred.base_url, null::text;
-    return;
-  end if;
-
-  -- O pedido FECHADO desta conversa. Rascunho nao gera cobranca: o link nasce
-  -- depois do `fechar_pedido`, que e quando o total para de mudar.
-  --
-  -- `for update` serializa duas execucoes na mesma conversa. O debounce ja
-  -- torna isso raro, mas "raro" nao e "impossivel" e o estrago seria dois links.
-  select p.id, p.numero, p.total_centavos, p.status
-    into v_pedido, v_numero, v_total, v_status
-  from public.pedidos p
-  where p.tenant_id = p_tenant_id
-    and p.conversation_id = p_conversation_id
-    and p.status in ('aguardando_pagamento', 'pago')
-    and p.deletado_em is null
-  order by p.criado_em desc
-  limit 1
-  for update;
-
-  if v_pedido is null then
-    return query select false, 'sem_pedido_fechado', null::uuid, false, null::uuid, null::integer,
-                        null::integer, null::timestamptz, null::date, null::text, null::text,
-                        null::text, v_cred.ambiente, v_cred.base_url, null::text;
-    return;
-  end if;
-
-  if v_status = 'pago' then
-    return query select false, 'ja_pago', null::uuid, false, v_pedido, v_numero,
-                        v_total, null::timestamptz, null::date, null::text, null::text,
-                        null::text, v_cred.ambiente, v_cred.base_url, null::text;
-    return;
-  end if;
-
-  if coalesce(v_total, 0) <= 0 then
-    return query select false, 'total_zero', null::uuid, false, v_pedido, v_numero,
-                        v_total, null::timestamptz, null::date, null::text, null::text,
-                        null::text, v_cred.ambiente, v_cred.base_url, null::text;
-    return;
-  end if;
-
-  -- REUSO: cobranca viva e nao expirada, do mesmo ambiente e do mesmo valor.
-  -- Valor diferente significa que o pedido mudou depois do link; ai o link
-  -- velho nao serve e um novo e gerado.
-  select * into v_cob
-  from public.pedido_cobrancas c
-  where c.tenant_id = p_tenant_id
-    and c.pedido_id = v_pedido
-    and c.ambiente = v_cred.ambiente
-    and c.url is not null
-    and c.pago_em is null
-    and c.falhou_em is null
-    and c.expira_em > now()
-    and c.valor_centavos = v_total
-  order by c.criado_em desc
-  limit 1;
-
-  if found then
-    return query select true, 'reusado', v_cob.id, true, v_pedido, v_numero, v_total,
-                        v_cob.expira_em, v_cob.expira_em::date,
-                        format('Pedido nº %s', coalesce(v_numero::text, '?')),
-                        v_cob.id::text, v_cob.url,
-                        v_cred.ambiente, v_cred.base_url, v_cred.api_key;
-    return;
-  end if;
-
-  v_expira := now() + make_interval(mins => greatest(coalesce(v_cred.expira_minutos, 30), 1));
-
-  insert into public.pedido_cobrancas
-    (tenant_id, pedido_id, conversation_id, ambiente, valor_centavos, expira_em)
-  values
-    (p_tenant_id, v_pedido, p_conversation_id, v_cred.ambiente, v_total, v_expira)
-  returning id into v_novo;
-
-  -- A DESCRICAO NAO CARREGA DADO PESSOAL. Ela aparece na pagina do Asaas, que
-  -- e uma pagina publica por URL: nome do cliente, telefone e itens ficam fora.
+  -- A DESCRICAO NAO CARREGA DADO PESSOAL. Ela aparece na pagina do Asaas, que e
+  -- publica por URL — e, medido em 10/09/2026 abrindo uma, aquela pagina JA
+  -- exibe nome e documento do TITULAR DA CONTA. Acrescentar dado do comprador
+  -- ali seria pior de propria vontade.
   select t.nome into v_nome from public.tenants t where t.id = p_tenant_id;
 
-  return query select true, 'ok', v_novo, false, v_pedido, v_numero, v_total,
-                      v_expira,
-                      -- `endDate` do Asaas e uma DATA (medido na doc). Vai o dia
-                      -- da expiracao — teto grosseiro, nao o alinhamento; a
-                      -- autoridade fina e `expira_em` acima.
-                      v_expira::date,
-                      format('Pedido nº %s — %s', coalesce(v_numero::text, '?'), coalesce(v_nome, '')),
-                      v_novo::text, null::text,
-                      v_cred.ambiente, v_cred.base_url, v_cred.api_key;
+  return query select
+    v_ok,
+    v_motivo,
+    v_cobid,
+    v_reusou,
+    v_pedido,
+    v_numero,
+    v_total,
+    v_minimo,
+    v_faltam,
+    v_expira,
+    -- `endDate` do Asaas e uma DATA (medido na doc e confirmado pela recusa do
+    -- sandbox). Vai o dia da expiracao — teto grosseiro, nao alinhamento; a
+    -- autoridade fina e `expira_em` acima.
+    v_expira::date,
+    case when v_ok then format('Pedido nº %s — %s', coalesce(v_numero::text, '?'), coalesce(v_nome, ''))
+         else null end,
+    case when v_ok then v_cobid::text else null end,
+    v_url,
+    v_cred.ambiente,
+    v_cred.base_url,
+    case when v_ok then v_cred.api_key else null end;
 end;
 $function$;
 

@@ -85,7 +85,10 @@ delete from public.catalogo_tools where tool_nome = 'pagamento';
 alter table public.tenants
   drop constraint if exists tenants_pagamento_expira_valido;
 alter table public.tenants
-  drop column if exists pagamento_expira_minutos;
+  drop constraint if exists tenants_pagamento_minimo_valido;
+alter table public.tenants
+  drop column if exists pagamento_expira_minutos,
+  drop column if exists pagamento_minimo_centavos;
 
 alter table public.tenant_credenciais
   drop constraint if exists tenant_credenciais_asaas_token_tamanho;

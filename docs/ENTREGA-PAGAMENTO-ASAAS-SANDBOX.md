@@ -17,10 +17,11 @@ workflows escritos, não importados; nenhuma credencial de Asaas em lugar nenhum
 |---|---|---|
 | 0 | `n8n/workflows/pagamento-sandbox-passo0.json` + `n8n/passo0-identifica-origem.js` + `scripts/gerar-passo0.mjs` | escrito, **não importado** |
 | 0 | `scripts/conferir-roteamento-sandbox.mjs` (`npm run n8n:roteamento-sandbox`) | roda; hoje diz **PASSO 0 NÃO PROVADO** |
-| 1 | `supabase/migrations/20260910230000_61_pagamento_asaas_sandbox.sql` + rollback | **não aplicada**; `teste:pagamento-asaas` 84/84 |
+| 1 | `supabase/migrations/20260910230000_61_pagamento_asaas_sandbox.sql` + rollback | **não aplicada**; `teste:pagamento-asaas` 100/100 |
 | 2 | regra 3 do portão em `n8n/aplica-portao.js` | escrita; `teste:portao-pagamento` 43/43 |
 | 3 | `tests/notificacao-nao-pausa.mjs` | 17/17 |
-| 4 | `scripts/sonda-asaas-expiracao.mjs` (`npm run sonda:asaas-expiracao`) | escrita; **não rodou** — não há credencial |
+| 4 | `scripts/sonda-asaas-expiracao.mjs` (`npm run sonda:asaas-expiracao`) | **RODOU** em 10/09 — resposta parcial, §6 |
+| 4 | `scripts/lib/asaas.mjs` + `tests/asaas-classificacao.mjs` | 29/29, sem rede |
 
 **O passo 0 não pôde ser executado por mim**, e ele é a porta de tudo. Importar
 workflow e repontar o webhook do Chatwoot são atos na instância, e os dois estão
@@ -85,11 +86,10 @@ Lido em 10/09/2026. Cada item aqui mudou alguma decisão.
 > desativado.** Quatro páginas lidas, nenhuma descreve o comportamento da página
 > de pagamento depois de `endDate` ou de `active=false`.
 
-**Ela não diz, e eu não testei.** Não há credencial de Asaas neste ambiente —
-`.env.local` não tem nenhuma. A sonda está escrita
-(`scripts/sonda-asaas-expiracao.mjs`), recusa chave que não tenha forma de chave
-do Asaas, aponta só para o host de sandbox, e limpa o objeto que cria. Ela não
-entra na suíte de propósito: fala com serviço externo e custa objeto lá.
+**A documentação não diz — a SONDA respondeu metade.** Ela rodou em 10/09 contra
+o sandbox: link **desativado** a página recusa; link **expirado** eu **não
+consegui medir**, porque o Asaas não deixa produzir um. Os dois não são a mesma
+coisa e a §6 não os escreve como se fossem.
 
 ### A consequência: `endDate` não alinha uma janela de 30 minutos
 
@@ -100,15 +100,17 @@ campo.** O que foi feito:
 - a autoridade sobre o prazo é **nossa** e mora em `pedido_cobrancas.expira_em`,
   com precisão de segundo, calculada de `tenants.pagamento_expira_minutos`;
 - o `endDate` vai para o **dia** da expiração — teto grosseiro, não alinhamento;
-- o alinhamento fino seria um `PUT active=false` na hora em que nossa janela
-  vence. **Não está feito**, e não por esquecimento: depende da sonda (desativar
-  um link cujo comportamento não conhecemos é trocar um desconhecido por outro),
-  e a decisão de quando disparar — preguiçoso, como a expiração de pedido, ou
-  agendado — não está tomada.
+- o alinhamento fino é um `PUT active=false` na hora em que nossa janela vence.
+  **Não está feito**, mas a incógnita que o travava caiu: a sonda mostrou que
+  desativar FUNCIONA — a página recusa com todas as letras. O que falta agora é
+  decisão de fluxo (quem dispara, preguiçoso ou agendado), não conhecimento.
 
-**Consequência que precisa estar escrita: enquanto isso, o link continua pagável
-depois de a nossa janela fechar.** Não é defeito da migração, é o estado de
-fato — e é exatamente o que o caminho `fora_do_prazo` trata.
+**Consequência que precisa estar escrita: enquanto ninguém desativar, o link
+continua pagável depois de a nossa janela fechar.** Não é defeito da migração, é
+o estado de fato — e é exatamente o que o caminho `fora_do_prazo` trata.
+
+E há um piso que a documentação também não anunciava e a recusa entregou:
+**R$ 5,00 para Pix e boleto.** Ver §7.
 
 ---
 
@@ -335,21 +337,228 @@ disparado por outro gatilho. Essa é a razão pela qual ela não pausa.
 
 ---
 
-## 6. O que a sonda tem de responder, e o que muda conforme a resposta
+## 6. A sonda rodou. Resposta PARCIAL, e ela fica escrita como parcial.
 
-Rode `ASAAS_SANDBOX_KEY='$aact_...' npm run sonda:asaas-expiracao` e escreva o
-resultado **aqui**.
+Rodada em 10/09/2026 contra o sandbox, com chave de homologação. A chave e a
+autenticação estavam certas o tempo todo — **nenhum** dos erros foi de
+credencial.
 
-| se… | então |
+### 6.1 O que a primeira execução devolveu, e por que a recusa é o dado
+
+O plano era criar o link já com `endDate` no passado. O Asaas recusou com HTTP
+400 e **três** erros de uma vez:
+
+```
+O valor mínimo para cobranças via Boleto e Pix é R$ 5,00.
+É necessário informar a quantidade de dias úteis para vencimento da cobrança.
+A data de encerramento do link de pagamento não pode ser inferior a data de hoje.
+```
+
+O terceiro mata a estratégia: **não dá para criar um link já expirado.** Os
+outros dois viraram os achados 2 e 3.
+
+### 6.2 EXPIRADO — **NÃO MEDIDO**
+
+Tentei o caminho que restava: criar válido e **recuar** o `endDate` com
+`PUT /v3/paymentLinks/{id}`. O Asaas recusa igual:
+
+```
+PUT endDate=2026-09-09 (ontem)  ->  HTTP 400  falha_de_chamada
+  · A data de encerramento do link de pagamento não pode ser inferior a data de hoje.
+```
+
+**Não consegui produzir um link genuinamente expirado, então não medi link
+expirado.** Não há aproximação escrita como se fosse medição.
+
+Os outros caminhos, avaliados e o porquê da escolha:
+
+| caminho | veredito |
 |---|---|
-| o link **expira** sozinho de forma confiável | `fora_do_prazo` vira caso raro de corrida (o cliente pagou no segundo 29:58), e o alinhamento por `active=false` é opcional |
-| o link **não expira** | `fora_do_prazo` é o caminho **normal** de todo cliente que demora, e desativar o link ao fim da nossa janela deixa de ser opcional — vira trabalho próprio: quem dispara, quando, e o que responder |
+| **`endDate` = hoje e um `GET` amanhã** | **é o caminho definitivo, e é o que falta fazer.** Custa um link e uma verificação no dia seguinte, e responde sem aproximar. Não foi feito porque leva até 24 h e a sonda existe para decidir agora |
+| `PUT endDate` para o passado | tentado. Recusado, como acima |
+| cobrança avulsa (`/v3/payments`) com `dueDate` no passado | **descartado: mede outra coisa.** Cobrança vencida é `PAYMENT_OVERDUE` e continua pagável por desenho — é o boleto atrasado de sempre, não um link de pagamento fora da janela |
+| deixar o link vencer sozinho | é o mesmo que a primeira linha, com outro nome |
 
-*(resultado: pendente — não há credencial)*
+### 6.3 DESATIVADO (`active=false`) — MEDIDO, e a página RECUSA
+
+Este é o estado que consegui produzir, e ele responde uma pergunta **parecida**,
+não A pergunta.
+
+```
+PUT active=false                 ->  HTTP 200
+reler o link                     ->  active=false   (a mutação entrou)
+a página pública                 ->  HTTP 200, 41.716 bytes
+```
+
+E a página diz, com todas as letras:
+
+> **"Seu fornecedor desabilitou esse link de pagamento."**
+
+O valor aparece marcado como *"somente à vista"* e não há forma de pagamento
+selecionável. **Link desativado não é pagável.**
+
+### 6.4 O erro que essa medição pegou na própria sonda
+
+A primeira leitura da sonda foi **`pagavel`** — errada. A página do Asaas é uma
+SPA: o HTML servido traz "pix", "boleto", "qr code" e "forma de pagamento" no
+esqueleto **mesmo quando o link não vale**. O classificador contou essas
+palavras e concluiu o oposto do que a tela mostra.
+
+O que o pegou não foi revisão: foi **abrir a URL no navegador**. A sonda já
+avisava — ela reportou que a página encolheu 28% (57.761 → 41.716 bytes) e
+imprimiu *"mudou MUITO e ainda assim deu `pagavel`: o HTML é indício, não prova.
+ABRA A URL NO NAVEGADOR"*. O aviso estava certo e a conclusão estava errada.
+
+Consertado em `scripts/lib/asaas.mjs`, e a frase real virou fixture em
+`teste:asaas-classificacao`, com a contraprova de que é a **ordem** que resolve
+(pista de recusa é avaliada antes de pista de oferta; sem a frase, o mesmo HTML
+volta a dar `pagavel`).
+
+Fica a regra, que vale para a próxima medição desta família: **`pagavel` a
+partir de HTML é indício.** Se a decisão depender dele, abra no navegador.
+
+### 6.5 A discriminação que o enunciado exigiu, provada
+
+> *"force um erro de valor e confirme que a sonda NÃO o classifica como link
+> expirado."*
+
+A sonda faz isso **antes** de qualquer medição, contra o Asaas de verdade — uma
+sonda que não separa os dois casos não deveria chegar a opinar sobre nenhum:
+
+```
+criar link de R$ 1,00 (esperado: recusa por VALOR)
+    HTTP 400  ->  falha_de_chamada  (o Asaas recusou a REQUISIÇÃO (validação))
+      · O valor mínimo para cobranças via Boleto e Pix é R$ 5,00.
+  ✓ erro de valor foi classificado como `falha_de_chamada`, NÃO como link inválido
+```
+
+E a prova que **não** depende de rede nem de credencial está na suíte:
+`npm run teste:asaas-classificacao`, 29 asserções, com o 400 real como fixture e
+uma sabotagem que troca `falha_de_chamada` por `link_indisponivel` e exige que o
+teste fique vermelho.
+
+### 6.6 `dueDateLimitDays` = 1, e o porquê
+
+Obrigatório (achado 2). O valor é **1**, o menor que faz sentido — não um número
+redondo.
+
+Ele é *"dias úteis que o cliente pode pagar depois do boleto ser gerado"*, ou
+seja: **um segundo prazo, do lado do Asaas.** A autoridade sobre o prazo no nosso
+desenho é `pedido_cobrancas.expira_em`, em minutos. Um valor maior aqui criaria
+um prazo mais longo competindo com o nosso, e "está fora do prazo?" passaria a
+ter duas respostas diferentes conforme quem pergunta.
+
+### 6.7 O que muda no desenho, com o que se sabe hoje
+
+| | |
+|---|---|
+| **`fora_do_prazo` continua obrigatório** | e continua sendo o caminho normal, não a corrida rara. Sem desativação explícita, nada faz o link parar de valer ao fim da nossa janela — `endDate` é de dia |
+| **desativar ao fim da janela deixou de ser opcional** | agora se sabe que `active=false` **funciona**: a página recusa. Era a incógnita que travava a decisão. Vira trabalho próprio: quem dispara (preguiçoso, como a expiração de pedido, ou agendado), e o que responder a quem chegar depois |
+| **o que ainda falta** | rodar o `endDate`=hoje + `GET` amanhã, para saber se link expirado se comporta como desativado. Se sim, a desativação vira redundância barata; se não, ela é a única defesa |
+
+### 6.7b A chave quase vazou, e quem pegou foi varredura
+
+Escrevendo o teste de redação, digitei uma "chave falsa" de fixture. Ela
+começava com os **30 primeiros caracteres da chave de sandbox real** — eu a
+tinha reproduzido de cabeça sem perceber.
+
+O arquivo ainda não estava no git, e o que a pegou não foi releitura: foi uma
+varredura comparando cada arquivo com pedaços da chave do ambiente.
+
+A fixture passou a ser **construída** (`'$aact_' + 'hmlg_' + 'FIXTURE'.repeat(6)`),
+de forma que não possa coincidir com credencial nenhuma — e a varredura virou
+seção fixa de `teste:asaas-classificacao`: ela percorre os 434 arquivos de
+`git ls-files` procurando qualquer trecho de 24 caracteres da chave, com
+contraprova de que encontra quando há o que encontrar.
+
+Sem a chave no ambiente ela emite **AVISO** e diz que não rodou, em vez de
+passar. Verde por falta de dado é como o `x-foto-secret` deste projeto vazou
+três vezes.
+
+### 6.8 Um achado lateral, de privacidade
+
+A página pública do link exibe **nome, CPF, e-mail, telefone e cidade do titular
+da conta Asaas** — visto na inspeção. No desenho BaaS (subconta por cliente), o
+titular é **o nosso cliente**, então o CPF/CNPJ dele fica numa URL pública que o
+consumidor final abre.
+
+Não é defeito nosso e não muda nada nesta migração. Entra aqui porque é decisão
+de produto que ninguém deve descobrir depois de vender o módulo — e porque
+reforça a regra que já estava na função: **a descrição da cobrança não carrega
+dado de ninguém.** Não vale acrescentar dado do comprador a uma página que já
+expõe o do vendedor.
 
 ---
 
-## 7. O custo no painel — listado agora, não construído
+## 7. O piso de R$ 5,00 — regra do sistema, não detalhe da sonda
+
+**Pix e boleto no Asaas têm valor mínimo de R$ 5,00.** Não foi lido em
+documentação: foi o sandbox recusando, com essa frase.
+
+### 7.1 Quanto isso morde, medido em produção
+
+| | |
+|---|---|
+| dos **14 pedidos** já feitos | **nenhum** ficaria abaixo do mínimo |
+| menor do `emporio` | R$ 12,00 · média R$ 32,36 |
+| menor do `sendbox` | R$ 69,90 |
+| **mas** | **3 dos 41 produtos do `emporio` custam menos de R$ 5,00** |
+| e o pão de queijo | R$ 1,50 — **dois dão R$ 3,00 e não podem ser cobrados** |
+
+Improvável não é impossível, e é o caso que aparece quando ninguém previu.
+
+### 7.2 É COLUNA, não constante
+
+`tenants.pagamento_minimo_centavos`, default 500, agência-only pela mesma lista
+branca do `tenants_guard_colunas`.
+
+É número de **terceiro** e pode mudar quando o Asaas quiser. Cravado em código
+vira `S = 622`: medido certo num dia, silenciosamente errado depois, e sem
+ninguém para ligar "o provedor mudou a regra" a "o número no código
+envelheceu". Aqui muda sem deploy.
+
+Por tenant, e não global, porque é onde as outras configurações de pagamento já
+moram — e porque no dia em que o provedor for outro para um cliente, o piso é
+dele.
+
+O teste mede os dois lados: **sem ser super_admin, mudar o piso é recusado com
+`42501`**; como super_admin, baixá-lo para R$ 1,00 faz o mesmo pedido de R$ 3,00
+passar. Configuração que não muda nada não seria configuração.
+
+### 7.3 O comportamento abaixo do mínimo: **cair para o fluxo manual**
+
+O agente **não** vai pedir para o cliente comprar mais. A escolha, e o porquê:
+
+1. **é o fluxo que existe e funciona hoje** para 100% das vendas — o atendente
+   passa a chave Pix. Esta fase inteira é aditiva, não substitui nada; quando o
+   link não pode existir, a venda continua pelo caminho de sempre;
+2. **o piso é problema NOSSO, não do cliente final.** Fazer alguém comprar mais
+   para satisfazer o processador da agência é o tipo de coisa que se lê como
+   manipulação, e a diferença entre "quer levar mais um?" e "você precisa levar
+   mais um" desaparece na conversa;
+3. **é a MESMA saída que a recusa por TETO já tem.** `vendas-tetos-e-provedor.md`
+   decidiu que cobrança acima do teto não vira erro: o pedido fica preservado e o
+   fluxo cai em `transferir_humano`. Usar a mesma porta para o piso mantém **um**
+   caminho de exceção em vez de dois, e o princípio é literalmente o mesmo — "a
+   recusa é conversa, não exceção".
+
+**O agente não descobre isso por erro da ferramenta.**
+`api_n8n_gerar_cobranca` devolve `motivo = 'abaixo_do_minimo'` com
+`minimo_centavos` e `faltam_centavos` — informação que o modelo sabe tratar.
+O 400 cru do Asaas nunca chega a ele: pedir para o modelo improvisar em cima de
+erro de integração é o comportamento que o portão existe para conter.
+
+`faltam_centavos` viaja junto para quem quiser, um dia, **oferecer** completar o
+pedido. Oferecer não é a saída escolhida — mas o número estar lá custa zero e
+tirá-lo depois custa uma migração.
+
+> A tool do n8n que consome isso **não foi escrita** (a ordem manda esperar a
+> sonda). O que está pronto e testado é o lado do banco: a recusa, o motivo, e a
+> prova de que nenhuma cobrança é criada quando ela acontece.
+
+---
+
+## 8. O custo no painel — listado agora, não construído
 
 Toda primitiva desta migração vira tela. Nada disto foi construído; está aqui
 porque decisão de produto que aparece depois vira retrabalho.
@@ -372,7 +581,7 @@ descontratar esconde, nunca apaga.
 
 ---
 
-## 8. O que **não** foi feito, e por quê
+## 9. O que **não** foi feito, e por quê
 
 - **passo 0 não executado** — importar workflow e repontar o webhook do Chatwoot
   são atos na instância, fora do autorizado. Tudo abaixo dele está entregue mas
@@ -390,41 +599,76 @@ descontratar esconde, nunca apaga.
 
 ---
 
-## 9. Os dois vermelhos da suíte, e qual lado está certo
-
-`npm run teste`: **60 de 62**. Os dois vermelhos são **o mesmo fato**, e ele é
-verdadeiro:
+## 10. Os dois vermelhos da suíte são o estado CORRETO. **Não os feche.**
 
 ```
 teste:migracao-portao  FALHA toda coluna que o portao LE vem na query do no
                              — faltam: pagamento_confirmado
 teste:portao-venda     FALHA jsCode do no == n8n/aplica-portao.js
-                             — arquivo 24526 chars, no 16911
 ```
 
-`n8n/aplica-portao.js` ganhou a regra 3; a cópia dentro do
-`agente-principal.json` não, porque tocar naquele arquivo não estava autorizado.
+`n8n/aplica-portao.js` ganhou a regra 3 e lê `estado.pagamento_confirmado`. A
+cópia dentro do `agente-principal.json` não.
 
-**Qual lado está certo: o arquivo.** Ele é a fonte declarada — o cabeçalho do
-próprio `aplica-portao.js` diz isso, e a cópia no JSON é injetada.
+### O comando que "fecha os dois" é uma armadilha, e eu a ofereci na entrega anterior
 
-E vale notar **como** o primeiro vermelho apareceu: ninguém escreveu a asserção
-"a query precisa de `pagamento_confirmado`". O injetor **deriva** a lista de
-colunas de `estado.<campo>` no corpo do portão, e o teste executa a query do nó
-contra a função real. É a máquina do caso dez do `CLAUDE.md` funcionando —
-derivar o derivado em vez de escrever a asserção, executar em vez de comparar
-texto.
+Sugeri `node scripts/aplicar-portao-venda.mjs` como se fosse limpeza pendente.
+**Estava errado, e o erro é da mesma família que este projeto já catalogou como
+caso dez.**
 
-**Um comando os fecha**, quando houver autorização:
+O injetor **deriva** a lista de colunas da query do nó a partir de
+`estado.<campo>` no corpo do portão. Rodá-lo agora faria a query passar a pedir
+`pagamento_confirmado` — **coluna que só existe depois da migração 61, que não
+está aplicada.** Importado nesse estado, o `Estado do Pedido` responderia
+`42703`, e ele está no **caminho único**: não seria o portão ficar mudo, seria
+**o agente parar de responder para todos os tenants**.
 
-```bash
-node scripts/aplicar-portao-venda.mjs
+É exatamente o defeito de 09/09 reintroduzido por outra porta — a porta de
+"fechar dois vermelhos com um comando".
+
+### A ordem, e ela não é negociável
+
+1. aplicar a migração 61;
+2. **só então** `node scripts/aplicar-portao-venda.mjs`;
+3. e o import do workflow depois disso, com o passo 0 já provado.
+
+Entre 1 e 2 os dois vermelhos **têm de ficar vermelhos**. Eles não são sujeira
+no repositório: são o relatório correto de que a fonte andou à frente do
+derivado e de que o banco ainda não suporta o derivado novo.
+
+### E agora a regra é máquina, não nota de rodapé
+
+Uma advertência em documento não impede ninguém de rodar um comando. Então o
+próprio injetor passou a se recusar: ele **consulta produção** e compara com o
+que o portão lê. Rodado hoje, ele para antes de escrever qualquer coisa —
+
+```
+colunas declaradas vem de 20260910230000_61_pagamento_asaas_sandbox.sql
+
+ABORTADO: o portao le coluna que PRODUCAO ainda nao tem:
+   - estado.pagamento_confirmado
+  producao declara: tem_pedido, pedido_id, pedido_status, ...
+  Injetar agora gravaria uma query que responde 42703 no CAMINHO UNICO —
+  o agente pararia de responder para TODO tenant, nao so o portao.
 ```
 
-Ele escreve só o arquivo do repo — importar continua sendo passo humano e
-separado. Enquanto ele não roda, os dois vermelhos são o relatório correto do
-estado: **o nó carrega código mais velho que a fonte.**
+Duas correções entraram junto, e as duas eram deriva da mesma família:
 
-`tests/portao-pagamento.mjs` roda contra o **arquivo**, então a regra 3 tem
-cobertura desde já, independente desse passo. Os dois testes são os dois lados do
-par derivado, e nenhum sozinho basta.
+- ele conferia contra o **arquivo da migração 56**, cravado. A 61 mexeu na mesma
+  função e o cravado passou a descrever um mundo velho — agora ele procura a
+  migração **mais recente** que declara `api_n8n_estado_pedido`;
+- conferir contra o arquivo nunca foi suficiente: **o arquivo declara, produção é
+  que tem.** São perguntas diferentes e as duas são feitas.
+
+Sem `SUPABASE_DB_URL` ele **aborta** em vez de pular a checagem. A assimetria
+decide: um aborto injusto custa rodar de novo com a URL; um "pulei e segui" custa
+o agente mudo para todos os clientes.
+
+> **Para quem vier depois:** se você abriu a suíte, viu estes dois e pensou "é
+> só rodar o injetor" — pode tentar. Ele vai te parar, e a mensagem dele aponta
+> para cá.
+
+`tests/portao-pagamento.mjs` roda contra o **arquivo**, então a regra 3 tem 43
+asserções de cobertura independentes desse passo. Os dois testes são os dois
+lados do par derivado, e é justamente por serem dois que dá para deixar um
+vermelho de propósito sem ficar sem medição.

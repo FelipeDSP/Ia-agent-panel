@@ -85,13 +85,84 @@ const COLUNAS_LIDAS = [...new Set(
   [...CORPO_PORTAO.matchAll(/\bestado\.([a-z_]+)/g)].map((m) => m[1]),
 )];
 
-const MIGRACAO = path.join(RAIZ, 'supabase', 'migrations', '20260909180000_56_portao_venda_afirmada.sql');
+// A MIGRACAO QUE DECLARA A FUNCAO NAO E FIXA. Ate 2026-09-10 este script
+// apontava para o arquivo da 56, cravado. A 61 mexeu na mesma funcao e o
+// cravado passou a descrever um mundo velho — a mesma deriva fonte/derivado que
+// este bloco inteiro existe para caçar. Agora ele pega a MAIS RECENTE que
+// declara a funcao.
 const COLUNAS_DECLARADAS = (() => {
-  const sql = fs.readFileSync(MIGRACAO, 'utf8');
-  const m = sql.match(/create or replace function public\.api_n8n_estado_pedido[\s\S]*?returns table \(([\s\S]*?)\)\s*language/i);
-  if (!m) throw new Error('nao achei o `returns table` de api_n8n_estado_pedido na migracao 56');
-  return m[1].split(',').map((l) => l.trim().split(/\s+/)[0]).filter(Boolean);
+  const dir = path.join(RAIZ, 'supabase', 'migrations');
+  const arquivos = fs.readdirSync(dir)
+    .filter((f) => f.endsWith('.sql') && !f.endsWith('_rollback.sql'))
+    .sort()
+    .reverse();
+  for (const f of arquivos) {
+    const sql = fs.readFileSync(path.join(dir, f), 'utf8');
+    const m = sql.match(
+      /create or replace function public\.api_n8n_estado_pedido[\s\S]*?returns table\s*\(([\s\S]*?)\)\s*language/i);
+    if (m) {
+      console.log(`  colunas declaradas vem de ${f}`);
+      return m[1].split(',').map((l) => l.trim().split(/\s+/)[0]).filter(Boolean);
+    }
+  }
+  throw new Error('nenhuma migracao declara `api_n8n_estado_pedido`');
 })();
+
+/**
+ * O QUE PRODUCAO TEM DE VERDADE — e nao o que algum arquivo declara.
+ *
+ * ESTE BLOCO EXISTE POR UM QUASE-ACIDENTE de 2026-09-10. A regra 3 do portao
+ * passou a ler `estado.pagamento_confirmado`, coluna que a migracao 61 cria e
+ * que NAO estava aplicada. Rodar o injetor ali gravaria uma query pedindo essa
+ * coluna; importado, o `Estado do Pedido` responderia `42703` — e ele esta no
+ * CAMINHO UNICO, entao nao seria o portao ficar mudo: seria o agente parar de
+ * responder para TODO tenant.
+ *
+ * Conferir contra o ARQUIVO da migracao nao pega isso: o arquivo declara a
+ * coluna, producao e que nao tem. As duas perguntas sao diferentes e as duas
+ * precisam ser feitas.
+ *
+ * SEM O BANCO ELE ABORTA, e nao "pula a checagem". A assimetria decide: um
+ * aborto injusto custa rodar de novo com a URL; um "pulei e segui" custa o
+ * agente mudo para todos os clientes.
+ */
+async function colunasEmProducao() {
+  const envLocal = path.join(RAIZ, '.env.local');
+  let url = process.env.SUPABASE_DB_URL ?? null;
+  if (!url && fs.existsSync(envLocal)) {
+    const l = fs.readFileSync(envLocal, 'utf8').split(/\r?\n/)
+      .find((x) => x.startsWith('SUPABASE_DB_URL='));
+    if (l) url = l.slice('SUPABASE_DB_URL='.length).trim().replace(/^["']|["']$/g, '');
+  }
+  if (!url) {
+    console.error('\nABORTADO: sem SUPABASE_DB_URL, nao da para saber que colunas PRODUCAO tem.');
+    console.error('  Nao pulo esta checagem: injetar coluna que o banco nao tem da 42703 no');
+    console.error('  caminho unico e cala o agente de todos os tenants.\n');
+    process.exit(1);
+  }
+  const { default: pg } = await import('pg');
+  const c = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
+  await c.connect();
+  try {
+    const r = await c.query(
+      `select pg_get_function_result(p.oid) as res
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'api_n8n_estado_pedido'`);
+    if (r.rows.length !== 1) {
+      console.error(`\nABORTADO: ${r.rows.length} assinatura(s) de api_n8n_estado_pedido em producao.\n`);
+      process.exit(1);
+    }
+    const m = r.rows[0].res.match(/TABLE\(([\s\S]*)\)/i);
+    if (!m) {
+      console.error(`\nABORTADO: nao entendi o retorno em producao: ${r.rows[0].res}\n`);
+      process.exit(1);
+    }
+    return m[1].split(',').map((l) => l.trim().split(/\s+/)[0]).filter(Boolean);
+  } finally {
+    await c.end();
+  }
+}
+const COLUNAS_EM_PRODUCAO = await colunasEmProducao();
 
 {
   // LISTA VAZIA E ERRO, NAO "nada a conferir". Sem esta linha o script ja gravou
@@ -113,12 +184,29 @@ const COLUNAS_DECLARADAS = (() => {
 
   const faltando = COLUNAS_LIDAS.filter((c) => !COLUNAS_DECLARADAS.includes(c));
   if (faltando.length) {
-    console.error('\nABORTADO: o portao le coluna que a migracao 56 nao declara:');
+    console.error('\nABORTADO: o portao le coluna que NENHUMA migracao declara:');
     for (const c of faltando) console.error(`   - estado.${c}`);
-    console.error(`\n  a funcao declara: ${COLUNAS_DECLARADAS.join(', ')}\n`);
+    console.error(`\n  as migracoes declaram: ${COLUNAS_DECLARADAS.join(', ')}\n`);
     process.exit(1);
   }
+
+  // A SEGUNDA PERGUNTA, e ela e outra: producao TEM?
+  const semBanco = COLUNAS_LIDAS.filter((c) => !COLUNAS_EM_PRODUCAO.includes(c));
+  if (semBanco.length) {
+    console.error('\nABORTADO: o portao le coluna que PRODUCAO ainda nao tem:');
+    for (const c of semBanco) console.error(`   - estado.${c}`);
+    console.error(`\n  producao declara: ${COLUNAS_EM_PRODUCAO.join(', ')}`);
+    console.error('\n  A migracao que cria essa(s) coluna(s) precisa ser APLICADA primeiro.');
+    console.error('  Injetar agora gravaria uma query que responde 42703 no CAMINHO UNICO —');
+    console.error('  o agente pararia de responder para TODO tenant, nao so o portao.');
+    console.error('\n  Se voce chegou aqui tentando "fechar os dois vermelhos da suite":');
+    console.error('  eles sao o estado CORRETO enquanto o banco nao acompanhar. Ver');
+    console.error('  docs/ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md §10.\n');
+    process.exit(1);
+  }
+
   console.log(`  colunas derivadas do consumidor: ${COLUNAS_LIDAS.join(', ')}`);
+  console.log('  e producao tem todas elas.');
 }
 
 const posEstima = no('Estima Tokens').position;

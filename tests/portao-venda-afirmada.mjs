@@ -73,7 +73,13 @@ console.log('\n== 0. O no e o arquivo sao o mesmo codigo ==\n');
   const nl = (x) => x.replace(/\r\n/g, '\n');
   chk('jsCode do no == n8n/aplica-portao.js',
     nl(FONTE_ARQUIVO) === nl(FONTE_TXT),
-    `arquivo ${nl(FONTE_ARQUIVO).length} chars, no ${nl(FONTE_TXT).length} — rode node scripts/aplicar-portao-venda.mjs`);
+    `arquivo ${nl(FONTE_ARQUIVO).length} chars, no ${nl(FONTE_TXT).length}.`
+    + ' O injetor (scripts/aplicar-portao-venda.mjs) e o conserto, MAS SO DEPOIS'
+    + ' de o banco ter as colunas que o arquivo passou a ler: ele DERIVA a query'
+    + ' do no de `estado.<campo>`, e injetar campo que a producao ainda nao tem'
+    + ' da 42703 no CAMINHO UNICO — o agente para de responder para TODO tenant.'
+    + ' Confira as colunas em api_n8n_estado_pedido antes.'
+    + ' Ver docs/ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md §10.');
   // E o campo que a migracao 56 devolve, conferido no CODIGO QUE SOBE.
   chk('o codigo que sobe le `tem_pedido` (o campo que a migracao 56 devolve)',
     /estado\.tem_pedido/.test(FONTE_TXT));

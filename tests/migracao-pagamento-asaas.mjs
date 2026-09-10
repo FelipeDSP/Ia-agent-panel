@@ -261,6 +261,62 @@ try {
   await c.query(`select public.api_n8n_registrar_cobranca($1,$2,true,$3,$4)`,
     [TA, cobrancaA, 'pl_teste_a', 'https://sandbox.asaas.com/c/aaa']);
 
+  // -----------------------------------------------------------------------
+  console.log('\n-- 3b. O piso de R$ 5,00 chega como MOTIVO, nunca como erro --\n');
+  {
+    // Dois pães de queijo do `emporio` dão R$ 3,00, e o Asaas recusa Pix e
+    // boleto abaixo de R$ 5,00 — medido pela recusa do sandbox, não lido em doc.
+    const ped = await pedidoFechado(TA, 990010, 300);
+    const r = await um(`select * from public.api_n8n_gerar_cobranca($1,$2)`, [TA, 990010]);
+    chk('pedido de R$ 3,00 -> recusa com `abaixo_do_minimo`',
+      r.ok === false && r.motivo === 'abaixo_do_minimo', `${r.ok}/${r.motivo}`);
+    chk('e diz QUANTO é o piso e QUANTO falta (o modelo sabe tratar isso)',
+      r.minimo_centavos === 500 && r.faltam_centavos === 200,
+      `minimo=${r.minimo_centavos} faltam=${r.faltam_centavos}`);
+    chk('nenhuma cobrança foi criada para ele',
+      (await um(`select count(*)::int n from public.pedido_cobrancas
+                  where tenant_id=$1 and pedido_id=$2`, [TA, ped])).n === 0);
+    chk('e a chave NÃO viaja numa recusa', r.api_key === null, String(r.api_key));
+
+    // O ESPELHO: um centavo acima do piso passa. Sem ele, tudo acima passaria
+    // numa implementação que recusa qualquer valor.
+    const ped2 = await pedidoFechado(TA, 990011, 500);
+    const r2 = await um(`select * from public.api_n8n_gerar_cobranca($1,$2)`, [TA, 990011]);
+    chk('ESPELHO: exatamente R$ 5,00 (o piso) PASSA',
+      r2.ok === true && r2.motivo === 'ok', `${r2.ok}/${r2.motivo}`);
+    void ped2;
+
+    // AGÊNCIA-ONLY, MEDIDO E NÃO DEDUZIDO. A primeira versão deste bloco tentou
+    // mudar o piso sem claim nenhum e levou `42501` do
+    // `trg_tenants_guard_colunas` — o teste ficou vermelho porque a proteção
+    // funcionou. Agora ele afirma os DOIS lados.
+    {
+      await c.query('savepoint sp_guard');
+      let err = null;
+      try {
+        await c.query(`update public.tenants set pagamento_minimo_centavos = 100 where id=$1`, [TA]);
+      } catch (e) { err = e; }
+      await c.query('rollback to savepoint sp_guard');
+      chk('sem ser super_admin, mudar o piso é RECUSADO (42501)',
+        err !== null && err.code === '42501', err ? err.code : '(passou!)');
+    }
+
+    // E o piso é CONFIGURAÇÃO: a agência muda e a resposta muda, sem deploy. É o
+    // que separa uma coluna de uma constante no código — a lição do `S = 622`.
+    await c.query('savepoint sp_piso');
+    await c.query(`select set_config('request.jwt.claims',
+      '{"app_metadata":{"papel":"super_admin"}}', true)`);
+    await c.query(`update public.tenants set pagamento_minimo_centavos = 100 where id=$1`, [TA]);
+    chk('a mutação ENTROU (o piso está 100)',
+      (await um(`select pagamento_minimo_centavos m from public.tenants where id=$1`, [TA])).m === 100);
+    const r3 = await um(`select * from public.api_n8n_gerar_cobranca($1,$2)`, [TA, 990010]);
+    chk('baixando o piso para R$ 1,00, o MESMO pedido de R$ 3,00 passa',
+      r3.ok === true, `${r3.motivo}`);
+    await c.query('rollback to savepoint sp_piso');
+    chk('e o piso volta a 500 depois do savepoint',
+      (await um(`select pagamento_minimo_centavos m from public.tenants where id=$1`, [TA])).m === 500);
+  }
+
   {
     // REUSO: a segunda chamada não pode criar um segundo link vivo.
     const antes = (await um(`select count(*)::int n from public.pedido_cobrancas where tenant_id=$1`, [TA])).n;
@@ -571,6 +627,15 @@ try {
       erro2 === null, erro2 ? `${erro2.code} ${erro2.message}` : '');
     chk('e `pedido_cobrancas` some',
       (await um(`select to_regclass('public.pedido_cobrancas') is null as x`)).x === true);
+    // TODAS as colunas, não só a que eu lembrei. Rollback que deixa coluna para
+    // trás é o mesmo estado meio-aplicado que ele existe para desfazer.
+    for (const col of ['pagamento_expira_minutos', 'pagamento_minimo_centavos']) {
+      chk(`e \`tenants.${col}\` some`, !(await existeCol('tenants', col)));
+    }
+    for (const col of ['asaas_ambiente', 'asaas_api_key_sandbox', 'asaas_api_key_producao',
+      'asaas_webhook_token_sandbox', 'asaas_webhook_token_producao']) {
+      chk(`e \`tenant_credenciais.${col}\` some`, !(await existeCol('tenant_credenciais', col)));
+    }
     chk('e o ACL de `estado_pedido` volta ao de antes (o rollback também reconcede)',
       (await aclDe('api_n8n_estado_pedido')) === aclEstadoAntes,
       `${aclEstadoAntes} -> ${await aclDe('api_n8n_estado_pedido')}`);
