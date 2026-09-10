@@ -74,7 +74,9 @@
     "teste:roteamento-caixa": "node --env-file=.env.local tests/migracao-roteamento-caixa.mjs",
     "n8n:validar": "node scripts/n8n-validar.mjs n8n/workflows/*.json",
     "teste:portao-venda": "node tests/portao-venda-afirmada.mjs",
-    "teste:migracao-portao": "node --env-file=.env.local tests/migracao-portao-venda.cjs"
+    "teste:migracao-portao": "node --env-file=.env.local tests/migracao-portao-venda.cjs",
+    "teste:sku-categoria": "node --env-file=.env.local tests/migracao-sku-categoria.mjs",
+    "teste:iso-sku-categoria": "node --env-file=.env.local tests/isolamento-sku-categoria.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

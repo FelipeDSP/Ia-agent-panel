@@ -30,12 +30,17 @@ export type Produto = {
   descricao: string | null;
   precoCentavos: number;
   unidade: string;
+  /** Gerado pelo banco (migração 57). A tela mostra; ninguém edita. */
   sku: string | null;
+  categoriaId: string | null;
+  categoriaNome: string | null;
   estoque: number | null;
   disponivel: boolean;
   /** URL assinada de vida curta, ou null se o produto não tem foto. */
   fotoUrl: string | null;
 };
+
+export type Categoria = { id: string; nome: string };
 
 function ErroCampo({ msg }: { msg?: string }) {
   if (!msg) return null;
@@ -92,11 +97,14 @@ function FormularioProduto({
   onCancelar,
   unidadePadrao,
   onUnidadeMudou,
+  categorias,
 }: {
   editando: Produto | null;
   onCancelar: () => void;
   unidadePadrao: string;
   onUnidadeMudou: (u: string) => void;
+  /** Só as do próprio tenant — a página as carrega com filtro explícito. */
+  categorias: Categoria[];
 }) {
   const [estado, acao] = useActionState<EstadoProduto, FormData>(salvarProduto, {});
 
@@ -186,16 +194,38 @@ function FormularioProduto({
           <ErroCampo msg={estado.errosCampo?.['unidade']} />
         </div>
 
-        <div className="flex w-40 flex-col gap-2">
-          <Label htmlFor="sku">Código / SKU</Label>
-          <Input
-            id="sku"
-            name="sku"
-            defaultValue={v('sku', editando?.sku ?? '')}
-            placeholder="Opcional"
-            maxLength={60}
-          />
-          <ErroCampo msg={estado.errosCampo?.['sku']} />
+        <div className="flex w-44 flex-col gap-2">
+          <Label htmlFor="categoria_id">Categoria</Label>
+          <Select
+            id="categoria_id"
+            name="categoria_id"
+            defaultValue={v('categoria_id', editando?.categoriaId ?? '')}
+            disabled={categorias.length === 0}
+          >
+            <option value="">Escolha…</option>
+            {categorias.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nome}
+              </option>
+            ))}
+          </Select>
+          <ErroCampo msg={estado.errosCampo?.['categoria_id']} />
+        </div>
+
+        {/*
+          SKU: SOMENTE LEITURA. Desde a migração 57 ele é gerado pelo banco, numa
+          sequência por tenant que nunca reusa número — inclusive de produto
+          apagado, porque um número que volta a circular faria um pedido antigo
+          apontar para outro produto. Oferecer o campo aqui reabriria a porta
+          para o cliente digitar um valor que colide com a sequência.
+
+          Em produto novo ainda não há número para mostrar: ele nasce no INSERT.
+        */}
+        <div className="flex w-28 flex-col gap-2">
+          <Label>Código</Label>
+          <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
+            {editando?.sku ?? '—'}
+          </div>
         </div>
 
         <div className="flex w-40 flex-col gap-2">
@@ -250,8 +280,11 @@ function FormularioProduto({
 export function GestaoCatalogo({
   produtosIniciais,
   podeFoto,
+  categorias,
 }: {
   produtosIniciais: Produto[];
+  /** Categorias do próprio tenant, para o seletor do formulário. */
+  categorias: Categoria[];
   /**
    * Se o tenant contratou `foto_produto`. Resolvido no servidor (a página).
    *
@@ -338,6 +371,7 @@ export function GestaoCatalogo({
             onCancelar={() => setEditando(null)}
             unidadePadrao={unidadePadrao}
             onUnidadeMudou={setUnidadePadrao}
+            categorias={categorias}
           />
         </CardContent>
       </Card>
@@ -383,7 +417,8 @@ export function GestaoCatalogo({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{p.nome}</span>
-                      {p.sku ? <Badge variant="secondary">{p.sku}</Badge> : null}
+                      {p.sku ? <Badge variant="secondary">#{p.sku}</Badge> : null}
+                      {p.categoriaNome ? <Badge variant="outline">{p.categoriaNome}</Badge> : null}
                       {!p.disponivel ? <Badge variant="warning">pausado</Badge> : null}
                       {p.estoque === 0 ? (
                         <Badge variant="warning">esgotado</Badge>

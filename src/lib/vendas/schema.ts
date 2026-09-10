@@ -37,7 +37,6 @@ const UNIDADES_VALIDAS = new Set(UNIDADES.map((u) => u.valor as string));
 
 const MAX_NOME = 120;
 const MAX_DESCRICAO = 2000;
-const MAX_SKU = 60;
 const MAX_ESTOQUE = 1_000_000;
 
 export type ProdutoValidado = {
@@ -45,10 +44,13 @@ export type ProdutoValidado = {
   descricao: string | null;
   preco_centavos: number;
   unidade: string;
-  sku: string | null;
+  categoria_id: string;
   estoque: number | null;
   disponivel: boolean;
 };
+
+/** UUID v4 — barra id malformado antes de virar filtro de query. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type ResultadoValidacao =
   | { ok: true; valor: ProdutoValidado }
@@ -75,11 +77,24 @@ export function validarProduto(fd: FormData): ResultadoValidacao {
   const unidade = String(fd.get('unidade') ?? '').trim() || 'un';
   if (!UNIDADES_VALIDAS.has(unidade)) erros['unidade'] = 'Escolha uma unidade da lista.';
 
-  // SKU em branco vira null, não ''. O índice único é parcial em
-  // `sku is not null`: dois produtos com '' colidiriam, dois com null não.
-  const skuBruto = String(fd.get('sku') ?? '').trim();
-  if (skuBruto.length > MAX_SKU) erros['sku'] = `No máximo ${MAX_SKU} caracteres.`;
-  const sku = skuBruto || null;
+  // O SKU NÃO VEM DAQUI, e a ausência é o ponto: desde a migração 57 ele é
+  // gerado pelo banco (trigger `trg_produtos_sku`, sequência por tenant) e o
+  // formulário não o oferece. Ler `fd.get('sku')` aqui reabriria a porta para o
+  // cliente digitar um número que colide com a sequência — e o índice único
+  // recusaria o cadastro seguinte, com o erro caindo num campo que a tela nem
+  // mostra mais.
+  //
+  // Editar produto também não manda sku: o UPDATE não inclui a coluna, então o
+  // valor gerado permanece. Número que nunca muda é o que faz um pedido antigo
+  // continuar apontando para o mesmo produto.
+
+  // Categoria: obrigatória no FORMULÁRIO, nullable no banco. A coluna aceita
+  // null porque os 90 produtos legados entraram pelo backfill da 57 e um
+  // `not null` teria obrigado a inventar uma categoria "sem categoria" — o mesmo
+  // vazio com outro nome, e um nome que o agente falaria ao cliente na fase 2.
+  const categoriaId = String(fd.get('categoria_id') ?? '').trim();
+  if (!categoriaId) erros['categoria_id'] = 'Escolha uma categoria.';
+  else if (!UUID.test(categoriaId)) erros['categoria_id'] = 'Categoria inválida.';
 
   // Vazio = não controla estoque (null), diferente de 0 = controla e esgotou.
   const estoqueBruto = String(fd.get('estoque') ?? '').trim();
@@ -108,7 +123,7 @@ export function validarProduto(fd: FormData): ResultadoValidacao {
       descricao,
       preco_centavos: preco.ok ? preco.centavos : 0,
       unidade,
-      sku,
+      categoria_id: categoriaId,
       estoque,
       disponivel,
     },

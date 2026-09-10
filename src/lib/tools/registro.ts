@@ -56,6 +56,11 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
     // abriam com os dados para quem não tinha contratado.
     rotasPainel: [
       { href: '/painel/catalogo', rotulo: 'Catálogo', icone: 'Package' },
+      // Categorias é seção do catálogo e superfície da MESMA tool. Declarada
+      // aqui porque `npm run teste:superficie` reprova rota sob `/painel/` que
+      // nenhuma tool declare — e porque esquecer faz o item sumir do menu, que
+      // alguém nota, em vez de vazar, que ninguém nota.
+      { href: '/painel/catalogo/categorias', rotulo: 'Categorias', icone: 'Tags' },
       { href: '/painel/pedidos', rotulo: 'Pedidos', icone: 'Receipt' },
     ],
     rotulo: 'Vendas pelo agente',

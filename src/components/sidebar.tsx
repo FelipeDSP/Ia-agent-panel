@@ -12,6 +12,7 @@ import {
   Package,
   Receipt,
   Settings,
+  Tags,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -45,6 +46,7 @@ const ICONES: Record<string, typeof Building2> = {
   MessagesSquare,
   BarChart3,
   Settings,
+  Tags,
 };
 
 /**

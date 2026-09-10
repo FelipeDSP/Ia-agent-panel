@@ -32,7 +32,7 @@ export type EstadoProduto = {
 
 /** Campos de texto do formulário, para devolver ao cliente em caso de erro. */
 function capturarEnviado(fd: FormData): Record<string, string> {
-  const campos = ['nome', 'descricao', 'preco', 'unidade', 'sku', 'estoque'];
+  const campos = ['nome', 'descricao', 'preco', 'unidade', 'categoria_id', 'estoque'];
   const saida: Record<string, string> = {};
   for (const c of campos) saida[c] = String(fd.get(c) ?? '');
   saida['disponivel'] = fd.get('disponivel') === 'on' ? 'on' : '';
@@ -92,10 +92,20 @@ export async function salvarProduto(
     : await supabase.from('produtos').insert({ ...campos, tenant_id: usuario.tenantId });
 
   if (error) {
-    // 23505 = índice único (tenant_id, sku) parcial. Só pode ser SKU: é o único
-    // unique da tabela além da PK.
+    // 23503 = FK composta `(tenant_id, categoria_id)`. É o que barra escolher a
+    // categoria de OUTRO tenant por chamada direta da action — a RLS não pega
+    // esse caso, porque a categoria alheia nunca é lida: ela só aparece como
+    // valor na FK. Quem recusa é o schema (migração 57).
+    if (error.code === '23503') {
+      return comEntrada({ errosCampo: { categoria_id: 'Escolha uma categoria da sua lista.' } });
+    }
+    // 23505 = índice único (tenant_id, sku). Desde a 57 o sku é gerado pela
+    // trigger e o formulário não o envia, então isto não deveria mais acontecer
+    // por digitação. Se acontecer, é colisão de sequência e não erro de campo:
+    // mandar o cliente "corrigir o SKU" apontaria para um campo que a tela não
+    // tem mais.
     if (error.code === '23505') {
-      return comEntrada({ errosCampo: { sku: 'Já existe um produto ativo com esse SKU.' } });
+      return comEntrada({ erro: 'Conflito de código interno ao salvar. Tente de novo.' });
     }
     if (error.code === '42501') {
       return comEntrada({ erro: 'Sem permissão para alterar este produto.' });
@@ -115,9 +125,16 @@ export async function salvarProduto(
 /**
  * Remove um produto do catálogo — soft delete, como o resto do schema.
  *
- * Físico quebraria histórico: na fatia 2 um `pedido_itens` antigo referencia o
- * produto pelo id. Além disso o índice único de SKU é parcial em
- * `deletado_em is null`, então apagar assim libera o SKU para reuso.
+ * Físico quebraria histórico: um `pedido_itens` antigo referencia o produto pelo
+ * id.
+ *
+ * A NOTA QUE ESTAVA AQUI FICOU FALSA E VALE DIZER POR QUÊ. Ela dizia: "o índice
+ * único de SKU é parcial em `deletado_em is null`, então apagar assim libera o
+ * SKU para reuso". Era verdade, e era aceitável enquanto o SKU fosse texto
+ * digitado pelo cliente. Deixou de ser quando ele virou sequência: um número
+ * reusado faria um pedido antigo passar a apontar para outro produto. A migração
+ * 57 tirou `deletado_em` do predicado do índice — apagar já NÃO libera o número,
+ * e o contador `produto_sku_seq` nunca anda para trás.
  */
 export async function excluirProduto(id: string): Promise<EstadoProduto> {
   const usuario = await exigirTenantAdmin();
