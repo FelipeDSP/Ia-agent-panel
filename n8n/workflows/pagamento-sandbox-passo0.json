@@ -1,0 +1,76 @@
+{
+  "name": "Pagamento Sandbox — Passo 0 (roteamento)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatwoot-sandbox-pagamento",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        0
+      ],
+      "id": "8e3259e6-e1af-44ec-8a00-aa90834d5fce",
+      "name": "Webhook",
+      "webhookId": "332e105b-8285-461d-849a-7e0e30ab9b67"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// PASSO 0 — ELE NAO FAZ NADA, DE PROPOSITO.\n//\n// ESTE ARQUIVO E A FONTE. O corpo dentro do JSON e injetado por\n// `scripts/gerar-passo0.mjs`; editar o no pela UI do n8n perde a alteracao.\n//\n// ----------------------------------------------------------------------------\n// A UNICA PERGUNTA QUE ELE RESPONDE\n// ----------------------------------------------------------------------------\n// O webhook do Chatwoot da conta 57 / caixa 282 (`estudyou-sendbox`) chega\n// AQUI, UMA VEZ por mensagem, e o `emporio` (59 / 279) continua no principal.\n//\n// Nao ha Postgres, nao ha resposta ao cliente e nao ha AI. Se qualquer uma\n// dessas coisas aparecer neste workflow, ele deixou de ser o passo 0.\n//\n// ----------------------------------------------------------------------------\n// POR QUE ISSO VEM ANTES DE QUALQUER CODIGO DE PAGAMENTO\n// ----------------------------------------------------------------------------\n// Dois workflows inscritos no MESMO par (conta, caixa) geram execucao dupla\n// para a mesma mensagem. A duplicidade nao aparece como erro em lugar nenhum —\n// aparece como o cliente recebendo duas respostas, dois pedidos, ou duas\n// cobrancas. Qualquer medicao feita antes disso estar provado mede outra coisa.\n// ============================================================================\nconst b = $input.first().json.body ?? {};\n\nconst origem = {\n  event: b.event ?? null,\n  message_type: b.message_type ?? null,\n  private: b.private ?? null,\n  // A CAIXA NUNCA E CHUTADA: os dois caminhos que o `Extrair e Filtrar` do\n  // principal usa, e `null` se nao houver. Valor de reserva faria o roteamento\n  // resolver o tenant ERRADO em silencio — e a `api_n8n_tenant_por_chatwoot`\n  // estoura `22023` em caixa nula justamente para isso nao acontecer.\n  account_id: b.account?.id ?? null,\n  inbox_id: b.conversation?.inbox_id ?? b.inbox?.id ?? null,\n  conversation_id: b.conversation?.id ?? null,\n  message_id: b.id ?? null,\n  sender_type: b.sender?.type ?? null,\n  // Carimbo desta execucao. DUAS execucoes para a MESMA `message_id` sao a\n  // prova direta de que dois workflows estao inscritos no mesmo par.\n  execucao_id: String($execution.id ?? ''),\n  visto_em: new Date().toISOString(),\n};\n\nconsole.log('[passo0] ' + JSON.stringify(origem));\n\nreturn [{ json: origem }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -140,
+        0
+      ],
+      "id": "a45b0b87-fd33-4551-9eec-949d473e9bfc",
+      "name": "Identifica Origem"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        80,
+        0
+      ],
+      "id": "8feb63af-8ecf-462f-bfed-5f787817d0f2",
+      "name": "Fim (nao responde nada)"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Identifica Origem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identifica Origem": {
+      "main": [
+        [
+          {
+            "node": "Fim (nao responde nada)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

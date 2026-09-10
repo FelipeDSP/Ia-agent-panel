@@ -56,6 +56,19 @@ documentação e material de referência.
   acrescentar frase de omissão) e a §15 explica o par de sabotagens que prova que
   afirmar um só dos dois sentidos não bastaria. A §9 diz qual dos dois lados do
   único vermelho da suíte está certo, em vez de classificá-lo como herança.
+- [`ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md`](ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md) —
+  **fase de sandbox do pagamento: nada aplicado, nada importado.** Migração 61
+  (credencial do Asaas por tenant E por ambiente, janela por tenant,
+  `pedido_cobrancas`, `pagamento_eventos`), regra 3 do portão e a prova de que a
+  notificação não pausa a conversa. O agente NUNCA confirma pagamento, e isso é
+  varredura e não convenção: só `api_n8n_pagamento_webhook` escreve
+  `set status = 'pago'`, e ela exige um token que o modelo não tem. Traz o que a
+  doc do Asaas diz (at-least-once, `asaas-access-token`, 15 falhas interrompem a
+  fila) e **o que ela não diz** — o que acontece com pagamento em link expirado,
+  que a sonda tem de responder. E o achado que mudou o desenho: **`endDate` é uma
+  DATA**, então uma janela de 30 minutos não cabe nele e a autoridade sobre o
+  prazo passou a ser nossa. A §7 lista as telas do painel sem construí-las e a §9
+  diz qual lado dos dois vermelhos da suíte está certo.
 - [`PENDENCIAS.md`](PENDENCIAS.md) — **o indice das pendencias**, com o gatilho de cada
   uma numa tabela so. Comece por aqui em vez de abrir os nove arquivos.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da

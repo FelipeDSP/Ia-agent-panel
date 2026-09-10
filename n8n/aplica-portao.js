@@ -22,12 +22,14 @@
 // depois de uma consulta e nao depois de uma regex.
 //
 // ----------------------------------------------------------------------------
-// AS DUAS REGRAS. NAO EXISTE UMA TERCEIRA.
+// AS TRES REGRAS. NAO EXISTE UMA QUARTA.
 // ----------------------------------------------------------------------------
 //   REGRA 1 (modalidade C) — afirma efeito consumado e NAO houve escrita neste
 //                            turno  ->  BARRA.
 //   REGRA 2 (modalidade B) — apresenta um total que diverge do
 //                            `total_centavos` do rascunho  ->  BARRA.
+//   REGRA 3 (pagamento)    — afirma PAGAMENTO RECEBIDO e o pedido NAO esta
+//                            `pago`  ->  BARRA.
 //
 // NAO acrescente uma camada de "valor nao reconhecido" (barrar valor que nao
 // existe no catalogo). Ela FOI MEDIDA E DESCARTADA: com 20 precos distintos no
@@ -36,7 +38,19 @@
 // consegue somar. Cobertura 0 de 4. Ela custa falso positivo e nao paga nada.
 //
 // ----------------------------------------------------------------------------
-// AS DUAS ASSIMETRIAS SAO OPOSTAS. NAO AS ALINHE.
+// A REGRA 3 EXISTE PORQUE O AGENTE NAO CONFIRMA PAGAMENTO
+// ----------------------------------------------------------------------------
+// Nao ha ferramenta de confirmar pagamento e nao deve passar a haver — quem
+// confirma e o webhook do provedor, e o `status = 'pago'` so e escrito por
+// `api_n8n_pagamento_webhook`, que exige um token que o modelo nao tem.
+//
+// O caso que preocupa NAO e fabricacao maliciosa. E o cliente pagar de verdade,
+// o webhook demorar dez segundos, o cliente perguntar "caiu?" e o agente, para
+// ser prestativo, dizer que sim. Mesma prestatividade das oito ocorrencias de
+// venda afirmada — agora com mercadoria saindo pela porta.
+//
+// ----------------------------------------------------------------------------
+// AS ASSIMETRIAS SAO OPOSTAS ENTRE SI. NAO AS ALINHE.
 // ----------------------------------------------------------------------------
 // Quem mexer numa vai querer deixar a outra igual. Nao pode, e o motivo e que
 // elas decidem coisas diferentes:
@@ -59,6 +73,24 @@
 //
 // E NAO use "Total:" literal: tres variantes reais se perderiam —
 // "total R$ 18,00", "O total ficou R$ 75,00", "por R$ 4,50 no total".
+//
+//   MARCADOR DE PAGAMENTO (`afirmaPagamentoRecebido`) — decide a REGRA 3.
+//     LARGO, com NEGACAO ESTREITA. E o INVERSO do marcador de totalidade, e o
+//     motivo e que os custos sao invertidos:
+//       errar para MAIS barra uma mensagem que fala de pagamento sem afirma-lo
+//       — e a substituta que sai no lugar diz a verdade ("seu pedido esta
+//       aguardando pagamento"), entao o cliente recebe informacao correta;
+//       errar para MENOS deixa passar "seu pagamento foi confirmado" quando
+//       nada caiu — e isso e mercadoria entregue contra dinheiro que nao
+//       existe. Nao ha simetria entre esses dois erros.
+//
+//     O FALSO POSITIVO QUE IMPORTA, e ele e conhecido e obrigatorio de testar:
+//     a mensagem que ENTREGA o link contem a palavra "pagamento" e costuma
+//     terminar em "assim que o pagamento for confirmado eu te aviso". Ela NAO
+//     pode ser barrada — e o passo que a fase inteira existe para dar. Por isso
+//     o marcador exige forma CONSUMADA e a negacao cobre futuro e condicional
+//     (`RE_PAGAMENTO_FUTURO`), e por isso o teste tem esse texto literal como
+//     caso de controle, do mesmo jeito que a §8 tem o caso de venda correta.
 //
 // ----------------------------------------------------------------------------
 // DINHEIRO E INTEIRO EM CENTAVOS EM TODO O CAMINHO
@@ -88,6 +120,16 @@ const totalBanco = Number.isFinite(estado.total_centavos) ? estado.total_centavo
 const itens = Array.isArray(estado.itens) ? estado.itens : [];
 const escreveuNesteTurno = estado.escreveu_neste_turno === true;
 const barrouAnterior = estado.barrou_anterior === true;
+
+// O pedido MAIS RECENTE da conversa esta `pago`? Vem da migracao 61 e e o
+// unico fato que autoriza o agente a falar de pagamento recebido.
+//
+// Note que ele NAO e `statusPedido === 'pago'`, e a diferenca e o caso real:
+// `pedido_status` e do pedido da JANELA (tocado no turno) ou do rascunho, e o
+// cliente que pagou volta a perguntar "caiu?" meia hora depois — quando nao ha
+// nem um nem outro. Ler o status da janela faria a regra 3 barrar a resposta
+// CERTA de quem acabou de pagar.
+const pagamentoConfirmado = estado.pagamento_confirmado === true;
 
 // ----------------------------------------------------------------------------
 // DINHEIRO
@@ -208,15 +250,84 @@ function totaisAfirmados(txt) {
 }
 
 // ----------------------------------------------------------------------------
+// O MARCADOR DE PAGAMENTO — LARGO, COM NEGACAO ESTREITA (ver o cabecalho)
+// ----------------------------------------------------------------------------
+// Formas CONSUMADAS de "o dinheiro entrou". A janela `[^.!?\n]{0,30}` deixa a
+// forma passiva caber ("pagamento FOI confirmado", "pagamento ja foi
+// identificado") sem atravessar a frase inteira e casar duas ideias diferentes.
+const RE_PAGAMENTO_RECEBIDO = new RegExp(
+  '(pagamento[^.!?\\n]{0,30}(confirmad|recebid|aprovad|identificad|compensad|constatad)[oa]'
+  + '|(confirmad|recebid|identificad|aprovad|compensad)[oa][^.!?\\n]{0,30}(o |seu )?pagamento'
+  + '|recebemos (o )?(seu )?pagamento'   // "o seu" sao DUAS palavras: `(o |seu )?`
+                                        // casa uma so e deixava passar a frase real
+  + '|(seu |o )?(pagamento|pix)[^.!?\\n]{0,15}caiu'
+  + '|caiu (aqui|na conta|certinho|direitinho)'
+  + '|pix (foi )?(recebid|confirmad|identificad)[oa]'
+  + '|pedido (ja |já )?(esta|está|foi) pago'
+  + '|(ja|já) (esta|está) pago'
+  + '|pagamento (ok|feito|conclu[ií]d[oa]))',
+  'i',
+);
+
+// O QUE DESFAZ A AFIRMACAO DE PAGAMENTO. Esta lista e a unica coisa entre a
+// regra 3 e o bloqueio da mensagem que ENTREGA o link — ela quase sempre
+// termina em "assim que o pagamento for confirmado eu te aviso", que casa o
+// marcador acima e nao afirma nada.
+//
+// Ela e ESTREITA de proposito: cada entrada aqui e uma forma pela qual uma
+// afirmacao falsa poderia escapar, entao so entram formas que sao
+// inequivocamente futuro, condicional ou negacao.
+const RE_PAGAMENTO_FUTURO = new RegExp(
+  '(assim que|logo que|t[aã]o logo|quando (o |seu )?(pagamento|pix)'
+  + '|ap[oó]s (o |seu )?pagamento|depois (do|que)[^.!?\\n]{0,20}pag'
+  + '|for (confirmad|recebid|identificad|aprovad)[oa]|estiver (confirmad|pag)'
+  + '|aguard|pendente|ainda n[aã]o|n[aã]o (foi|identifiquei|localizei|consta)'
+  + '|assim que cair|te aviso|avisarei|aviso (voc[eê]|assim))',
+  'i',
+);
+
+// Afirma pagamento recebido se ALGUMA frase traz a forma consumada e nenhuma
+// das duas listas de negacao a desfaz. `RE_NAO_CONSUMADO` entra tambem porque
+// pergunta e oferta valem aqui igual: "o pagamento ja foi confirmado?" e o
+// cliente perguntando, nao o agente afirmando.
+function afirmaPagamentoRecebido(txt) {
+  return frases(txt).some((f) =>
+    RE_PAGAMENTO_RECEBIDO.test(f)
+    && !RE_PAGAMENTO_FUTURO.test(f)
+    && !RE_NAO_CONSUMADO.test(f));
+}
+
+// ----------------------------------------------------------------------------
 // O BLOCO DO PEDIDO — com ITENS, nunca so o total
 // ----------------------------------------------------------------------------
 // Quantidade errada com total certo e o formato EXATO de uma das ocorrencias
 // reais (`emporio` conversa 3: 6 milho + 2 cenoura no banco, 3 + 1 no texto).
 // Um bloco que mostrasse so "Total: R$ 45,00" teria passado por cima dela.
+//
+// A LINHA DE STATUS E NARRACAO POR CODIGO. Ela sai do `pedido_status` do banco,
+// e o modelo nao a escreve — entao nao tem como errar. E o mesmo argumento dos
+// itens: o que o codigo narra, o modelo nao precisa lembrar.
+const ROTULO_STATUS = {
+  rascunho: 'em montagem',
+  aguardando_pagamento: 'aguardando pagamento',
+  pago: 'pago',
+  cancelado: 'cancelado',
+  expirado: 'expirado',
+};
+
 function blocoPedido() {
   const linhas = itens.map((i) =>
     `• ${i.nome} — ${i.quantidade} × ${brl(i.preco_unit_centavos)} = ${brl(i.subtotal_centavos)}`);
-  return ['📋 Seu pedido', ...linhas, `Total: ${brl(totalBanco)}`].join('\n');
+  // Status desconhecido cai no proprio valor em vez de sumir: rotulo ausente
+  // seria a linha desaparecer em silencio no dia em que um status novo entrar,
+  // e sumico silencioso e o que este arquivo inteiro existe para evitar.
+  const status = statusPedido ? (ROTULO_STATUS[statusPedido] ?? statusPedido) : null;
+  return [
+    '📋 Seu pedido',
+    ...linhas,
+    `Total: ${brl(totalBanco)}`,
+    ...(status ? [`Status: ${status}`] : []),
+  ].join('\n');
 }
 
 // ----------------------------------------------------------------------------
@@ -238,8 +349,21 @@ const totalAfirmado = totais.length ? Math.max(...totais) : null;
 const regra2Avaliada = regra2Avaliavel && totalAfirmado !== null;
 const regra2Barra = regra2Avaliada && totalAfirmado !== totalBanco;
 
-const barrou = regra1Barra || regra2Barra;
-const veredito = regra1Barra ? 'barrado_regra_1' : (regra2Barra ? 'barrado_regra_2' : 'passou');
+// REGRA 3 — afirmou pagamento recebido e o pedido nao esta pago.
+//
+// Ela NAO depende de `ehCandidata`. As regras 1 e 2 dependem porque o gatilho
+// largo delas ja cobre o que elas avaliam (marca de efeito consumado ou valor
+// monetario); esta avalia uma coisa que pode aparecer numa frase sem R$ e sem
+// nenhum verbo da lista de consumado — "o pix caiu aqui, ja pode retirar" nao
+// tem valor nem casa `RE_CONSUMADO`. Passar por `candidata` seria herdar um
+// gatilho desenhado para outra pergunta.
+const afirmouPagamento = afirmaPagamentoRecebido(textoModelo);
+const regra3Barra = afirmouPagamento && !pagamentoConfirmado;
+
+const barrou = regra1Barra || regra2Barra || regra3Barra;
+const veredito = regra1Barra
+  ? 'barrado_regra_1'
+  : (regra2Barra ? 'barrado_regra_2' : (regra3Barra ? 'barrado_regra_3' : 'passou'));
 
 // ----------------------------------------------------------------------------
 // O TEXTO QUE SAI
@@ -252,6 +376,21 @@ const veredito = regra1Barra ? 'barrado_regra_1' : (regra2Barra ? 'barrado_regra
 // mesmo jeito que `transferir_humano` guarda horario e notificacao. Nao foi
 // feito: e trabalho proprio, e ate la um tenant de tom formal recebe este texto.
 function mensagemSubstituta() {
+  // A REGRA 3 TEM SUBSTITUTA PROPRIA, e nao e refinamento: as outras duas
+  // dizem "ainda nao tenho nada anotado" ou mostram o carrinho, e as duas
+  // seriam MENTIRA aqui. Quem chegou nesta regra tem um pedido fechado e pode
+  // ter pagado de verdade ha dez segundos — o que falta e a confirmacao chegar,
+  // e e isso que a mensagem diz.
+  if (regra3Barra) {
+    return [
+      'Deixa eu confirmar isso direitinho 😊',
+      '',
+      temPedido ? blocoPedido() : 'Ainda nao tenho um pedido fechado nesta conversa.',
+      '',
+      'Ainda nao apareceu a confirmacao do pagamento aqui do meu lado.',
+      'Se voce ja pagou, e so aguardar um pouquinho: assim que cair eu te aviso por aqui.',
+    ].join('\n');
+  }
   if (!temPedido) {
     return [
       'Deixa eu confirmar uma coisa antes de seguir 😊',
@@ -330,6 +469,11 @@ componentes.portao = {
   // e so este campo as separa.
   regra1_avaliada: candidata,
   regra2_avaliada: regra2Avaliada,
+  // A regra 3 e avaliada em TODA mensagem — ela nao passa pelo gatilho. Entao
+  // `regra3_avaliada` seria constante e nao informaria nada; o que informa e
+  // com que frequencia o marcador dispara, que e `afirmou_pagamento`.
+  afirmou_pagamento: afirmouPagamento,
+  pagamento_confirmado: pagamentoConfirmado,
   candidata,
   afirmou_efeito_consumado: afirmou,
   escreveu_neste_turno: escreveuNesteTurno,

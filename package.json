@@ -78,7 +78,13 @@
     "teste:sku-categoria": "node --env-file=.env.local tests/migracao-sku-categoria.mjs",
     "teste:iso-sku-categoria": "node --env-file=.env.local tests/isolamento-sku-categoria.mjs",
     "teste:ordenar-catalogo": "node --import ./tests/lib/ts.mjs tests/ordenar-catalogo.mjs",
-    "teste:busca-resultado-mencao": "node --env-file=.env.local tests/busca-resultado-mencao.mjs"
+    "teste:busca-resultado-mencao": "node --env-file=.env.local tests/busca-resultado-mencao.mjs",
+    "teste:pagamento-asaas": "node --env-file=.env.local tests/migracao-pagamento-asaas.mjs",
+    "teste:portao-pagamento": "node tests/portao-pagamento.mjs",
+    "teste:notificacao-nao-pausa": "node tests/notificacao-nao-pausa.mjs",
+    "n8n:passo0": "node scripts/gerar-passo0.mjs",
+    "n8n:roteamento-sandbox": "node --env-file=.env.local scripts/conferir-roteamento-sandbox.mjs",
+    "sonda:asaas-expiracao": "node scripts/sonda-asaas-expiracao.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
