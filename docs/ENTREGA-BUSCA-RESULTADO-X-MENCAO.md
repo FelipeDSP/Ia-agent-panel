@@ -8,7 +8,8 @@
 > quando o primeiro está vazio.
 >
 > - **Parte 1 (§1–§8)**: a 59, aplicada em 10/09.
-> - **Parte 2 (§11–§17)**: a 60, **escrita e testada, NÃO aplicada**.
+> - **Parte 2 (§11–§17)**: a 60, **aplicada em 10/09** — e é ela que descreve
+>   o comportamento de hoje.
 
 ---
 
@@ -260,7 +261,20 @@ degradaria três comportamentos.
 
 # Parte 2 — a MENÇÃO só aparece quando não há RESULTADO (migração 60)
 
-**Estado: ESCRITA E TESTADA, NÃO APLICADA.** Por decisão explícita.
+**Estado: APLICADA em 10/09/2026**, arquivo inteiro, versão `20260910213000` no
+ledger batendo com o nome do arquivo. Medido no ato:
+
+- `md5(prosrc)` mudou (`ba89f6a0…` → `031032f8…`) — a migração **entrou**;
+- **uma** assinatura viva; **ACL idêntico** dos dois lados (diff, não lista);
+- os 8 termos com **o mesmo `total_encontrado`** de antes — nenhum recall perdido;
+- **`mostrando` = as linhas que o texto lista, nos 8** — a coluna deixou de poder
+  mentir sobre o texto;
+- **sentido 1** verde nos seis com resultado (`NR 01` passou de mostrando 3 para
+  1, `NR 10` de 4 para 2, `primeiros socorros` de 4 para 1; `curso`,
+  `treinamentos` e `queijo` inalterados) e nenhum deles com bloco de MENÇÃO;
+- **sentido 2** verde em `certificado` e `torra`, com o rótulo íntegro;
+- nenhum `NR 10`, `199,90` ou `149,90` no texto de "NR 01";
+- `n8n_agent` **chamou de verdade** e recebeu o texto novo.
 
 - `supabase/migrations/20260910213000_60_mencao_so_sem_resultado.sql`
 - `…_60_mencao_so_sem_resultado_rollback.sql` — gerado do `pg_get_functiondef` do

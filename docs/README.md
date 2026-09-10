@@ -39,21 +39,23 @@ documentação e material de referência.
   Migração para um schema v2 (documentos normalizados, CHECK de modelo, HNSW parcial):
   queries afetadas, plano expand/contract e estimativa de 29–45 h.
 - [`ENTREGA-BUSCA-RESULTADO-X-MENCAO.md`](ENTREGA-BUSCA-RESULTADO-X-MENCAO.md) —
-  **migração 59 APLICADA em 10/09; migração 60 escrita, testada e NÃO aplicada —
-  ela desfaz metade da 59 de proposito.** A 59 fez a busca separar RESULTADO de
-  MENÇÃO, o agente entendeu **e repassou a estrutura ao cliente** ("tem menção à
-  NR 01 na descrição"), terminando por oferecer NR 10 a quem pediu NR 01. A 60
-  não instrui: deixa de MONTAR o bloco de menção quando há resultado, porque o
-  modelo não pode citar o que não recebeu. Leia a Parte 2 antes de agir sobre a
-  Parte 1. A busca devolvia "é de NR 01" e
-  "menciona NR 01" na mesma lista, sem rótulo: pedido de R$ 69,90 podia virar venda
-  de R$ 199,90 **com todos os números certos** — a classe que o portão da 56 não
-  cobre. Traz por que `phraseto_tsquery` não resolve (medido: continua devolvendo 3),
-  por que "buscar só no nome" custa recall real (19 → 13 em "curso"), a medição de
-  que **nenhum índice novo é preciso** (mesmo plano, mesmos 16 buffers) e a
-  descoberta lateral de que `idx_produtos_busca` está ocioso hoje. A §9 diz qual dos
-  dois lados do único vermelho da suíte está certo, em vez de classificá-lo como
-  herança.
+  **migrações 59 e 60, as duas APLICADAS em 10/09. A Parte 2 descreve o
+  comportamento de hoje; a Parte 1 descreve um degrau que a 60 desfez de
+  propósito.** A busca devolvia "é de NR 01" e "menciona NR 01" na mesma lista,
+  sem rótulo: pedido de R$ 69,90 podia virar venda de R$ 199,90 **com todos os
+  números certos** — a classe que o portão da 56 não cobre. A **59** separou em
+  dois blocos rotulados; traz por que `phraseto_tsquery` não resolve (medido:
+  continua devolvendo 3), por que "buscar só no nome" custa recall real (19 → 13
+  em "curso"), a medição de que **nenhum índice novo é preciso** (mesmo plano,
+  mesmos 16 buffers) e a descoberta lateral de que `idx_produtos_busca` está
+  ocioso hoje. A **60** existe porque a 59 funcionou e não bastou: o agente
+  entendeu a separação **e repassou a estrutura ao cliente** ("tem menção à NR 01
+  na descrição"), oferecendo NR 10 a quem pediu NR 01. Ela não instrui — deixa de
+  MONTAR o bloco de menção quando há resultado, porque o modelo não pode citar o
+  que não recebeu. A §13 marca a única escolha de projeto feita sem consulta (não
+  acrescentar frase de omissão) e a §15 explica o par de sabotagens que prova que
+  afirmar um só dos dois sentidos não bastaria. A §9 diz qual dos dois lados do
+  único vermelho da suíte está certo, em vez de classificá-lo como herança.
 - [`PENDENCIAS.md`](PENDENCIAS.md) — **o indice das pendencias**, com o gatilho de cada
   uma numa tabela so. Comece por aqui em vez de abrir os nove arquivos.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da
