@@ -87,8 +87,8 @@ export default async function PaginaCatalogo() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Catálogo</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          O que você vende, com preço, unidade e categoria. O código de cada item é
-          gerado automaticamente e não muda.
+          O que você vende, com preço, unidade e categoria. O ID de cada item é gerado
+          automaticamente e não muda.
         </p>
       </header>
 

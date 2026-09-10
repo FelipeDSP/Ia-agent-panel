@@ -1,7 +1,7 @@
 'use client';
 
 import { Package, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { useActionState, useRef, useState, useTransition } from 'react';
+import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
 
 import { excluirProduto, salvarProduto, type EstadoProduto } from './acoes';
 import { Alert } from '@/components/ui/alert';
@@ -23,6 +23,14 @@ import { centavosParaReais, formatarBRL } from '@/lib/vendas/dinheiro';
 
 import { FotoProduto } from './componentes-foto';
 import { UNIDADES } from '@/lib/vendas/schema';
+import {
+  CHAVE_ORDEM,
+  ORDENS,
+  ORDEM_PADRAO,
+  ehOrdem,
+  ordenarProdutos,
+  type Ordem,
+} from '@/lib/vendas/ordenar';
 
 export type Produto = {
   id: string;
@@ -213,16 +221,29 @@ function FormularioProduto({
         </div>
 
         {/*
-          SKU: SOMENTE LEITURA. Desde a migração 57 ele é gerado pelo banco, numa
-          sequência por tenant que nunca reusa número — inclusive de produto
+          O ID: SOMENTE LEITURA. Desde a migração 57 ele é gerado pelo banco,
+          numa sequência por tenant que nunca reusa número — inclusive de produto
           apagado, porque um número que volta a circular faria um pedido antigo
           apontar para outro produto. Oferecer o campo aqui reabriria a porta
           para o cliente digitar um valor que colide com a sequência.
 
           Em produto novo ainda não há número para mostrar: ele nasce no INSERT.
+
+          ------------------------------------------------------------------
+          O RÓTULO É "ID". A COLUNA DO BANCO É `sku`. NÃO UNIFIQUE RENOMEANDO.
+
+          Se você veio aqui achando que isto é inconsistência para arrumar:
+          `produtos.id` JÁ EXISTE e é o UUID. Renomear `sku` para `id` deixaria
+          duas coisas chamadas ID na mesma tabela — e a fase 2 vai ensinar o
+          agente a RESOLVER referência de produto ("quero o 11"), que é o pior
+          momento possível para haver ambiguidade entre o identificador que o
+          cliente FALA e a chave primária.
+
+          "SKU" saiu da interface porque não diz nada para o dono de uma padaria.
+          Saiu da INTERFACE; o schema não mudou.
         */}
         <div className="flex w-28 flex-col gap-2">
-          <Label>Código</Label>
+          <Label>ID</Label>
           <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
             {editando?.sku ?? '—'}
           </div>
@@ -297,6 +318,44 @@ export function GestaoCatalogo({
   podeFoto: boolean;
 }) {
   const [editando, setEditando] = useState<Produto | null>(null);
+
+  /*
+    ORDENAÇÃO: PREFERÊNCIA DE VISUALIZAÇÃO, NÃO DADO DE NEGÓCIO.
+    Decisão registrada: fica no `localStorage`, não no banco. No banco viraria
+    coluna, tela de edição e migração para ordenar uma lista. Custo aceito e
+    dito de frente: a escolha NÃO acompanha o cliente em outro computador.
+
+    O estado inicial é o padrão (`id`), não o valor guardado — ler
+    `localStorage` na inicialização do `useState` roda no SERVIDOR durante o
+    render e explode (`localStorage is not defined`). O valor guardado entra no
+    `useEffect` abaixo, depois da hidratação. O efeito colateral é um frame com
+    a ordem padrão; a alternativa seria não renderizar a lista até hidratar, que
+    é pior.
+  */
+  const [ordem, setOrdem] = useState<Ordem>(ORDEM_PADRAO);
+  useEffect(() => {
+    try {
+      const salvo = window.localStorage.getItem(CHAVE_ORDEM);
+      // `ehOrdem` porque o `localStorage` é editável pelo usuário e sobrevive a
+      // mudanças no código: uma opção removida no futuro voltaria daqui como
+      // string desconhecida e a lista sairia sem ordenação nenhuma.
+      if (ehOrdem(salvo)) setOrdem(salvo);
+    } catch {
+      // Modo privado de alguns navegadores lança no acesso. Sem ordem salva a
+      // tela funciona igual, com o padrão — não é caso de avisar o cliente.
+    }
+  }, []);
+
+  const trocarOrdem = (nova: Ordem) => {
+    setOrdem(nova);
+    try {
+      window.localStorage.setItem(CHAVE_ORDEM, nova);
+    } catch {
+      // idem: não poder lembrar a preferência não impede usar a tela.
+    }
+  };
+
+  const produtosOrdenados = ordenarProdutos(produtosIniciais, ordem);
   // Última unidade escolhida NESTA sessão de tela. Não vai ao banco de
   // propósito: é conveniência de digitação, não preferência do cliente —
   // recarregar a página volta para "un".
@@ -378,12 +437,36 @@ export function GestaoCatalogo({
 
       <Card>
         <CardHeader>
-          <CardTitle>Meu catálogo</CardTitle>
-          <CardDescription>
-            {produtosIniciais.length === 0
-              ? 'Nenhum produto cadastrado.'
-              : `${produtosIniciais.length} produto${produtosIniciais.length > 1 ? 's' : ''} no catálogo.`}
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Meu catálogo</CardTitle>
+              <CardDescription>
+                {produtosIniciais.length === 0
+                  ? 'Nenhum produto cadastrado.'
+                  : `${produtosIniciais.length} produto${produtosIniciais.length > 1 ? 's' : ''} no catálogo.`}
+              </CardDescription>
+            </div>
+            {produtosIniciais.length > 1 ? (
+              <div className="flex items-center gap-2">
+                <Label htmlFor="ordem" className="text-xs text-muted-foreground">
+                  Ordenar por
+                </Label>
+                <Select
+                  id="ordem"
+                  name="ordem"
+                  className="w-32"
+                  value={ordem}
+                  onChange={(e) => trocarOrdem(e.target.value as Ordem)}
+                >
+                  {ORDENS.map((o) => (
+                    <option key={o.valor} value={o.valor}>
+                      {o.rotulo}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent>
           {erroExclusao ? (
@@ -405,7 +488,7 @@ export function GestaoCatalogo({
             </div>
           ) : (
             <div className="flex flex-col divide-y divide-border">
-              {produtosIniciais.map((p) => (
+              {produtosOrdenados.map((p) => (
                 <div
                   key={p.id}
                   className="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
@@ -417,7 +500,12 @@ export function GestaoCatalogo({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{p.nome}</span>
-                      {p.sku ? <Badge variant="secondary">#{p.sku}</Badge> : null}
+                      {/*
+                        "ID 29", não "#29": o mesmo nome do rótulo do formulário
+                        e do seletor de ordenação. Três grafias para a mesma
+                        coisa era o que esta entrega veio desfazer.
+                      */}
+                      {p.sku ? <Badge variant="secondary">ID {p.sku}</Badge> : null}
                       {p.categoriaNome ? <Badge variant="outline">{p.categoriaNome}</Badge> : null}
                       {!p.disponivel ? <Badge variant="warning">pausado</Badge> : null}
                       {p.estoque === 0 ? (
