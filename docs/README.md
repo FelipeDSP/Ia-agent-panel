@@ -57,7 +57,7 @@ documentação e material de referência.
   afirmar um só dos dois sentidos não bastaria. A §9 diz qual dos dois lados do
   único vermelho da suíte está certo, em vez de classificá-lo como herança.
 - [`ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md`](ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md) —
-  **fase de sandbox do pagamento: nada aplicado, nada importado.** Migração 61
+  **migração 61 APLICADA em 10/09; nada importado no n8n.** A 61
   (credencial do Asaas por tenant E por ambiente, janela por tenant,
   `pedido_cobrancas`, `pagamento_eventos`), regra 3 do portão e a prova de que a
   notificação não pausa a conversa. O agente NUNCA confirma pagamento, e isso é

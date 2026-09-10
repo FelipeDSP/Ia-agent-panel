@@ -1,7 +1,22 @@
 # Pagamento via Asaas — fase de sandbox
 
-**Nada aplicado, nada importado.** Migração 61 escrita e testada, não aplicada;
-workflows escritos, não importados; nenhuma credencial de Asaas em lugar nenhum.
+**Migração 61 APLICADA em 10/09/2026** (ledger `20260910230000`). Workflows
+escritos e **não importados**; nenhuma credencial de Asaas em arquivo versionado.
+
+Medido no ato da aplicação:
+
+- `api_n8n_estado_pedido` mudou de corpo (`e4eef344…` → `d328b7c2…`) e o **ACL
+  sobreviveu ao `drop` IDÊNTICO** — `{postgres, service_role, n8n_agent}` dos
+  dois lados. Era o risco real desta migração (a armadilha das 40/41);
+- **aplicar não contratou para ninguém**: `tenant_tools` com `pagamento`
+  continua em 0, contado antes e depois;
+- as duas tabelas novas com RLS, uma policy cada, e **sem grant para `anon`**;
+- as cinco funções novas com `n8n_agent` **e** `service_role`, sem `anon` nem
+  `authenticated`;
+- `n8n_agent` chamou de verdade e recebeu `pagamento_confirmado`;
+- **e o nó em produção continua funcionando**: a query do `Estado do Pedido`,
+  rodada verbatim contra a função nova, devolve as seis colunas que ela pede. Ela
+  seleciona um subconjunto, então a coluna nova simplesmente não é pedida.
 
 > **O AGENTE NUNCA CONFIRMA PAGAMENTO.** Não há ferramenta que confirme, marque
 > ou altere pagamento, e a propriedade é verificada por varredura e não por
@@ -17,7 +32,7 @@ workflows escritos, não importados; nenhuma credencial de Asaas em lugar nenhum
 |---|---|---|
 | 0 | `n8n/workflows/pagamento-sandbox-passo0.json` + `n8n/passo0-identifica-origem.js` + `scripts/gerar-passo0.mjs` | escrito, **não importado** |
 | 0 | `scripts/conferir-roteamento-sandbox.mjs` (`npm run n8n:roteamento-sandbox`) | roda; hoje diz **PASSO 0 NÃO PROVADO** |
-| 1 | `supabase/migrations/20260910230000_61_pagamento_asaas_sandbox.sql` + rollback | **não aplicada**; `teste:pagamento-asaas` 100/100 |
+| 1 | `supabase/migrations/20260910230000_61_pagamento_asaas_sandbox.sql` + rollback | **APLICADA** em 10/09; `teste:pagamento-asaas` 100/100 |
 | 2 | regra 3 do portão em `n8n/aplica-portao.js` | escrita; `teste:portao-pagamento` 43/43 |
 | 3 | `tests/notificacao-nao-pausa.mjs` | 17/17 |
 | 4 | `scripts/sonda-asaas-expiracao.mjs` (`npm run sonda:asaas-expiracao`) | **RODOU** em 10/09 — resposta parcial, §6 |
@@ -636,11 +651,27 @@ Entre 1 e 2 os dois vermelhos **têm de ficar vermelhos**. Eles não são sujeir
 no repositório: são o relatório correto de que a fonte andou à frente do
 derivado e de que o banco ainda não suporta o derivado novo.
 
-### E agora a regra é máquina, não nota de rodapé
+### ATUALIZAÇÃO 10/09, depois de a 61 entrar: a guarda deixou de segurar
+
+**Com a 61 aplicada, `api_n8n_estado_pedido` em produção já declara
+`pagamento_confirmado`.** A condição que fazia o injetor abortar está satisfeita
+— ele não vai mais parar ninguém.
+
+Então o que separa o repositório da injeção agora é **só a autorização**, não uma
+trava. Os dois vermelhos continuam sendo o estado correto pelo outro motivo: o nó
+não foi tocado porque tocar no `agente-principal.json` não foi autorizado, e
+importar o workflow também não.
+
+A ordem que sobra é: **injetar** (um comando, escreve só o arquivo do repo) e
+**importar** (na instância, depois do passo 0 provado). As duas continuam
+esperando você.
+
+### A regra é máquina, não nota de rodapé — e foi ela que segurou até agora
 
 Uma advertência em documento não impede ninguém de rodar um comando. Então o
 próprio injetor passou a se recusar: ele **consulta produção** e compara com o
-que o portão lê. Rodado hoje, ele para antes de escrever qualquer coisa —
+que o portão lê. Rodado ANTES da 61, ele parava antes de escrever qualquer
+coisa —
 
 ```
 colunas declaradas vem de 20260910230000_61_pagamento_asaas_sandbox.sql
@@ -664,9 +695,10 @@ Sem `SUPABASE_DB_URL` ele **aborta** em vez de pular a checagem. A assimetria
 decide: um aborto injusto custa rodar de novo com a URL; um "pulei e segui" custa
 o agente mudo para todos os clientes.
 
-> **Para quem vier depois:** se você abriu a suíte, viu estes dois e pensou "é
-> só rodar o injetor" — pode tentar. Ele vai te parar, e a mensagem dele aponta
-> para cá.
+> **Para quem vier depois:** a guarda protege contra injetar coluna que o banco
+> não tem. Ela **não** protege contra injetar sem querer — isso continua sendo
+> decisão de gente. Confira se o passo 0 está provado antes de importar o que
+> sair dela.
 
 `tests/portao-pagamento.mjs` roda contra o **arquivo**, então a regra 3 tem 43
 asserções de cobertura independentes desse passo. Os dois testes são os dois

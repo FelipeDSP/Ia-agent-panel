@@ -58,6 +58,9 @@ const R49 = mig('20260821191500_49_adicionar_item_define_rollback.sql');
 const R55 = mig('20260831093000_55_pedido_novo_apos_fechar_rollback.sql');
 const R25 = mig('20260811185334_25_pedidos_rollback.sql');
 const R26 = mig('20260811185432_26_api_n8n_vendas_rollback.sql');
+// A 61 criou `pedido_cobrancas` com FK para `pedidos`: o rollback dela precisa
+// vir ANTES do da 25, senao o `drop table pedidos` esbarra no dependente.
+const R61 = mig('20260910230000_61_pagamento_asaas_sandbox_rollback.sql');
 
 const A = 'ebef4715-1a05-41d0-ad62-929b7fefa887'; // Restaurante Teste (13 produtos)
 const B = '7cd0750e-e610-497a-bc0e-c1cd83b159ec'; // Sandbox de Testes (6 produtos)
@@ -424,6 +427,32 @@ try {
 
   console.log('\n--- rollback limpo (sem pedidos) ---');
   await c.query('delete from public.pedido_itens'); await c.query('delete from public.pedidos');
+
+  /*
+   * ORDEM INVERSA, E ELA PASSOU A IMPORTAR EM 10/09/2026.
+   *
+   * A migracao 61 criou `pedido_cobrancas` com FK COMPOSTA para `pedidos`. A
+   * partir dai, `drop table public.pedidos` do rollback da 25 estoura
+   * `cannot drop table pedidos because other objects depend on it` — e foi
+   * exatamente o que aconteceu na primeira execucao da suite depois de a 61
+   * entrar.
+   *
+   * O conserto NAO e `cascade` no rollback da 25: cascade apagaria em silencio
+   * objetos que outra migracao criou, que e o oposto do que um rollback deve
+   * fazer. E a regra que o CLAUDE.md ja escreve — "se o teste replaya migracao,
+   * replaye a CADEIA, na ordem em que producao a viu, e o rollback na ordem
+   * INVERSA". A 61 veio depois da 25, entao o rollback dela vem antes.
+   *
+   * E o rollback da 61 ABORTA com cobranca paga ou tool contratada, entao o
+   * estado e ARRANJADO aqui em vez de torcido para existir: o `delete` de
+   * `pedidos` acima ja levou as cobrancas junto (FK `on delete cascade`), e a
+   * contratacao sai na linha abaixo.
+   */
+  await c.query(`delete from public.tenant_tools where tool_nome = 'pagamento'`);
+  await c.query(R61);
+  chk('rollback da 61 (a mais nova) roda antes e tira `pedido_cobrancas`',
+    (await um(`select to_regclass('public.pedido_cobrancas') is null as x`)).x === true);
+
   await c.query(R26); await c.query(R25);
   const restou = await um(`select count(*)::int n from information_schema.tables
                            where table_schema='public' and table_name in ('pedidos','pedido_itens')`);
