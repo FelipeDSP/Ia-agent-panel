@@ -39,7 +39,13 @@ documentação e material de referência.
   Migração para um schema v2 (documentos normalizados, CHECK de modelo, HNSW parcial):
   queries afetadas, plano expand/contract e estimativa de 29–45 h.
 - [`ENTREGA-BUSCA-RESULTADO-X-MENCAO.md`](ENTREGA-BUSCA-RESULTADO-X-MENCAO.md) —
-  **migração 59 APLICADA em 10/09.** A busca devolvia "é de NR 01" e
+  **migração 59 APLICADA em 10/09; migração 60 escrita, testada e NÃO aplicada —
+  ela desfaz metade da 59 de proposito.** A 59 fez a busca separar RESULTADO de
+  MENÇÃO, o agente entendeu **e repassou a estrutura ao cliente** ("tem menção à
+  NR 01 na descrição"), terminando por oferecer NR 10 a quem pediu NR 01. A 60
+  não instrui: deixa de MONTAR o bloco de menção quando há resultado, porque o
+  modelo não pode citar o que não recebeu. Leia a Parte 2 antes de agir sobre a
+  Parte 1. A busca devolvia "é de NR 01" e
   "menciona NR 01" na mesma lista, sem rótulo: pedido de R$ 69,90 podia virar venda
   de R$ 199,90 **com todos os números certos** — a classe que o portão da 56 não
   cobre. Traz por que `phraseto_tsquery` não resolve (medido: continua devolvendo 3),

@@ -1,4 +1,18 @@
-# A busca separa RESULTADO de MENÇÃO — migração 59
+# A busca separa RESULTADO de MENÇÃO — migrações 59 e 60
+
+> **LEIA A PARTE 2 ANTES DE AGIR SOBRE A PARTE 1.** A 59 está aplicada e fez o
+> que devia; a **60 desfaz metade dela de propósito**, porque o conserto certo no
+> banco produziu um efeito errado uma camada adiante — o agente repassou ao
+> cliente a estrutura que recebeu. Quem ler só a parte 1 vai achar que a resposta
+> em dois blocos é o estado desejado. Não é mais: hoje o segundo bloco só existe
+> quando o primeiro está vazio.
+>
+> - **Parte 1 (§1–§8)**: a 59, aplicada em 10/09.
+> - **Parte 2 (§11–§17)**: a 60, **escrita e testada, NÃO aplicada**.
+
+---
+
+# Parte 1 — a distinção passa a ser dita (migração 59)
 
 **Estado: APLICADA em 10/09/2026**, arquivo inteiro, versão `20260910190000` no
 ledger (`supabase_migrations.schema_migrations`) batendo com o nome do arquivo.
@@ -241,3 +255,178 @@ degradaria três comportamentos.
 - **não muda a camada 2** (parecidos por `word_similarity`), nem o limiar
   `c_prox = 0.4` — que continua sem validação contra tráfego, como
   [`PENDENCIA-PISO-SIMILARIDADE.md`](PENDENCIA-PISO-SIMILARIDADE.md) registra.
+
+---
+
+# Parte 2 — a MENÇÃO só aparece quando não há RESULTADO (migração 60)
+
+**Estado: ESCRITA E TESTADA, NÃO APLICADA.** Por decisão explícita.
+
+- `supabase/migrations/20260910213000_60_mencao_so_sem_resultado.sql`
+- `…_60_mencao_so_sem_resultado_rollback.sql` — gerado do `pg_get_functiondef` do
+  corpo que a 59 deixou em produção, não reescrito de memória
+- `npm run teste:busca-resultado-mencao` — **97/97**, agora cobrindo a cadeia
+  59 → 60 inteira
+
+## 11. A 59 funcionou, e não bastou
+
+O agente **entendeu** a separação — não tratou os três como equivalentes. Só que
+**repassou a estrutura ao cliente**. Mensagem real do `estudyou-sendbox`, em
+resposta a "quero 2 treinamentos de NR 01":
+
+> "Encontrei 3 opções relacionadas à NR 01:
+> - Treinamento de NR 01 on-line, por R$ 69,90 cada
+> - Curso de NR 10 BÁSICO - teórico, por R$ 199,90 cada **(tem menção à NR 01 na
+>   descrição)**
+> - Curso de Reciclagem - NR 10 BÁSICO, por R$ 149,90 cada **(também menciona NR
+>   01 na descrição)**
+>
+> Você quer os dois treinamentos de NR 01 on-line, ou tem interesse em algum dos
+> cursos de NR 10 que mencionam NR 01?"
+
+"Tem menção na descrição" é vocabulário **nosso**, não do cliente. E o agente
+terminou **oferecendo NR 10 a quem pediu NR 01** — que é o efeito que a 59
+existia para evitar, uma camada adiante.
+
+É a mesma família do defeito que o portão da 56 contém: **o modelo recita o que a
+ferramenta devolve.** Ferramenta que devolve dois blocos produz resposta com dois
+blocos.
+
+## 12. A correção é estrutura, não instrução
+
+Nenhuma instrução nova, em lugar nenhum. Este projeto já **mediu** que instrução
+não segura: "só afirme depois do retorno da ferramenta" está no system message e
+foi violada **oito** vezes. Instrução que compete com o impulso de ser prestativo
+perde.
+
+A regra nova é uma só:
+
+> **O bloco de MENÇÃO só é montado quando o bloco de RESULTADO está vazio.**
+
+O agente não pode citar o que não recebeu. Havendo resultado, ele recebe só o
+resultado. Não havendo, a menção é a única informação disponível e passa a ser
+útil — e continua com o rótulo da 59, que **nesse caso** está certo.
+
+### O rótulo "RESULTADO —" também sai
+
+Com um bloco só não há o que rotular: a palavra existia para **opor** a MENÇÃO.
+Mantida sozinha, ela seria exatamente o tipo de estrutura que o modelo recita
+("o resultado que casa com o nome é…"). A resposta com resultado volta a ser a
+lista simples de sempre.
+
+`RESULTADO` sobrevive num único lugar — `RESULTADO: NENHUM item tem "X" no nome`
+—, no ramo sem resultado, onde dizer isso é o que impede o agente de tratar a
+menção como se fosse a resposta.
+
+### Antes e depois, no caso do cliente
+
+```
+59:  Busca "NR 01": 3 encontrados.
+     RESULTADO — o nome casa com "NR 01" (1):
+     Treinamento de NR 01 on-line — R$ 69,90 por un (id: …)
+     MENÇÃO (2) — o nome NÃO casa; só a descrição fala deste assunto. NÃO ofereça…
+     Curso de NR 10 BÁSICO - teórico - on-line — R$ 199,90 por un (id: …)
+     Curso de Reciclagem - NR 10 BÁSICO on-line — R$ 149,90 por un (id: …)
+
+60:  Busca "NR 01": 3 encontrados, mostrando 1:
+     Treinamento de NR 01 on-line — R$ 69,90 por un (id: …)
+```
+
+## 13. O número não mente, e não há frase nova para isso
+
+`total_encontrado` continua contando os dois: segue **3**. O texto passa a mostrar
+**1**, então tem de dizer que escondeu dois — e diz, na linguagem que a função já
+tinha: `3 encontrados, mostrando 1`.
+
+`mostrando` deixou de ser "quantos couberam no teto" e passou a ser **quantas
+linhas o texto lista**, que é o que a palavra sempre prometeu. A coluna do retorno
+acompanha: quem lê o número vê o mesmo universo de quem lê o texto.
+
+**Esta é a única escolha de projeto que fiz sozinho, e vale você discordar.**
+Considerei acrescentar uma frase do tipo *"2 itens omitidos porque só citam o
+termo na descrição"* e **descartei**: o defeito desta migração *é* o modelo
+recitando estrutura, cada frase nova é estrutura nova para recitar, e essa em
+particular devolveria ao agente o vocabulário "menção na descrição" que a
+migração acabou de tirar dele. A divulgação honesta já existe no par
+`encontrados`/`mostrando`, que o agente já recebe hoje em toda busca larga
+("curso": 19 encontrados, mostrando 5) e sabe tratar — ele pede ao cliente para
+refinar. E o que ele **não pode** fazer agora é oferecer os NR 10, porque não os
+tem. Se você quiser a frase explícita, é uma linha.
+
+## 14. Medido em produção, 10/09
+
+| termo | tenant | total | resultado | menção | depois da 60 |
+|---|---|---:|---:|---:|---|
+| NR 01 | sendbox | 3 | 1 | 2 | **só o resultado** |
+| NR 10 | sendbox | 4 | 2 | 2 | **só o resultado** |
+| primeiros socorros | sendbox | 4 | 1 | 3 | **só o resultado** |
+| curso | sendbox | 19 | 5 | 0 | igual |
+| treinamentos | sendbox | 15 | 5 | 0 | igual |
+| queijo | emporio | 8 | 5 | 0 | igual |
+
+Os três últimos não mudam: o teto já era preenchido pelos resultados.
+
+**O caminho em que a menção ainda aparece foi medido, não inventado.** Varrendo
+as palavras das descrições dos dois tenants: **685** termos só-menção no
+`estudyou-sendbox` e **3** no `emporio`. Os dois que o teste usa são reais e são
+perguntas plausíveis de cliente:
+
+| termo | tenant | encontrados | casam no nome |
+|---|---|---:|---:|
+| `certificado` | sendbox | 10 | 0 |
+| `torra` | emporio | 1 | 0 |
+
+`certificado` é literalmente "vocês dão certificado?".
+
+## 15. O risco que a condição cria, e o teste que ele exigiu
+
+Condicionar cria um modo de falha **silencioso**: se `casou_nome` quebrar e
+passar a devolver falso para tudo, o RESULTADO fica vazio, a MENÇÃO vira a
+resposta inteira e ninguém percebe — o texto continua bem formado.
+
+Por isso o teste afirma **os dois sentidos**:
+
+1. havendo resultado, a MENÇÃO **não** aparece **e** o resultado aparece;
+2. não havendo, a MENÇÃO aparece, com o rótulo íntegro.
+
+Só (1) passa numa implementação que apagou o bloco de menção do código. Só (2)
+passa numa que nunca classifica nada como nome.
+
+**As sabotagens S5 e S6 provam isso em vez de afirmá-lo** — cada uma quebra um
+sentido e deixa o outro verde:
+
+| | o que muta | o que quebra | o que fica verde |
+|---|---|---|---|
+| **S5** | `casou_nome` **falso** para tudo | sentido 1: "NR 01" volta a entregar os NR 10, agora como menção | sentido 2 — sozinho, não pegaria |
+| **S6** | `casou_nome` **verdadeiro** para tudo | sentido 2: "certificado" perde a menção e vira lista crua | sentido 1 — sozinho, não pegaria |
+| S7 | desfaz a condição da 60 | "NR 01" volta a receber os cursos de NR 10 | |
+| S8 | `mostrando` volta a ser o teto | diz 3 com 1 linha listada | |
+| S9 | tira o rótulo | "certificado" entrega 5 produtos sem ressalva | |
+| S10 | classificação sem o FTS do nome | "treinamentos" vira menção inteira | |
+
+Cada uma imprime o **md5 antes e depois** — não o tamanho. A S7 troca 37
+caracteres por outros 37 e o comprimento fica idêntico: imprimir só o tamanho
+pareceria "a mutação não entrou" exatamente no caso em que ela entrou.
+
+### Um arquivo de teste, não dois
+
+`tests/busca-resultado-mencao.mjs` passou a cobrir a **cadeia**: rollbacks na
+ordem inversa (60, depois 59) até o pré-59, então 59, então 60. Dois arquivos
+verdes — um afirmando que "NR 01" mostra MENÇÃO e outro que não mostra — seriam
+uma armadilha para quem for procurar depois.
+
+## 16. O que a 60 não toca
+
+`casou_nome`, o filtro (as duas camadas), a camada 2 (parecidos por
+`word_similarity`), o teto de 5, o rótulo da menção quando ela aparece, e
+`total_encontrado`. Muda **só** o trecho que monta o texto. Nada de n8n — nem
+workflow, nem tool, nem prompt — e nada de painel.
+
+Assinatura idêntica (as mesmas cinco colunas), `create or replace` sem `drop`,
+`revoke` antes do `grant` nos dois roles.
+
+## 17. Suíte
+
+`npm run teste`: **58 de 59**, 262 s. O único vermelho continua sendo
+`teste:n8n-validar`, pelo mesmo motivo da §9 — o `agente-principal.json` da
+árvore é o export da UI, sem os quatro campos. Nada novo.
