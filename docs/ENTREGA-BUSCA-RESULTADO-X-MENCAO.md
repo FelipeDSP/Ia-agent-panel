@@ -1,13 +1,22 @@
 # A busca separa RESULTADO de MENÇÃO — migração 59
 
-**Estado: ESCRITA E TESTADA, NÃO APLICADA.** Por decisão explícita. O arquivo
-está em `supabase/migrations/20260910190000_59_busca_resultado_x_mencao.sql`,
-com rollback ao lado, e `npm run teste:busca-resultado-mencao` roda 73 asserções
-contra produção em transação abortada — nada foi gravado.
+**Estado: APLICADA em 10/09/2026**, arquivo inteiro, versão `20260910190000` no
+ledger (`supabase_migrations.schema_migrations`) batendo com o nome do arquivo.
+O rollback está ao lado e é reexecutável.
 
-Para aplicar, é o `.sql` inteiro, sem recortar. Depois disso, `npm run teste`
-continua servindo: o teste começa pelo rollback da própria migração, então ele
-mede a mesma coisa tendo ela sido aplicada ou não.
+Medido no ato da aplicação, antes e depois:
+
+- `md5(prosrc)` mudou (`44f3e0a8…` → `ba89f6a0…`) — a migração **entrou**;
+- **uma** assinatura viva, sem ambiguidade de aridade;
+- **ACL idêntico** — `{postgres=X/postgres, n8n_agent=X/postgres,
+  service_role=X/postgres}` dos dois lados. Diff, não lista esperada;
+- `n8n_agent` **chamou de verdade** e recebeu os dois blocos;
+- os sete termos da §3 com **o mesmo total de antes**: nenhum recall perdido em
+  produção, não só no teste.
+
+`npm run teste:busca-resultado-mencao` continua servindo depois de aplicada: ele
+começa pelo rollback da própria migração, então mede a mesma coisa tendo ela sido
+aplicada ou não.
 
 ---
 
