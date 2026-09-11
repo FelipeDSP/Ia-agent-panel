@@ -254,11 +254,42 @@ try {
     chk('  ...e o texto diz que não há carrinho para fechar', /(nao|não) h[aá]|NADA|nenhum/i.test(r), r);
   }
   // --- TRAVA: cancelar com o pedido fechado — a venda NÃO é tocada ---
+  //
+  // O QUE SEGURA ESTA TRAVA É O `p_alvo` AUSENTE, e isso foi medido em 11/09:
+  // `api_n8n_cancelar_pedido(uuid, bigint, p_alvo text DEFAULT NULL)` cancela o
+  // CARRINHO quando `p_alvo` é nulo, e só cancela uma VENDA FECHADA quando
+  // `p_alvo` é o número dela (migração 55). A query do JSON passa DOIS
+  // argumentos — igual ao sub-workflow separado que existia antes da fusão —,
+  // então o modelo NÃO tem como cancelar venda fechada por esta ferramenta.
+  //
+  // A trava não é do texto da description: é da assinatura da chamada. Por
+  // isso as três asserções abaixo: a query do JSON não passa alvo; sem alvo a
+  // venda fica; e o ESPELHO — a mesma função COM alvo cancela — prova que é o
+  // alvo ausente que segura, e não outra coisa. Quem um dia acrescentar `alvo`
+  // à ferramenta muda uma CAPACIDADE do modelo, e este bloco vai ficar vermelho
+  // para dizer isso.
   {
+    const noCancelar = no(TOOL, noDe('cancelar'));
+    chk('a query do JSON chama cancelar_pedido com DOIS argumentos (sem p_alvo)',
+      /api_n8n_cancelar_pedido\(\$1::uuid, \$2::bigint\)/.test(noCancelar.parameters.query)
+      && !/\$3/.test(noCancelar.parameters.query), noCancelar.parameters.query);
+
     const r = await executar(TOOL, noDe('cancelar'), base);
     const st = (await um(`select status from public.pedidos where id=$1`, [pedidoFechado.id])).status;
     chk('TRAVA cancelar fechado: a venda continua aguardando_pagamento', st === 'aguardando_pagamento', st);
     chk('  ...e o texto diz que NADA foi cancelado', /NADA FOI CANCELADO/.test(r), r);
+
+    // ESPELHO: a MESMA função, COM alvo = número da venda, cancela. Sem isto,
+    // "a venda continua" poderia estar passando por outro motivo qualquer.
+    await c.query('savepoint sp_alvo');
+    const r2 = (await um(`select public.api_n8n_cancelar_pedido($1::uuid, $2::bigint, $3::text) as resultado`,
+      [T, CONV, String(pedidoFechado.numero)])).resultado;
+    const st2 = (await um(`select status from public.pedidos where id=$1`, [pedidoFechado.id])).status;
+    await c.query('rollback to savepoint sp_alvo');
+    chk('  ESPELHO: a mesma função COM p_alvo = número CANCELA a venda (é o alvo ausente que segura)',
+      st2 === 'cancelado' && /cancelado/.test(r2), `${st2} / ${r2}`);
+    chk('  ...e depois do savepoint a venda voltou a aguardando_pagamento',
+      (await um(`select status from public.pedidos where id=$1`, [pedidoFechado.id])).status === 'aguardando_pagamento');
   }
   // --- TRAVA: adicionar depois de fechado abre carrinho NOVO, não altera o fechado ---
   {

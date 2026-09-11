@@ -119,7 +119,7 @@ texto que estava lá. Duplamente escapado, com o motivo escrito ao lado.
 
 ## 6. As cinco ações, com o EFEITO no banco — o caso 1 do enunciado
 
-`teste:tool-pedido-fundida` (66/66) executa a query de cada nó **do JSON**, em
+`teste:tool-pedido-fundida` (69/69) executa a query de cada nó **do JSON**, em
 transação abortada, com tenant efêmero, e afirma o **estado** de
 `pedidos`/`pedido_itens` depois — não que a chamada respondeu:
 
@@ -150,8 +150,38 @@ derrubaria um fechamento já feito; toda ação termina em `Retorno`; e o `Retor
 do `fechar` recebe o resultado do **fechamento**, não o da notificação (é para
 isso que existe o nó `Resultado do Fechamento`, novo).
 
-`cancelar` **não** ganhou o parâmetro `alvo` que a migração 55 criou na função.
-A ferramenta separada não o passava; fundir não é o momento de estender.
+### `cancelar` e o `p_alvo` — a trava está na assinatura, e está intacta
+
+Pergunta levantada em 11/09: *o nó chama `api_n8n_cancelar_pedido` com dois
+argumentos e a função tem três (`p_alvo text`). Se for o alvo que impede
+cancelar venda fechada, a trava sumiu na fusão.* Medido, e é o **oposto**:
+
+| chamada | efeito sobre uma venda `aguardando_pagamento` |
+|---|---|
+| `cancelar_pedido($1, $2)` — **a query do JSON** | *"NADA FOI CANCELADO: nao ha carrinho aberto nesta conversa"* — a venda **fica** |
+| `cancelar_pedido($1, $2, '1')` — com `p_alvo` = número | *"Pedido nº 1 (R$ 5,00) cancelado."* — a venda **cai** |
+
+`p_alvo` tem `DEFAULT NULL` e uma assinatura só (a 55 dropou a de dois
+argumentos, então a chamada de dois **não é ambígua**). Nulo, a função cancela o
+**carrinho**; só com o **número** ela alcança uma venda fechada. **O alvo é o
+que *habilita* cancelar venda fechada, não o que impede.** Ao não passá-lo, a
+ferramenta deixa o modelo sem esse poder — que é a trava. E o sub-workflow
+separado de antes da fusão chamava com os mesmos dois argumentos (conferido no
+git): nada mudou.
+
+Sobre o teste: ele **executa a query do JSON** (`executar()` lê
+`n.parameters.query` do nó e a ordem de parâmetros do `queryReplacement`), não a
+função direto — então a trava é afirmada sobre o que vai ao ar. Mas faltava o
+**espelho**: sem ele, "a venda continua" poderia passar por outro motivo. Agora
+o teste afirma as três coisas — a query do JSON não passa alvo; sem alvo a venda
+fica; **a mesma função COM alvo cancela** (dentro de savepoint). Quem um dia
+acrescentar `alvo` à ferramenta muda uma **capacidade** do modelo, e esse bloco
+vai ficar vermelho para dizer isso. 69/69.
+
+`cancelar` **não** ganhou o `alvo`, de propósito: seria dar ao modelo o poder de
+cancelar venda fechada — exatamente o que a nota da fatia 2 (§2) temia —, dentro
+de um experimento cuja premissa é não mudar comportamento. É decisão de produto
+separada, e continua em aberto.
 
 ## 7. Import: a ordem, e os três sub-workflows antigos
 
