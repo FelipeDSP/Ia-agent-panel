@@ -574,6 +574,77 @@ Três coisas que a B garante, e onde cada uma está provada:
 
 *(veredito da B: pendente — rodar em 12/09 depois das 00:00 de Brasília)*
 
+### 6.10 Sonda C — subconta no sandbox: **BLOQUEADA no cadastro da conta raiz**
+
+`npm run sonda:c-subconta`, rodada em 11/09/2026, 15:47 local. Ela recusa
+qualquer chave que não seja de sandbox — em produção a primeira subconta via API
+inicia o prazo regulatório de 60 dias, e essa decisão não é dela.
+
+**Medição 1 — a criação passa com a conta raiz atual? NÃO.**
+
+Antes de tentar, ela pergunta ao Asaas quem é a raiz:
+
+```
+GET /v3/myAccount -> personType=FISICA  companyType=null  documento com 11 dígitos
+```
+
+E a tentativa, com CNPJ sintético válido, `companyType=MEI`, CEP real:
+
+```
+POST /v3/accounts -> HTTP 403
+  · Contas de pessoa física (CPF) não podem criar subcontas no Asaas. Apenas
+    contas de pessoa jurídica (CNPJ) podem acessar essa funcionalidade.
+```
+
+**A conta sandbox foi aberta como pessoa física.** O bloqueio é de cadastro, não
+de código — exatamente o caso que o enunciado mandou parar e relatar. A resposta
+vem em `message` (não em `errors[]`), e a primeira leitura da sonda a chamou de
+`autenticacao`: errado, a chave vale, a **conta** é que não pode. O classificador
+ganhou a classe `permissao` para 403 com mensagem, a frase real virou fixture, e
+`teste:asaas-classificacao` afirma que ela **não** sai como autenticação nem como
+pendência de documentação (55/55).
+
+**Medições 2, 3 e 4 — NÃO MEDIDAS.** Sem subconta não há `walletId`, não há
+`apiKey` de subconta e não há cobrança para tentar. Não há aproximação escrita
+como se fosse medição: o arquivo `.sonda-asaas/subconta.json` registra
+`medicoes_2_3_4: "NÃO MEDIDAS"`.
+
+**O que destrava, e não é meu.** No painel do sandbox (*Minha conta →
+Informações → Dados comerciais*) existe o seletor **"Tipo da conta: Pessoa Física
+/ Pessoa Jurídica"**. A situação cadastral está `Aprovado` nas três etapas. Virar
+PJ exige um CNPJ e os dados da empresa, e reabre a aprovação — é cadastro do
+titular, decisão sua, e eu não toquei. Depois disso a sonda C roda de novo sem
+mudança nenhuma; ela já está escrita para as três medições que faltaram:
+
+| medição | o que a sonda faz quando a criação passar |
+|---|---|
+| 2 — `walletId` e `apiKey` | grava os dois **no ato** (a doc diz que `apiKey` só vem na criação e não se recupera), no arquivo gitignored; a chave nunca sai impressa |
+| 3 — a subconta já cobra? | cria um link **com a chave da subconta**; `classificarCobrancaDaSubconta` separa `ok` / `pendencia_cadastro` / `falha_de_chamada` / `permissao` |
+| 3, autoteste | força um link de R$ 1,00 com a chave da subconta e exige `falha_de_chamada`, não pendência — provado sem rede na §3c do teste |
+| efeito, dos dois lados | `GET` do link com a chave da subconta → 200; com a chave da **raiz** → 404. E o espelho: um link da raiz lido com a chave da subconta → 404 |
+| 4 — campos não pedidos | lista todo campo da resposta fora da lista da doc, em vez de ignorar |
+
+**O que isto força no desenho, já escrito na 61 e reafirmado aqui:** com
+subconta, **cada tenant tem chave própria**. A ferramenta de gerar link usa a
+chave **do tenant**, lida de `tenant_credenciais.asaas_api_key_sandbox` /
+`_producao` por `api_n8n_credencial_asaas` — nunca uma chave global de ambiente.
+As colunas já existem; nenhuma foi criada.
+
+**Segurança.** A varredura da §5 de `teste:asaas-classificacao` passou a cobrir
+**também** a `apiKey` de subconta gravada em `.sonda-asaas/subconta.json`, quando
+existir — hoje não existe, e o teste diz quantas chaves varreu (`1 chave(s): a
+raiz`). O quase-vazamento de ontem é o motivo.
+
+**O que muda conforme a resposta, quando a raiz for PJ:**
+
+| se a subconta… | então |
+|---|---|
+| nasce **operando** (link criado com a chave dela) | o teste do agente com subconta é viável na hora: contratar `pagamento` para o `estudyou-sendbox`, pôr a `apiKey` da subconta em `asaas_api_key_sandbox`, e a ferramenta de gerar link (trabalho separado) já tem tudo de que precisa |
+| nasce **pendente de documentação** | o teste do agente está **bloqueado** até a aprovação, e o fluxo de onboarding de cliente ganha uma etapa que hoje não existe no painel: "subconta criada, aguardando documentação". Vira item da §8 (telas) |
+| a criação passa mas **sem `apiKey`** na resposta | não há como a subconta cobrar por API — a sonda para ali e diz isso |
+
+*(estado em 11/09: bloqueado em 1 — aguardando a conta raiz virar PJ)*
+
 ---
 
 ## 7. O piso de R$ 5,00 — regra do sistema, não detalhe da sonda

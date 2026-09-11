@@ -45,16 +45,39 @@ export const VALIDACOES_CONHECIDAS = [
  * @param {{status:number, json:any}} r
  * @returns {{classe:string, motivo:string, erros:string[]}}
  */
+/**
+ * A frase REAL do 403 de criação de subconta por conta PF — sandbox, 11/09/2026.
+ * Vem em `message`, não em `errors[]`; foi por isso que a primeira leitura da
+ * sonda C saiu como `autenticacao` (403 sem corpo reconhecível). Fixture.
+ */
+export const RECUSA_SUBCONTA_PF =
+  'Contas de pessoa física (CPF) não podem criar subcontas no Asaas. Apenas contas de '
+  + 'pessoa jurídica (CNPJ) podem acessar essa funcionalidade. Consulte as regras dos nossos produtos.';
+
 export function classificarRespostaApi(r) {
-  const erros = Array.isArray(r?.json?.errors)
-    ? r.json.errors.map((e) => String(e?.description ?? '')).filter(Boolean)
-    : [];
+  // `errors[]` é o formato de validação; `message` é o de recusa por regra de
+  // conta. Os dois entram em `erros`, senão a recusa mais importante que esta
+  // sonda já viu chegaria como "403 sem motivo".
+  const erros = [
+    ...(Array.isArray(r?.json?.errors)
+      ? r.json.errors.map((e) => String(e?.description ?? '')).filter(Boolean)
+      : []),
+    ...(typeof r?.json?.message === 'string' && r.json.message.trim() ? [r.json.message.trim()] : []),
+  ];
 
   if (r.status >= 200 && r.status < 300) {
     return { classe: 'ok', motivo: `HTTP ${r.status}`, erros };
   }
-  if (r.status === 401 || r.status === 403) {
-    return { classe: 'autenticacao', motivo: `HTTP ${r.status}`, erros };
+  if (r.status === 401) {
+    return { classe: 'autenticacao', motivo: 'HTTP 401', erros };
+  }
+  if (r.status === 403) {
+    // 403 COM mensagem é PERMISSÃO — a chave vale, a conta é que não pode. É o
+    // caso "conta PF não cria subconta". 403 sem mensagem continua sendo
+    // tratado como autenticação, que é o que ele costuma ser.
+    return erros.length
+      ? { classe: 'permissao', motivo: 'HTTP 403: a conta não pode fazer isto', erros }
+      : { classe: 'autenticacao', motivo: 'HTTP 403', erros };
   }
   if (r.status === 404) {
     // 404 numa chamada de LEITURA de link é "esse link não existe (mais)".
@@ -257,4 +280,56 @@ export function classificarLinkDepoisDoPrazo({ leitura, endDate, dataServidor })
     };
   }
   return { classe: 'indeterminado', motivo: 'a API não informou `active`', campos };
+}
+
+/**
+ * A tentativa de COBRAR com a chave de uma SUBCONTA recém-criada.
+ *
+ * A pergunta que decide se o teste do agente é viável: a subconta já consegue
+ * gerar cobrança, ou nasce pendente de documentação? E ela tem de ser separada
+ * de "a chamada falhou por outro motivo" — valor abaixo do piso, campo faltando,
+ * chave errada — que não diz nada sobre a subconta.
+ *
+ *   `ok`                  criou a cobrança: a subconta opera
+ *   `pendencia_cadastro`  o Asaas recusou POR CAUSA DO CADASTRO da subconta
+ *                         (documentação, aprovação, análise, conta bloqueada)
+ *   `falha_de_chamada`    recusou a REQUISIÇÃO (valor, campo, formato)
+ *   `autenticacao`        a chave não vale — chave errada NÃO é pendência
+ *   `indeterminado`       não deu para dizer
+ *
+ * As pistas de cadastro vêm do vocabulário que o Asaas usa nas próprias telas e
+ * erros (documentação, aprovação, análise, bloqueio). Uma recusa que não casa
+ * nenhuma delas NÃO vira pendência por exclusão — vira `falha_de_chamada` se
+ * for validação, ou `indeterminado`.
+ */
+export const PISTAS_PENDENCIA_CADASTRO = [
+  'documentacao', 'documento', 'aprovacao', 'aprovada', 'aprovado', 'em analise',
+  'analise de conta', 'analise cadastral', 'cadastro incompleto', 'cadastro pendente',
+  'conta bloqueada', 'conta nao aprovada', 'nao esta habilitada', 'nao esta habilitado',
+  'habilitacao', 'onboarding', 'pendente de',
+];
+
+export function classificarCobrancaDaSubconta(r) {
+  const api = classificarRespostaApi(r);
+  if (api.classe === 'ok') return { classe: 'ok', motivo: api.motivo, erros: api.erros };
+  if (api.classe === 'autenticacao') return { classe: 'autenticacao', motivo: api.motivo, erros: api.erros };
+
+  const texto = api.erros.map((e) => semAcentoLocal(e)).join(' | ');
+  const pistas = PISTAS_PENDENCIA_CADASTRO.filter((p) => texto.includes(p));
+  if (pistas.length > 0) {
+    return { classe: 'pendencia_cadastro', motivo: `o Asaas cita: ${pistas.join(', ')}`, erros: api.erros };
+  }
+  if (api.classe === 'permissao') {
+    // A conta não pode — e não é por documentação pendente (nenhuma pista).
+    // Fica como permissão, com a frase, em vez de virar pendência por exclusão.
+    return { classe: 'permissao', motivo: api.motivo, erros: api.erros };
+  }
+  if (api.classe === 'falha_de_chamada') {
+    return { classe: 'falha_de_chamada', motivo: api.motivo, erros: api.erros };
+  }
+  return { classe: 'indeterminado', motivo: api.motivo, erros: api.erros };
+}
+
+function semAcentoLocal(s) {
+  return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }

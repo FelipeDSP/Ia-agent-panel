@@ -90,7 +90,8 @@
     "n8n:estimar-s": "node scripts/estimar-s.mjs",
     "sonda:asaas-expiracao": "node --env-file=.env.local scripts/sonda-asaas-expiracao.mjs",
     "sonda:a-criar": "node --env-file=.env.local scripts/sonda-a-criar-link-expiracao.mjs",
-    "sonda:b-conferir": "node --env-file=.env.local scripts/sonda-b-conferir-link-expiracao.mjs"
+    "sonda:b-conferir": "node --env-file=.env.local scripts/sonda-b-conferir-link-expiracao.mjs",
+    "sonda:c-subconta": "node --env-file=.env.local scripts/sonda-c-subconta.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

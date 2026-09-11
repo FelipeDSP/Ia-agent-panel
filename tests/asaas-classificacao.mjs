@@ -23,10 +23,12 @@
  * Uso: npm run teste:asaas-classificacao
  */
 import {
+  classificarCobrancaDaSubconta,
   classificarLinkDepoisDoPrazo,
   classificarPaginaPublica,
   classificarRespostaApi,
   redigir,
+  RECUSA_SUBCONTA_PF,
   VALIDACOES_CONHECIDAS,
 } from '../scripts/lib/asaas.mjs';
 
@@ -184,6 +186,57 @@ console.log('\n== 3b. O link depois do prazo, pela API — as três coisas separ
 }
 
 // ---------------------------------------------------------------------------
+console.log('\n== 3c. Cobrar com a chave da SUBCONTA — pendência de cadastro x erro de valor ==\n');
+// ---------------------------------------------------------------------------
+// A sonda C cria uma subconta e tenta cobrar com a chave DELA. "Não pode cobrar
+// porque o cadastro está pendente" e "a chamada falhou por outro motivo" não
+// podem se confundir — e o enunciado mandou provar com o erro de valor.
+{
+  const r = classificarCobrancaDaSubconta(QUATROCENTOS_REAL);
+  chk('o 400 REAL de valor -> falha_de_chamada, NÃO pendencia_cadastro',
+    r.classe === 'falha_de_chamada', r.classe);
+  const so = classificarCobrancaDaSubconta({
+    status: 400, json: { errors: [{ code: 'invalid_action', description: VALIDACOES_CONHECIDAS[0] }] },
+  });
+  chk('erro de valor sozinho -> falha_de_chamada', so.classe === 'falha_de_chamada', so.classe);
+
+  chk('2xx -> ok (a subconta opera)',
+    classificarCobrancaDaSubconta({ status: 200, json: { id: 'pl_1' } }).classe === 'ok');
+  chk('401 com a chave da subconta -> autenticacao, NÃO pendência',
+    classificarCobrancaDaSubconta({ status: 401, json: {} }).classe === 'autenticacao');
+
+  for (const frase of [
+    'Sua conta está em análise. Aguarde a aprovação da documentação para gerar cobranças.',
+    'Conta bloqueada: envie a documentação pendente.',
+    'A conta não está habilitada para emitir cobranças.',
+  ]) {
+    const p = classificarCobrancaDaSubconta({ status: 400, json: { errors: [{ code: 'invalid_action', description: frase }] } });
+    chk(`"${frase.slice(0, 40)}…" -> pendencia_cadastro`, p.classe === 'pendencia_cadastro', p.classe);
+  }
+  // E a ordem: uma resposta que traz OS DOIS erros é pendência — o cadastro é a
+  // causa que não some corrigindo o valor.
+  const ambos = classificarCobrancaDaSubconta({ status: 400, json: { errors: [
+    { code: 'invalid_action', description: VALIDACOES_CONHECIDAS[0] },
+    { code: 'invalid_action', description: 'Conta em análise: aguarde a aprovação da documentação.' },
+  ] } });
+  chk('valor + cadastro juntos -> pendencia_cadastro (é a causa que não some corrigindo o valor)',
+    ambos.classe === 'pendencia_cadastro', ambos.classe);
+  chk('400 sem pista de cadastro e sem validação reconhecível -> indeterminado, não pendência por exclusão',
+    classificarCobrancaDaSubconta({ status: 400, json: null }).classe === 'indeterminado');
+
+  // O 403 REAL de 11/09: a conta raiz é PF e o Asaas recusa CRIAR subconta. Ele
+  // vem em `message`, não em `errors[]`, e a primeira leitura da sonda C o
+  // chamou de `autenticacao` — errado: a chave vale, a CONTA é que não pode.
+  const pf = classificarRespostaApi({ status: 403, json: { message: RECUSA_SUBCONTA_PF } });
+  chk('403 com `message` (conta PF não cria subconta) -> permissao, NÃO autenticacao',
+    pf.classe === 'permissao', pf.classe);
+  chk('  ...e a frase chega inteira em `erros`', pf.erros.length === 1 && /pessoa jurídica/.test(pf.erros[0]));
+  chk('  ...e pela lente da subconta continua `permissao` (não é documentação pendente)',
+    classificarCobrancaDaSubconta({ status: 403, json: { message: RECUSA_SUBCONTA_PF } }).classe === 'permissao');
+  chk('403 SEM corpo continua autenticacao', classificarRespostaApi({ status: 403, json: {} }).classe === 'autenticacao');
+}
+
+// ---------------------------------------------------------------------------
 console.log('\n== 4. A chave nunca sai impressa ==\n');
 // ---------------------------------------------------------------------------
 // O `x-foto-secret` deste projeto vazou três vezes por estar onde alguém
@@ -217,7 +270,19 @@ console.log('\n== 5. Nenhum arquivo VERSIONADO carrega pedaço da chave ==\n');
 {
   const { execFileSync } = await import('node:child_process');
   const fs2 = await import('node:fs');
+  const path2 = await import('node:path');
+  const RAIZ2 = path2.resolve(path2.dirname((await import('node:url')).fileURLToPath(import.meta.url)), '..');
   const chave = process.env.ASAAS_SANDBOX_KEY ?? null;
+
+  // A(s) CHAVE(S) DE SUBCONTA entram na varredura também. A sonda C grava a
+  // apiKey da subconta em .sonda-asaas/subconta.json (gitignored); é credencial
+  // que movimenta dinheiro tanto quanto a raiz, e a única vez em que ela é
+  // devolvida pelo Asaas é na criação — vazar é perder.
+  const chavesSub = [];
+  try {
+    const sub = JSON.parse(fs2.readFileSync(path2.join(RAIZ2, '.sonda-asaas', 'subconta.json'), 'utf8'));
+    for (const k of [sub?.apiKey, sub?.subconta?.apiKey]) if (typeof k === 'string' && k.length >= 32) chavesSub.push(k);
+  } catch { /* sem subconta gravada: nada a acrescentar */ }
 
   if (!chave) {
     // Sem a chave não dá para varrer, e "passou" seria vácuo. Vira AVISO, não
@@ -229,7 +294,10 @@ console.log('\n== 5. Nenhum arquivo VERSIONADO carrega pedaço da chave ==\n');
     // qualquer, curto o bastante para pegar um pedaço colado sem querer.
     const N = 24;
     const pedacos = [];
-    for (let i = 0; i + N <= chave.length; i += 8) pedacos.push(chave.slice(i, i + N));
+    for (const k of [chave, ...chavesSub]) {
+      for (let i = 0; i + N <= k.length; i += 8) pedacos.push(k.slice(i, i + N));
+    }
+    console.log(`     varrendo ${1 + chavesSub.length} chave(s): a raiz${chavesSub.length ? ` + ${chavesSub.length} de subconta` : ''}`);
 
     const arquivos = execFileSync('git', ['ls-files'], { encoding: 'utf8' })
       .split(/\r?\n/).filter(Boolean);
