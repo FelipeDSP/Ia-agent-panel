@@ -503,6 +503,77 @@ reforça a regra que já estava na função: **a descrição da cobrança não c
 dado de ninguém.** Não vale acrescentar dado do comprador a uma página que já
 expõe o do vendedor.
 
+### 6.9 Sondas A e B — a medição de link EXPIRADO, em duas execuções
+
+A única forma de obter um link genuinamente expirado é criá-lo com `endDate` de
+hoje e conferir depois da virada do dia. Isso não cabe numa execução, então são
+duas — e `sonda-asaas-expiracao.mjs` (que mede DESATIVADO) não é reaproveitada,
+de propósito.
+
+| | quando | o que faz |
+|---|---|---|
+| **A** `npm run sonda:a-criar` | hoje, cedo | cria com `endDate` = hoje, grava id/URL/relógio em `.sonda-asaas/link-expiracao.json` (gitignored) |
+| **B** `npm run sonda:b-conferir` | amanhã | lê o arquivo, mede **aquele** link **pela API**, remove no fim |
+
+**A rodou em 11/09/2026, 08:04 local (12:04 UTC):**
+
+```
+POST /v3/paymentLinks (endDate=2026-09-11)  ->  HTTP 200
+relógio do Asaas (header Date, UTC):            Fri, 11 Sep 2026 12:04:37 GMT
+CRIADO  id uc21d65el566a7nq   endDate 2026-09-11   active:true  deleted:false
+ACEITOU endDate de hoje: no relógio do Asaas ainda é hoje.
+```
+
+A pergunta do fuso ficou respondida de graça: às 08:04 local (09:04 em Brasília)
+o Asaas **aceitou** `endDate` de hoje — lá também era 11/09. O relógio dele vem
+do header `Date` da resposta, que é o relógio **dele**, não o da máquina.
+
+**B ainda não mediu — e foi rodada hoje de propósito, para provar que se
+recusa a medir cedo demais:**
+
+```
+######## 0. Autoteste: erro de VALOR não é expiração ########
+    HTTP 400  ->  falha_de_chamada
+      · O valor mínimo para cobranças via Boleto e Pix é R$ 5,00.
+  ✓ erro de valor saiu como `falha_de_chamada`, não como expiração
+    GET id inexistente -> HTTP 404 -> falha_de_chamada
+  ✓ 404 saiu como `falha_de_chamada`, não como "expirou e removeu"
+
+######## 1. Que dia é no Asaas? ########
+    header Date (UTC): Fri, 11 Sep 2026 12:04:46 GMT
+    dia em Brasília:   2026-09-11   (endDate do link: 2026-09-11)
+
+######## 2. O link, pela API ########
+    ->  ainda_no_prazo
+✗ CEDO DEMAIS. Nada foi medido, e nada foi removido.
+```
+
+Três coisas que a B garante, e onde cada uma está provada:
+
+- **não lê HTML.** O veredito sai do que a API diz do objeto (`active`,
+  `deleted`) depois da virada, comparado campo a campo com o que a A gravou —
+  se a expiração se manifestar num campo que eu não conheço, ele aparece na
+  lista "campos que mudaram". O que "aceita" e "recusa" **significam** pela API
+  está escrito em `classificarLinkDepoisDoPrazo`, inclusive a cadeia
+  *inativo ⇒ recusa na página*, medida em 10/09;
+- **separa as três coisas** — `expirou_recusa`, `expirou_aceita`,
+  `falha_de_chamada` — e prova que separa nos dois lugares: sem rede, na suíte
+  (`teste:asaas-classificacao` §3b, 42/42), e com rede, no §0 dela mesma,
+  forçando um erro de valor contra o Asaas de verdade antes de opinar;
+- **o relógio é o do Asaas, convertido para Brasília.** Entre 21h e 00h de
+  Brasília o UTC já está no dia seguinte; sem converter, a B diria "virou" sem
+  ter virado e chamaria um link válido de "aceita depois de expirar". O caso
+  está na suíte (02:00Z do dia 12 → `ainda_no_prazo`).
+
+**O que muda no desenho conforme a resposta de amanhã:**
+
+| se a B disser… | então |
+|---|---|
+| **`expirou_recusa`** | o descompasso entre a nossa janela (minutos) e a do Asaas (fim do dia) é inofensivo: no pior caso o link vale até 23:59 do dia, e depois disso o Asaas mesmo o fecha. "Pagamento chegou para pedido expirado" volta a ser **caso raro** — a corrida de quem pagou no último minuto da nossa janela. Desativar ao fim da janela vira redundância barata |
+| **`expirou_aceita`** | **deixa de ser caso de borda.** Nada do lado do Asaas fecha o link, nunca. A diferença entre a nossa janela e a vida do link passa a ser de **horas ou dias, todo dia**, e "pagamento chegou para pedido expirado" vira **caminho central** — o `fora_do_prazo` da 61 passa a ser o que acontece com todo cliente que demora. Desativar ao fim da janela (`PUT active=false`, que a sonda de 10/09 provou funcionar) deixa de ser opcional e vira a única defesa |
+
+*(veredito da B: pendente — rodar em 12/09 depois das 00:00 de Brasília)*
+
 ---
 
 ## 7. O piso de R$ 5,00 — regra do sistema, não detalhe da sonda

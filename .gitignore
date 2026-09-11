@@ -6,6 +6,11 @@ node_modules/
 .env*.local
 !.env.local.exemplo
 
+# Estado local das sondas do Asaas (ids de link de sandbox, relogio, veredito).
+# Nao e codigo e nao e segredo, mas e estado de UMA maquina; versionar faria
+# duas pessoas medirem o link uma da outra.
+.sonda-asaas/
+
 .next/
 out/
 build/

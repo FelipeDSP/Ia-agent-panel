@@ -169,3 +169,92 @@ export function classificarPaginaPublica(r) {
 export function redigir(texto) {
   return String(texto).replace(/\$?aact_[A-Za-z0-9_\-=+/:.]+/g, '$aact_***REDIGIDO***');
 }
+
+/**
+ * O link LIDO PELA API depois de o dia do `endDate` ter virado.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUE ISTO NÃO LÊ HTML, E O QUE ISSO CUSTA
+ *
+ * A página do Asaas é uma SPA e serve "pix", "boleto" e "qr code" no esqueleto
+ * mesmo com o link inválido — foi o que enganou a sonda de 10/09. Então a
+ * pergunta "o link ainda aceita pagamento?" é respondida pelo que a API do
+ * próprio Asaas diz do objeto, e não pelo que a página parece oferecer.
+ *
+ * O CUSTO, dito de frente: não existe API para "pagar um link". Então "AINDA
+ * ACEITA" aqui significa "a API continua descrevendo o link como ativo e não
+ * removido depois do endDate" — o Asaas não o desligou. E "RECUSA" significa
+ * "a API passou a descrevê-lo como inativo" — e em 10/09 foi medido, abrindo a
+ * página, que link com `active:false` recusa com "Seu fornecedor desabilitou
+ * esse link de pagamento". A cadeia é essa e está escrita; não é observação
+ * direta do pagamento sendo recusado.
+ *
+ * ---------------------------------------------------------------------------
+ * AS TRÊS COISAS QUE NÃO PODEM SER CONFUNDIDAS
+ *
+ *   `expirou_recusa`      passou do endDate E a API diz inativo/removido
+ *   `expirou_aceita`      passou do endDate E a API ainda diz ativo
+ *   `falha_de_chamada`    a leitura falhou por OUTRO motivo (401, 404, 400,
+ *                         rede) — NÃO diz nada sobre expiração
+ *   `ainda_no_prazo`      o dia do endDate ainda não virou NO RELÓGIO DO ASAAS
+ *                         (header `Date` da resposta). Rodar a sonda B cedo
+ *                         demais mediria "link válido" e chamaria de "aceita".
+ *
+ * @param {{
+ *   leitura: {status:number, json:any},
+ *   endDate: string,             // 'YYYY-MM-DD', o gravado pela sonda A
+ *   dataServidor: string|null,   // header `Date` da resposta, RFC 1123
+ * }} p
+ */
+export function classificarLinkDepoisDoPrazo({ leitura, endDate, dataServidor }) {
+  const api = classificarRespostaApi(leitura);
+  if (api.classe !== 'ok') {
+    // Qualquer falha de leitura é falha de leitura. Um 404 aqui NÃO é "expirou
+    // e o Asaas removeu": removido é `deleted:true` num 200, e o 404 é o id
+    // errado ou a chave errada.
+    return { classe: 'falha_de_chamada', motivo: `${api.classe}: ${api.motivo}`, campos: {} };
+  }
+
+  // O RELÓGIO É O DO ASAAS, não o da máquina que roda a sonda. `Date` vem em
+  // UTC; o Asaas fecha o dia em Brasília (UTC-3). Convertido para o dia em
+  // Brasília antes de comparar — senão entre 21h e 00h de Brasília o UTC já
+  // está no dia seguinte e a sonda diria "virou" sem ter virado.
+  let diaAsaas = null;
+  if (dataServidor) {
+    const t = Date.parse(dataServidor);
+    if (!Number.isNaN(t)) diaAsaas = new Date(t - 3 * 3600 * 1000).toISOString().slice(0, 10);
+  }
+  const campos = {
+    active: leitura.json?.active ?? null,
+    deleted: leitura.json?.deleted ?? null,
+    endDate: leitura.json?.endDate ?? null,
+    diaAsaas,
+  };
+
+  if (diaAsaas && diaAsaas <= endDate) {
+    return {
+      classe: 'ainda_no_prazo',
+      motivo: `no relógio do Asaas ainda é ${diaAsaas}, e o link vale até ${endDate}`,
+      campos,
+    };
+  }
+  if (!diaAsaas) {
+    return { classe: 'indeterminado', motivo: 'sem header Date — não sei que dia é no Asaas', campos };
+  }
+  if (campos.deleted === true || campos.active === false) {
+    return {
+      classe: 'expirou_recusa',
+      motivo: `dia ${diaAsaas} > endDate ${endDate}, e a API diz `
+        + (campos.deleted === true ? 'deleted:true' : 'active:false'),
+      campos,
+    };
+  }
+  if (campos.active === true) {
+    return {
+      classe: 'expirou_aceita',
+      motivo: `dia ${diaAsaas} > endDate ${endDate}, e a API AINDA diz active:true`,
+      campos,
+    };
+  }
+  return { classe: 'indeterminado', motivo: 'a API não informou `active`', campos };
+}

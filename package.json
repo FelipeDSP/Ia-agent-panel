@@ -85,7 +85,9 @@
     "n8n:passo0": "node scripts/gerar-passo0.mjs",
     "n8n:roteamento-sandbox": "node --env-file=.env.local scripts/conferir-roteamento-sandbox.mjs",
     "teste:asaas-classificacao": "node --env-file=.env.local tests/asaas-classificacao.mjs",
-    "sonda:asaas-expiracao": "node --env-file=.env.local scripts/sonda-asaas-expiracao.mjs"
+    "sonda:asaas-expiracao": "node --env-file=.env.local scripts/sonda-asaas-expiracao.mjs",
+    "sonda:a-criar": "node --env-file=.env.local scripts/sonda-a-criar-link-expiracao.mjs",
+    "sonda:b-conferir": "node --env-file=.env.local scripts/sonda-b-conferir-link-expiracao.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

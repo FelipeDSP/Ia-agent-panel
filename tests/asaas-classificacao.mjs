@@ -23,6 +23,7 @@
  * Uso: npm run teste:asaas-classificacao
  */
 import {
+  classificarLinkDepoisDoPrazo,
   classificarPaginaPublica,
   classificarRespostaApi,
   redigir,
@@ -134,6 +135,53 @@ chk('404 -> link_indisponivel', classificarPaginaPublica({ status: 404, html: ''
 chk('ESPELHO: existe caso em que ele DIZ pagavel',
   classificarPaginaPublica({ status: 200, html: 'escolha a forma de pagamento: Pix ou boleto' })
     .classe === 'pagavel');
+
+// ---------------------------------------------------------------------------
+console.log('\n== 3b. O link depois do prazo, pela API — as três coisas separadas ==\n');
+// ---------------------------------------------------------------------------
+// A sonda B lê o link pela API no dia seguinte ao `endDate`. Ela tem de separar
+// "expirou e recusa", "expirou e aceita" e "a chamada falhou" — e o enunciado
+// mandou provar que erro de valor NÃO vira expiração.
+{
+  const END = '2026-09-11';
+  // `Date` do servidor em UTC. 03:00Z de 12/09 é 00:00 em Brasília: o dia virou.
+  const virou = 'Sat, 12 Sep 2026 03:00:00 GMT';
+  // 02:00Z de 12/09 é 23:00 de 11/09 em Brasília: o dia NÃO virou lá ainda.
+  const naoVirou = 'Sat, 12 Sep 2026 02:00:00 GMT';
+  const link = (extra) => ({ status: 200, json: { id: 'pl_x', active: true, deleted: false, endDate: END, ...extra } });
+
+  const recusa = classificarLinkDepoisDoPrazo({ leitura: link({ active: false }), endDate: END, dataServidor: virou });
+  chk('dia virou + active:false -> expirou_recusa', recusa.classe === 'expirou_recusa', recusa.classe);
+
+  const aceita = classificarLinkDepoisDoPrazo({ leitura: link({}), endDate: END, dataServidor: virou });
+  chk('dia virou + active:true -> expirou_aceita', aceita.classe === 'expirou_aceita', aceita.classe);
+
+  const removido = classificarLinkDepoisDoPrazo({ leitura: link({ deleted: true }), endDate: END, dataServidor: virou });
+  chk('dia virou + deleted:true -> expirou_recusa', removido.classe === 'expirou_recusa', removido.classe);
+
+  // O RELÓGIO DO ASAAS, NÃO O DA MÁQUINA. Entre 21h e 00h de Brasília o UTC já
+  // está no dia seguinte; sem converter, a sonda diria "virou" sem ter virado e
+  // chamaria um link válido de "aceita depois de expirar".
+  const cedo = classificarLinkDepoisDoPrazo({ leitura: link({}), endDate: END, dataServidor: naoVirou });
+  chk('02:00Z (= 23:00 em Brasília do dia do endDate) -> ainda_no_prazo, NÃO "aceita"',
+    cedo.classe === 'ainda_no_prazo', cedo.classe);
+  chk('  ...e o motivo diz que dia é no Asaas', /2026-09-11/.test(cedo.motivo), cedo.motivo);
+
+  // AS FALHAS DE CHAMADA — nenhuma vira expiração. É a exigência literal.
+  const quatrocentos = classificarLinkDepoisDoPrazo({ leitura: QUATROCENTOS_REAL, endDate: END, dataServidor: virou });
+  chk('erro de VALOR (o 400 real) -> falha_de_chamada, NUNCA expirou_*',
+    quatrocentos.classe === 'falha_de_chamada', quatrocentos.classe);
+  const naoAchou = classificarLinkDepoisDoPrazo({ leitura: { status: 404, json: {} }, endDate: END, dataServidor: virou });
+  chk('404 -> falha_de_chamada (id errado não é "expirou e removeu")',
+    naoAchou.classe === 'falha_de_chamada', naoAchou.classe);
+  const semAuth = classificarLinkDepoisDoPrazo({ leitura: { status: 401, json: {} }, endDate: END, dataServidor: virou });
+  chk('401 -> falha_de_chamada', semAuth.classe === 'falha_de_chamada', semAuth.classe);
+
+  const semData = classificarLinkDepoisDoPrazo({ leitura: link({}), endDate: END, dataServidor: null });
+  chk('sem header Date -> indeterminado (não sei que dia é lá)', semData.classe === 'indeterminado', semData.classe);
+  const semActive = classificarLinkDepoisDoPrazo({ leitura: { status: 200, json: { id: 'x' } }, endDate: END, dataServidor: virou });
+  chk('200 sem `active` -> indeterminado, não um palpite', semActive.classe === 'indeterminado', semActive.classe);
+}
 
 // ---------------------------------------------------------------------------
 console.log('\n== 4. A chave nunca sai impressa ==\n');
