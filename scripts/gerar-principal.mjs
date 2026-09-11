@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 import {
   ACOES, ENTRADAS, ID_WORKFLOW, NO_PRINCIPAL, NOME_WORKFLOW, descricaoFerramenta, dicaFromAI, secaoPrompt,
 } from '../n8n/tool-pedido-acoes.mjs';
+import * as PAG from '../n8n/tool-pagamento-fonte.mjs';
 
 const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 const ARQ = path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json');
@@ -128,7 +129,24 @@ const TOOLS_BASICO = [
 // proprios — viraram acoes do `Gerenciar Pedido` (n8n/tool-pedido-acoes.mjs).
 // O perfil de vendas cai de 8 para 5 ferramentas. Nao e economia: e o
 // experimento da hipotese de sobrecarga (docs/ENTREGA-FUSAO-TOOLS-PEDIDO.md).
-const TOOLS_VENDAS = ['Consultar Catalogo', NO_PRINCIPAL, 'Enviar Foto do Produto'];
+// ---------------------------------------------------------------------------
+// A FERRAMENTA DE PAGAMENTO ENTRA POR FLAG, E O DEFAULT E FORA.
+// ---------------------------------------------------------------------------
+// O `agente-principal.json` do repo e o artefato do EXPERIMENTO da fusao (8 -> 6
+// ferramentas, 10 conversas). Uma ferramenta nova muda o que o modelo ve —
+// description, schema — e importada antes contaminaria a medicao. Entao o
+// principal COM pagamento so e gerado com `GERAR_COM_PAGAMENTO=1`, depois das
+// 10 conversas, e o gerador se recusa enquanto o sub-workflow nao tiver sido
+// importado e o id anotado em n8n/tool-pagamento-fonte.mjs.
+const COM_PAGAMENTO = process.env.GERAR_COM_PAGAMENTO === '1';
+if (COM_PAGAMENTO && /^PENDENTE/.test(PAG.ID_WORKFLOW)) {
+  console.error('\nABORTADO: GERAR_COM_PAGAMENTO=1 mas ID_WORKFLOW em n8n/tool-pagamento-fonte.mjs ainda e o');
+  console.error('  placeholder. Importe n8n/workflows/tool-gerar-link-pagamento.json, anote o id la, e rode de novo.');
+  console.error('  Placeholder no workflow ativo quebra em runtime, no meio de um atendimento (fatia 2).\n');
+  process.exit(1);
+}
+const TOOLS_VENDAS = ['Consultar Catalogo', NO_PRINCIPAL, 'Enviar Foto do Produto',
+  ...(COM_PAGAMENTO ? [PAG.NO_PRINCIPAL] : [])];
 const TOOLS_FUNDIDAS = ['Fechar Pedido', 'Cancelar Pedido'];   // saem do JSON
 
 const PERFIS = {
@@ -139,7 +157,9 @@ const PERFIS = {
   // numero abaixo e ESTIMATIVA por tamanho de schema (scripts/estimar-s.mjs) e
   // esta marcado `medido: false` ate uma execucao real do perfil: com `r` ja
   // conhecido (3,112), UMA execucao resolve — S = tokens_n8n - chars/r.
-  vendas: { agente: 'AI Agent Vendas', tools: [...TOOLS_BASICO, ...TOOLS_VENDAS], S: 778, medido: false, y: 96 },
+  // 778 = 6 ferramentas (fusao); com a de pagamento, scripts/estimar-s.mjs da
+  // o numero novo pela mesma calibracao — ver docs/ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md.
+  vendas: { agente: 'AI Agent Vendas', tools: [...TOOLS_BASICO, ...TOOLS_VENDAS], S: COM_PAGAMENTO ? 938 : 778, medido: false, y: 96 },
 };
 
 // ---------------------------------------------------------------------------
@@ -326,6 +346,18 @@ function comSecaoFoto(wrapper) {
 }
 
 WRAPPERS.vendas = comSecaoFoto(WRAPPERS.vendas);
+
+// A secao de pagamento: SEMPRE removida (idempotencia), reinserida so com a flag.
+{
+  // `\s\S` duplamente escapado: em string comum `\s` vira "s" e a classe viraria `[sS]`.
+  // `\\s\\S` duplamente escapado: em string comum `\s` vira "s" e a classe viraria `[sS]`.
+  const RE_PAG = new RegExp(NL + '*## Ferramenta: gerar_link_pagamento[\\s\\S]*?(?=## Regras gerais)');
+  WRAPPERS.vendas = WRAPPERS.vendas.replace(RE_PAG, NL);
+  if (COM_PAGAMENTO) {
+    const i = WRAPPERS.vendas.indexOf('## Regras gerais');
+    WRAPPERS.vendas = WRAPPERS.vendas.slice(0, i) + PAG.secaoPrompt() + NL + WRAPPERS.vendas.slice(i);
+  }
+}
 WRAPPERS.vendas = acrescentarRegras(removerRegrasGeradas(WRAPPERS.vendas), REGRAS_TODOS);
 WRAPPERS.basico = acrescentarRegras(removerRegrasGeradas(WRAPPERS.basico), [...REGRAS_TODOS, ...REGRAS_BASICO]);
 
@@ -512,6 +544,40 @@ for (const nome of TOOLS_FUNDIDAS) {
     attemptToConvertTypes: false,
     convertFieldsToString: false,
   };
+}
+
+// A ferramenta de pagamento: SEMPRE removida do JSON atual, criada so com a flag.
+w.nodes = w.nodes.filter((n) => n.name !== PAG.NO_PRINCIPAL);
+delete w.connections[PAG.NO_PRINCIPAL];
+if (COM_PAGAMENTO) {
+  w.nodes.push({
+    parameters: {
+      description: PAG.descricaoFerramenta(),
+      workflowId: { __rl: true, value: PAG.ID_WORKFLOW, mode: 'list', cachedResultName: PAG.NOME_WORKFLOW },
+      workflowInputs: {
+        mappingMode: 'defineBelow',
+        // SO tenant e conversa, do FLUXO. Nenhum $fromAI: o schema que o modelo
+        // ve tem zero propriedades — nao ha valor, produto nem prazo para ele
+        // preencher.
+        value: {
+          tenant_id: "={{ $('Resolve Tenant').first().json.tenant_id }}",
+          conversation_id: "={{ $('Extrair e Filtrar').first().json.conversation_id }}",
+        },
+        matchingColumns: [],
+        schema: PAG.ENTRADAS.map((e) => ({
+          id: e.name, displayName: e.name, required: false, defaultMatch: false,
+          display: true, canBeUsedToMatch: true, type: e.type ?? 'string',
+        })),
+        attemptToConvertTypes: false,
+        convertFieldsToString: false,
+      },
+    },
+    type: '@n8n/n8n-nodes-langchain.toolWorkflow',
+    typeVersion: 2.2,
+    position: POSICAO_NOVA[PAG.NO_PRINCIPAL] ?? [8576, 4960],
+    name: PAG.NO_PRINCIPAL,
+    id: idDe('tool-pagamento'),
+  });
 }
 
 // Idempotencia: remove a versao da rodada anterior antes de recriar.

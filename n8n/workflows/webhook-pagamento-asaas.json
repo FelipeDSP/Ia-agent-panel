@@ -1,0 +1,391 @@
+{
+  "name": "Pagamento Asaas — Webhook (Sandbox)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "asaas-pagamento-sandbox",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "name": "Webhook Asaas",
+      "id": "wh-webhook00000000000000000000000000",
+      "webhookId": "asaas-pagamento-sandbox-0000"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// EXTRAI EVENTO — corpo do no Code do webhook do Asaas.\n//\n// ESTE ARQUIVO E A FONTE; a copia no JSON e injetada por\n// `scripts/gerar-webhook-pagamento.mjs`.\n//\n// ----------------------------------------------------------------------------\n// O QUE ELE FAZ, E O QUE ELE NAO FAZ\n// ----------------------------------------------------------------------------\n// Tira do request SO o que `api_n8n_pagamento_webhook` recebe: o token do\n// header, o id do evento, o tipo, e os identificadores do pagamento. NAO decide\n// nada — quem decide (token vale? evento repetido? cobranca existe? dentro do\n// prazo?) e a funcao do banco, que e a UNICA que escreve `pago`.\n//\n// NAO REPASSA O PAYLOAD INTEIRO. O corpo do webhook traz nome e documento do\n// pagador, e `pagamento_eventos` nao tem coluna para isso de proposito (61).\n// O que nao chega ao banco nao vaza.\n//\n// O TOKEN vem do header `asaas-access-token` — e o que o Asaas manda. Corpo do\n// webhook e entrada externa e nao autentica nada; um POST forjado sem o token\n// certo vira `reconhecido=false` na funcao e nao produz efeito.\n//\n// DINHEIRO: o Asaas manda `value` em reais decimais; aqui vira INTEIRO em\n// centavos, e assim segue ate o banco.\n// ============================================================================\nconst req = $input.first().json ?? {};\nconst headers = req.headers ?? {};\nconst body = req.body ?? {};\nconst pagamento = body.payment ?? {};\n\nconst token = headers['asaas-access-token'] ?? headers['Asaas-Access-Token'] ?? '';\n\nreturn [{\n  json: {\n    webhook_token: String(token),\n    evento_id: String(body.id ?? ''),\n    evento: String(body.event ?? ''),\n    pagamento_id: pagamento.id != null ? String(pagamento.id) : null,\n    link_id: pagamento.paymentLink != null ? String(pagamento.paymentLink) : null,\n    referencia: pagamento.externalReference != null ? String(pagamento.externalReference) : null,\n    valor_centavos: typeof pagamento.value === 'number' ? Math.round(pagamento.value * 100) : null,\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        300
+      ],
+      "name": "Extrai Evento",
+      "id": "wh-extrai000000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM public.api_n8n_pagamento_webhook($1::text, $2::text, $3::text, $4::text, $5::text, $6::text, $7::integer);",
+        "options": {
+          "queryReplacement": "={{ [ $json.webhook_token, $json.evento_id, $json.evento, $json.pagamento_id, $json.link_id, $json.referencia, $json.valor_centavos ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        448,
+        300
+      ],
+      "name": "Aplica Webhook",
+      "id": "wh-aplica000000000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reconhecido: $json.reconhecido, ja_processado: $json.ja_processado, aplicou: $json.aplicou, motivo: $json.motivo }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        300
+      ],
+      "name": "Responde 200",
+      "id": "wh-responde0000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ap1",
+              "leftValue": "={{ $('Aplica Webhook').first().json.aplicou }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        160
+      ],
+      "name": "Aplicou?",
+      "id": "wh-if-aplicou00000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT chatwoot_url, chatwoot_token, chatwoot_account_id FROM public.api_n8n_credencial_chatwoot($1::uuid);",
+        "options": {
+          "queryReplacement": "={{ [ $('Aplica Webhook').first().json.tenant_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1120,
+        96
+      ],
+      "name": "Credencial Chatwoot",
+      "id": "wh-credencial-chatwoot00000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Credencial Chatwoot').first().json.chatwoot_url }}/api/v1/accounts/{{ $('Credencial Chatwoot').first().json.chatwoot_account_id }}/conversations/{{ $('Aplica Webhook').first().json.conversation_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $('Credencial Chatwoot').first().json.chatwoot_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ content: $('Aplica Webhook').first().json.mensagem, message_type: 'outgoing', private: false }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1344,
+        96
+      ],
+      "name": "Notifica Cliente",
+      "id": "wh-notifica-cliente00000000000000000",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_confirmar_pagamento_notificado($1::uuid, $2::uuid, $3::boolean, $4::text) AS confirmado;",
+        "options": {
+          "queryReplacement": "={{ [ $('Aplica Webhook').first().json.tenant_id, $('Aplica Webhook').first().json.cobranca_id, !$json.error, $json.error ? String($json.error.message || $json.error).slice(0, 500) : null ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1568,
+        96
+      ],
+      "name": "Confirma Notificado",
+      "id": "wh-confirma0000000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ph1",
+              "leftValue": "={{ $('Aplica Webhook').first().json.precisa_humano }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        464
+      ],
+      "name": "Precisa Humano?",
+      "id": "wh-if-humano000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT chatwoot_url, chatwoot_token, chatwoot_account_id FROM public.api_n8n_credencial_chatwoot($1::uuid);",
+        "options": {
+          "queryReplacement": "={{ [ $('Aplica Webhook').first().json.tenant_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1120,
+        464
+      ],
+      "name": "Credencial (humano)",
+      "id": "wh-credencial-humano-000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Credencial (humano)').first().json.chatwoot_url }}/api/v1/accounts/{{ $('Credencial (humano)').first().json.chatwoot_account_id }}/conversations/{{ $('Aplica Webhook').first().json.conversation_id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "={{ $('Credencial (humano)').first().json.chatwoot_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ content: '⚠️ *Pagamento FORA DO PRAZO — pedido nº ' + $('Aplica Webhook').first().json.pedido_numero + '*\\n\\nO Asaas confirmou um pagamento depois de a janela expirar. O pedido NÃO foi reaberto e o pagamento está retido no registro da cobrança.\\n\\nDecida: entregar e reabrir à mão, ou estornar. Motivo: ' + $('Aplica Webhook').first().json.motivo, message_type: 'outgoing', private: true }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1344,
+        464
+      ],
+      "name": "Nota Privada Fora do Prazo",
+      "id": "wh-nota-privada-fora-do-prazo0000000",
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Asaas": {
+      "main": [
+        [
+          {
+            "node": "Extrai Evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrai Evento": {
+      "main": [
+        [
+          {
+            "node": "Aplica Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplica Webhook": {
+      "main": [
+        [
+          {
+            "node": "Responde 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responde 200": {
+      "main": [
+        [
+          {
+            "node": "Aplicou?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Precisa Humano?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicou?": {
+      "main": [
+        [
+          {
+            "node": "Credencial Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Credencial Chatwoot": {
+      "main": [
+        [
+          {
+            "node": "Notifica Cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notifica Cliente": {
+      "main": [
+        [
+          {
+            "node": "Confirma Notificado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Precisa Humano?": {
+      "main": [
+        [
+          {
+            "node": "Credencial (humano)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Credencial (humano)": {
+      "main": [
+        [
+          {
+            "node": "Nota Privada Fora do Prazo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

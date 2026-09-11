@@ -1,0 +1,640 @@
+{
+  "name": "Tool - Gerar Link de Pagamento (Multi-Tenant)",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tenant_id"
+            },
+            {
+              "name": "conversation_id",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        400
+      ],
+      "name": "When Executed by Another Workflow",
+      "id": "pag-trg00000000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT chatwoot_url, chatwoot_token, tool_ativa, config\nFROM public.api_n8n_config_tool($1::uuid, 'pagamento');",
+        "options": {
+          "queryReplacement": "={{ [ $json.tenant_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        400
+      ],
+      "name": "Busca Config",
+      "id": "pag-cfg00000000000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "p1",
+              "leftValue": "={{ $json.tool_ativa }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        400
+      ],
+      "name": "Pagamento Ativa?",
+      "id": "pag-if-ativa000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "pagament-1",
+              "name": "reserva",
+              "type": "object",
+              "value": "={{ { ok: false, motivo: 'tool_inativa' } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        672,
+        592
+      ],
+      "name": "Pagamento Indisponivel",
+      "id": "pag-pagamento-indisponivel0000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM public.api_n8n_gerar_cobranca($1::uuid, $2::bigint);",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        672,
+        304
+      ],
+      "name": "Reserva Cobranca",
+      "id": "pag-reserva0000000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "r1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        304
+      ],
+      "name": "Reserva OK?",
+      "id": "pag-if-ok000000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "embrulha-1",
+              "name": "reserva",
+              "type": "object",
+              "value": "={{ $('Reserva Cobranca').first().json }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        496
+      ],
+      "name": "Embrulha Reserva",
+      "id": "pag-embrulha-reserva0000000000000000"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "j1",
+              "leftValue": "={{ $json.ja_existia }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        208
+      ],
+      "name": "Ja Existia?",
+      "id": "pag-if-existia0000000000000000000000"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.base_url }}/v3/paymentLinks",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.api_key }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  name: $json.descricao,\n  description: 'Pedido nº ' + $json.pedido_numero,\n  billingType: 'PIX',\n  chargeType: 'DETACHED',\n  value: Math.round(Number($json.valor_centavos)) / 100,\n  endDate: String($json.vence_em).slice(0, 10),\n  dueDateLimitDays: 1,\n  externalReference: $json.referencia_externa,\n  notificationEnabled: false\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1344,
+        112
+      ],
+      "name": "Cria Link Asaas",
+      "id": "pag-http-asaas0000000000000000000000",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a1",
+              "leftValue": "={{ $json.id ?? '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "a2",
+              "leftValue": "={{ $json.url ?? '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1568,
+        112
+      ],
+      "name": "Asaas OK?",
+      "id": "pag-if-asaas000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_registrar_cobranca($1::uuid, $2::uuid, true, $3::text, $4::text) AS registrado;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('Reserva Cobranca').first().json.cobranca_id, $json.id, $json.url ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1792,
+        16
+      ],
+      "name": "Registra Cobranca",
+      "id": "pag-registra000000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_registrar_cobranca($1::uuid, $2::uuid, false, null, null, $3::text) AS registrado;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('Reserva Cobranca').first().json.cobranca_id, String($json.error ? ($json.error.message || JSON.stringify($json.error)) : JSON.stringify($json)).slice(0, 500) ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1792,
+        208
+      ],
+      "name": "Registra Falha",
+      "id": "pag-registra-falha000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "es-1",
+              "name": "reserva",
+              "type": "object",
+              "value": "={{ $('Reserva Cobranca').first().json }}"
+            },
+            {
+              "id": "es-2",
+              "name": "asaas",
+              "type": "object",
+              "value": "={{ $('Cria Link Asaas').first().json }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2016,
+        16
+      ],
+      "name": "Embrulha Sucesso",
+      "id": "pag-embrulha-ok000000000000000000000"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ef-1",
+              "name": "reserva",
+              "type": "object",
+              "value": "={{ $('Reserva Cobranca').first().json }}"
+            },
+            {
+              "id": "ef-2",
+              "name": "falha_http",
+              "type": "boolean",
+              "value": "={{ true }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2016,
+        208
+      ],
+      "name": "Embrulha Falha",
+      "id": "pag-embrulha-falha000000000000000000"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// MONTA RESPOSTA — corpo do no Code que fecha o sub-workflow de gerar link.\n//\n// ESTE ARQUIVO E A FONTE. A copia dentro do JSON e injetada por\n// `scripts/gerar-tool-pagamento.mjs`; editar o no pela UI perde a alteracao.\n//\n// ----------------------------------------------------------------------------\n// O TEXTO QUE VOLTA AO MODELO E ESCRITO AQUI, EM CODIGO\n// ----------------------------------------------------------------------------\n// O modelo nao redige o valor, nao redige a URL, nao redige o prazo. Ele recebe\n// uma frase pronta e a repassa. E o mesmo principio da narracao do portao: o\n// que o codigo narra, o modelo nao precisa lembrar — e nao pode errar.\n//\n// A URL vai CRUA. Sem encurtador (parece golpe e e mais um servico no caminho do\n// dinheiro) e sem markdown (WhatsApp nao interpreta link em texto de mensagem).\n// A frase manda o modelo copiar como esta.\n//\n// DINHEIRO E INTEIRO EM CENTAVOS ate aqui. A formatacao em reais acontece so\n// na montagem do texto (`brl`), e a conversao para decimal que o Asaas exige\n// (`value: 5.00`) acontece so no no HTTP, na fronteira — nunca antes.\n//\n// ----------------------------------------------------------------------------\n// A ENTRADA E UMA DE TRES\n// ----------------------------------------------------------------------------\n//   - a linha de `api_n8n_gerar_cobranca` com ok=false   -> o motivo vira frase\n//   - a linha com ok=true e ja_existia=true               -> a URL que ja existia\n//   - o item do `Registra Cobranca` depois do Asaas       -> a URL nova\n//\n// Quem me alimenta poe a linha da reserva em `reserva` e, se houve HTTP, a\n// resposta do Asaas em `asaas`. Nada aqui chama o banco nem a rede.\n// ============================================================================\n\nconst item = $input.first().json ?? {};\nconst reserva = item.reserva ?? item;\nconst asaas = item.asaas ?? null;\nconst falhaHttp = item.falha_http ?? null;\n\nconst brl = (centavos) =>\n  'R$ ' + (Number(centavos ?? 0) / 100).toFixed(2).replace('.', ',').replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.');\n\nconst horaBrasilia = (iso) => {\n  if (!iso) return null;\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return null;\n  // Brasilia = UTC-3, sem horario de verao desde 2019.\n  const b = new Date(d.getTime() - 3 * 3600 * 1000);\n  return `${String(b.getUTCHours()).padStart(2, '0')}:${String(b.getUTCMinutes()).padStart(2, '0')}`;\n};\n\n// O aviso que vai em TODA resposta positiva. E a unica linha desta ferramenta\n// que fala do futuro, e ela fala para o modelo NAO afirmar.\nconst NUNCA_CONFIRME =\n  'NAO afirme que o pagamento foi feito ou confirmado: o sistema avisa quando cair.';\n\nlet resultado;\n\nif (reserva.ok !== true) {\n  const motivo = String(reserva.motivo ?? 'desconhecido');\n  const textos = {\n    tool_inativa:\n      'Pagamento por link nao esta disponivel para este atendimento. Ofereca as formas de pagamento '\n      + 'de sempre ou transfira para um atendente.',\n    sem_credencial:\n      'Pagamento por link nao esta configurado. Transfira para um atendente para combinar o pagamento.',\n    sem_pedido_fechado:\n      'NAO HA PEDIDO FECHADO nesta conversa. Feche o pedido primeiro (gerenciar_pedido acao=fechar) '\n      + 'e so entao gere o link.',\n    ja_pago:\n      `O pedido nº ${reserva.pedido_numero ?? '?'} JA ESTA PAGO. Nao gere link de novo; se o cliente `\n      + 'quer comprar mais, e pedido novo.',\n    total_zero:\n      'O pedido fechado esta com total zero — nao ha o que cobrar. Confira os itens com o cliente.',\n    abaixo_do_minimo:\n      `O pedido nº ${reserva.pedido_numero ?? '?'} (${brl(reserva.valor_centavos)}) esta ABAIXO DO `\n      + `MINIMO para pagamento por link, que e ${brl(reserva.minimo_centavos)}: faltam `\n      + `${brl(reserva.faltam_centavos)}. Sugira ao cliente completar o pedido com pelo menos esse `\n      + 'valor e gere o link depois. Se ele nao quiser completar, transfira para um atendente para '\n      + 'combinar o pagamento de outro jeito. Nao invente desconto nem arredonde.',\n  };\n  resultado = textos[motivo]\n    ?? `Nao foi possivel gerar o link (${motivo}). Transfira para um atendente.`;\n} else if (falhaHttp) {\n  // O Asaas recusou ou nao respondeu. O modelo NAO recebe o erro cru: recebe a\n  // instrucao de nao inventar link e de transferir.\n  resultado =\n    'Nao consegui gerar o link de pagamento agora. NAO invente um link. Diga ao cliente que vai '\n    + 'passar o pagamento para um atendente e transfira.';\n} else {\n  const url = String(asaas?.url ?? reserva.url ?? '').trim();\n  if (!url) {\n    resultado =\n      'Nao consegui gerar o link de pagamento agora. NAO invente um link. Transfira para um atendente.';\n  } else {\n    const ate = horaBrasilia(reserva.expira_em);\n    resultado =\n      `Link de pagamento do pedido nº ${reserva.pedido_numero ?? '?'} — ${brl(reserva.valor_centavos)}`\n      + (reserva.ja_existia ? ' (o mesmo link ja gerado antes)' : '')\n      + `:\\n${url}\\n`\n      + 'Mande ao cliente EXATAMENTE essa URL, sozinha numa linha, sem encurtar e sem texto clicavel.'\n      + (ate ? ` O link vale ate as ${ate} de hoje (horario de Brasilia).` : '')\n      + ` ${NUNCA_CONFIRME}`;\n  }\n}\n\nreturn [{ json: { resultado } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        400
+      ],
+      "name": "Monta Resposta",
+      "id": "pag-monta000000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ok-1",
+              "name": "resultado",
+              "type": "string",
+              "value": "={{ $json.resultado }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2464,
+        400
+      ],
+      "name": "Retorno",
+      "id": "pag-retorno0000000000000000000000000"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Busca Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca Config": {
+      "main": [
+        [
+          {
+            "node": "Pagamento Ativa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pagamento Ativa?": {
+      "main": [
+        [
+          {
+            "node": "Reserva Cobranca",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pagamento Indisponivel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pagamento Indisponivel": {
+      "main": [
+        [
+          {
+            "node": "Monta Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reserva Cobranca": {
+      "main": [
+        [
+          {
+            "node": "Reserva OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reserva OK?": {
+      "main": [
+        [
+          {
+            "node": "Ja Existia?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Embrulha Reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ja Existia?": {
+      "main": [
+        [
+          {
+            "node": "Embrulha Reserva",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cria Link Asaas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embrulha Reserva": {
+      "main": [
+        [
+          {
+            "node": "Monta Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cria Link Asaas": {
+      "main": [
+        [
+          {
+            "node": "Asaas OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asaas OK?": {
+      "main": [
+        [
+          {
+            "node": "Registra Cobranca",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registra Falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registra Cobranca": {
+      "main": [
+        [
+          {
+            "node": "Embrulha Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registra Falha": {
+      "main": [
+        [
+          {
+            "node": "Embrulha Falha",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embrulha Sucesso": {
+      "main": [
+        [
+          {
+            "node": "Monta Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embrulha Falha": {
+      "main": [
+        [
+          {
+            "node": "Monta Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta Resposta": {
+      "main": [
+        [
+          {
+            "node": "Retorno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

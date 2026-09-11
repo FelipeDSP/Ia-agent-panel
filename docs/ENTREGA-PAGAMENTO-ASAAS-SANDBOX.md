@@ -32,6 +32,7 @@ Medido no ato da aplicação:
 |---|---|---|
 | 0 | `n8n/workflows/pagamento-sandbox-passo0.json` + `n8n/passo0-identifica-origem.js` + `scripts/gerar-passo0.mjs` | escrito, **não importado** |
 | 0 | `scripts/conferir-roteamento-sandbox.mjs` (`npm run n8n:roteamento-sandbox`) | roda; hoje diz **PASSO 0 NÃO PROVADO** |
+| 5 | `n8n/workflows/tool-gerar-link-pagamento.json` + `webhook-pagamento-asaas.json` | escritos em 11/09, **não importados** — só depois do experimento; §11 |
 | 1 | `supabase/migrations/20260910230000_61_pagamento_asaas_sandbox.sql` + rollback | **APLICADA** em 10/09; `teste:pagamento-asaas` 100/100 |
 | 2 | regra 3 do portão em `n8n/aplica-portao.js` | escrita; `teste:portao-pagamento` 43/43 |
 | 3 | `tests/notificacao-nao-pausa.mjs` | 17/17 |
@@ -846,3 +847,170 @@ o agente mudo para todos os clientes.
 asserções de cobertura independentes desse passo. Os dois testes são os dois
 lados do par derivado, e é justamente por serem dois que dá para deixar um
 vermelho de propósito sem ficar sem medição.
+
+---
+
+## 11. As duas peças no n8n: gerar o link, e o webhook que confirma
+
+**Escritas em 11/09. NÃO importadas, e não podem ser enquanto o experimento da
+fusão não fechar** — as 10 conversas medem 6 ferramentas; uma sétima muda o que o
+modelo vê e a medição deixa de medir. Importar é depois, na ordem da §11.6.
+
+| peça | artefato | fonte | teste |
+|---|---|---|---|
+| a ferramenta | `n8n/workflows/tool-gerar-link-pagamento.json` | `n8n/tool-pagamento-fonte.mjs` + `n8n/tool-pagamento-resposta.js`, gerado por `scripts/gerar-tool-pagamento.mjs` | `teste:tool-pagamento` 75/75 |
+| o webhook | `n8n/workflows/webhook-pagamento-asaas.json` (`POST /asaas-pagamento-sandbox`) | `n8n/webhook-pagamento-extrai.js`, gerado por `scripts/gerar-webhook-pagamento.mjs` | idem |
+| o principal | **inalterado no repo** (é o artefato do experimento). Com a ferramenta: `GERAR_COM_PAGAMENTO=1 node scripts/gerar-principal.mjs`, e só depois de o sub-workflow ter id | — | o teste dispara o gerador com a flag e exige que ele **aborte** (id ainda é placeholder) e deixe o arquivo intocado |
+
+### 11.1 Decisão: ferramenta separada, não sexta ação da fundida
+
+Acabamos de reduzir de 8 para 6 de propósito, e uma ferramenta nova devolve uma.
+Mesmo assim é separada, por três motivos que não são de gosto:
+
+1. **Contrato.** `pagamento` é uma linha própria de `catalogo_tools` (61). A
+   fundida checa `vendas` no `Busca Config`; uma sexta ação teria de checar
+   `pagamento` num segundo nó do mesmo sub-workflow, e a `description` da fundida
+   anunciaria uma ação que um tenant com vendas-sem-pagamento não tem — o modelo
+   chamaria e receberia "indisponível". Uma tool = um contrato é a regra de
+   superfície do `CLAUDE.md`.
+2. **O experimento.** A `description` da fundida é a variável medida. Engordá-la
+   depois contaminaria qualquer comparação futura: "a fabricação mudou porque são
+   menos tools ou porque a description mudou?" deixaria de ter resposta.
+3. **Dinheiro atrás de `$fromAI('acao')`.** A nota da fatia 2 temia `fechar` em
+   "quanto ficou?". Gerar cobrança atrás do mesmo parâmetro que `ver` é o mesmo
+   risco com dinheiro em cima. Ferramenta própria carrega condição própria, e o
+   modelo escolhe a **ferramenta**, não um valor de string.
+
+O preço: 7 ferramentas em vez de 6, e `S` sobe de **778 para 938** (802 chars de
+schema a mais, pela mesma calibração da §8 da fusão — estimativa, `medido:
+false`).
+
+### 11.2 A ferramenta: o que o modelo não controla
+
+- **Zero propriedades no schema.** Entradas são só `tenant_id` e
+  `conversation_id`, do fluxo. Não há `$fromAI` — o gerador **aborta** se
+  encontrar um, e o teste também.
+- **O valor é do banco.** `Reserva Cobranca` chama
+  `api_n8n_gerar_cobranca($1, $2)` e o teste afirma que a query tem dois
+  argumentos e nenhum `$3`.
+- **A chave é a do tenant.** Vem na linha da reserva (`api_key`, `base_url`
+  derivada do `asaas_ambiente`) e vai para o header do nó HTTP por expressão. Não
+  há credencial do n8n para o Asaas — credencial do n8n é uma por instância, a
+  chave é uma por tenant. **Consequência:** a chave passa pelos dados de execução
+  da instância (§11.4).
+- `tool_ativa` primeiro (`Busca Config → Pagamento Ativa?`), e
+  `api_n8n_gerar_cobranca` confere de novo por dentro.
+- `dueDateLimitDays = 1` e o piso de R$ 5,00 — os dois achados da sonda A. O piso
+  vem de `tenants.pagamento_minimo_centavos`, dentro da função.
+- A conversão centavos → decimal acontece **uma** vez, no corpo do nó HTTP, na
+  fronteira com o Asaas.
+- O Asaas fora do ar não derruba a execução: `onError` no HTTP, o ramo de falha
+  registra em `pedido_cobrancas.falhou_em` e o modelo recebe *"NÃO invente um
+  link. Transfira."*
+
+**O texto que volta ao modelo é escrito em código** (`tool-pagamento-resposta.js`),
+por caso — e o teste roda o corpo **do JSON** contra cada um:
+
+| caso | o que o modelo recebe |
+|---|---|
+| ok | a URL **crua, sozinha numa linha**; *"mande EXATAMENTE essa URL, sem encurtar e sem texto clicável"*; a hora de validade em Brasília; e a única frase sobre o futuro: *"NÃO afirme que o pagamento foi feito: o sistema avisa quando cair"* |
+| reuso | a mesma URL, dizendo que é o mesmo link |
+| `abaixo_do_minimo` | quanto falta e o piso; *"sugira completar o pedido"*; atendente **só se o cliente não quiser**. Nunca o 400 cru |
+| `sem_pedido_fechado` / `ja_pago` / `total_zero` / `tool_inativa` | frase própria, sem inventar link |
+| falha do Asaas | *"NÃO invente um link"*, sem URL nenhuma no texto |
+
+> **Isto muda a decisão da §7.3.** Lá a saída escolhida era cair direto para o
+> fluxo manual. O enunciado desta rodada decidiu diferente — sugerir completar
+> primeiro, atendente só se o cliente não quiser — e é isso que está no texto e
+> no teste. A §7.3 fica como registro da decisão anterior; a vigente é esta.
+
+### 11.3 O webhook
+
+```
+Webhook (POST /asaas-pagamento-sandbox)
+  -> Extrai Evento          token do header, ids, valor em centavos — e NADA do pagador
+  -> Aplica Webhook         api_n8n_pagamento_webhook: a ÚNICA que escreve `pago`
+  -> Responde 200           SEMPRE, com o estado, ANTES de qualquer HTTP para fora
+       -> Aplicou?        sim -> Credencial Chatwoot -> Notifica Cliente -> Confirma Notificado
+       -> Precisa Humano? sim -> Credencial (humano) -> Nota Privada Fora do Prazo
+```
+
+- **Origem validada** por `asaas_webhook_token_sandbox`, no banco. Token errado
+  → `reconhecido=false`, nenhum efeito, nenhum evento gravado — afirmado no teste
+  com um token forjado.
+- **Idempotência pelo efeito**, dos dois lados: o mesmo evento reenviado dá
+  `ja_processado` e o md5 do retrato (pedidos + cobranças + eventos) é idêntico;
+  a sabotagem S2 troca o `evento_id` por `Date.now()` e o retrato **acusa** — e o
+  pedido continua pago **uma** vez, porque a camada 2 (estado) segura mesmo
+  quando a camada 1 (evento) é burlada.
+- **Só o webhook muda `pedidos.status` para `pago`.** A varredura de
+  `teste:pagamento-asaas` §4 continua valendo: uma função, e ela pede o token.
+- **Responde 200 sempre**, com só o estado (`reconhecido`, `ja_processado`,
+  `aplicou`, `motivo`) — sem tenant, conversa nem valor, porque quem chamou pode
+  não ser o Asaas. 15 falhas consecutivas interrompem a fila; 401 a um forjador
+  não protege nada, e 401 ao Asaas de verdade por um token mal configurado nosso
+  derrubaria a fila.
+- **Fora do prazo**: a função não reabre, retém o `pagamento_id`, devolve
+  `precisa_humano`; o webhook manda **nota privada** ao atendente — *"o pedido
+  NÃO foi reaberto; decida: entregar e reabrir à mão, ou estornar"*.
+
+### 11.4 A armadilha da notificação, e a verificação de cinco minutos
+
+A notificação sai pelo **mesmo caminho** do `Envia Mensagem Chatwoot` do
+principal: `api_n8n_credencial_chatwoot` (token de Agent Bot), mesmo endpoint,
+`message_type: 'outgoing'`, `private: false`. É isso que faz o `Roteia Evento`
+ver `sender.type = 'agent_bot'` no webhook de volta e cair no fallback — sem
+pausar. `tests/notificacao-nao-pausa.mjs` prova a regra lendo o switch do JSON.
+
+**O que ele não prova, e precisa ser verificado na instância antes de importar
+o webhook:** que o Chatwoot carimba `agent_bot` para *o nosso* token. Cinco
+minutos:
+
+1. com o principal já importado, mande pela API do Chatwoot uma mensagem
+   `outgoing` na conversa 1864 do sendbox usando o token que
+   `api_n8n_credencial_chatwoot` devolve (é o mesmo que o webhook usará);
+2. `select status, motivo_pausa from conversas where conversation_id = 1864` —
+   tem de continuar **sem pausa**;
+3. e a execução do principal disparada por esse webhook tem de ter caído no
+   fallback do `Roteia Evento` (nenhuma saída).
+
+Se pausar, o token não é de Agent Bot, e o webhook **não pode** ser importado
+até isso mudar.
+
+**Um custo que fica escrito:** a chave do Asaas do tenant viaja no item do n8n
+até o nó HTTP, então ela **fica nos dados de execução da instância** enquanto a
+retenção de execuções guardar aquela run. Não há como redigir dado de execução
+no n8n. O que dá para fazer é configurar a retenção do workflow de pagamento
+para não salvar execuções bem-sucedidas (*Settings → Save successful
+executions: off*), e isso é passo do import, anotado na §11.6.
+
+### 11.5 Pendente da sonda B: a política de expiração
+
+`n8n/tool-pagamento-fonte.mjs` tem `POLITICA_EXPIRACAO = null`. O gerador do
+webhook lê daí e **não liga nenhum passo de desativação** enquanto for `null`; o
+teste afirma que o JSON do webhook não contém `active: false`.
+
+| se a B disser… | a política vira | e o que muda |
+|---|---|---|
+| `expirou_recusa` | `'expirou_recusa'` | descompasso inofensivo; fora do prazo é a corrida do último minuto; desativar ao fim da janela é redundância barata — pode ficar sem |
+| `expirou_aceita` | `'expirou_aceita'` | a diferença é de horas todo dia; **desativar o link (`PUT active=false`) ao fim da nossa janela deixa de ser opcional**, e vira passo próprio — quem dispara (preguiçoso ou agendado) é decisão a tomar |
+
+Nos dois: pedido expirado que recebe pagamento **não reabre sozinho** — já está
+na função da 61 e na nota privada do webhook.
+
+### 11.6 Ordem de import — depois das 10 conversas
+
+1. terminar o experimento da fusão e registrar o resultado;
+2. importar `tool-gerar-link-pagamento.json` como workflow **novo**; anotar o id
+   em `ID_WORKFLOW` (`n8n/tool-pagamento-fonte.mjs`);
+3. `GERAR_COM_PAGAMENTO=1 node scripts/gerar-principal.mjs` — só agora ele
+   aceita; importar o principal por cima;
+4. fazer a verificação de cinco minutos da §11.4; se pausar, parar;
+5. importar `webhook-pagamento-asaas.json`, ativar, desligar *Save successful
+   executions*, copiar a URL de produção;
+6. no Asaas sandbox, cadastrar o webhook com essa URL e o mesmo token gravado em
+   `asaas_webhook_token_sandbox` do tenant; eventos `PAYMENT_RECEIVED` e
+   `PAYMENT_CONFIRMED`;
+7. contratar `pagamento` para o `estudyou-sendbox` e pôr a chave em
+   `asaas_api_key_sandbox` — **a chave da raiz, enquanto a subconta estiver
+   bloqueada (§6.10)**. A ferramenta não sabe a diferença: lê a chave do tenant.
