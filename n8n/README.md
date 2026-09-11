@@ -29,9 +29,10 @@ ele **muda** quando você reimporta (import cria workflow novo).
 | `tool-transferir-humano.json` | Tool - Transferir para Humano (Multi-Tenant) | `N902wAbxRd8wHFUv` |
 | `tool-resolver-conversa.json` | Tool - Resolver Conversa (Multi-Tenant) | `lT5oxXJKulPdlPPR` |
 | `tool-consultar-catalogo.json` | Tool - Consultar Catalogo (Multi-Tenant) | `H8jRRLmwBzxshp9w` |
-| `tool-gerenciar-pedido.json` | Tool - Gerenciar Pedido (Multi-Tenant) | `5rMg40Lagy3OaIo7` |
-| `tool-fechar-pedido.json` | Tool - Fechar Pedido (Multi-Tenant) | `bJlew3rtuV4gRgzv` |
-| `tool-cancelar-pedido.json` | Tool - Cancelar Pedido (Multi-Tenant) | `rXF7LJmqNBZDUg4b` |
+| `tool-gerenciar-pedido.json` | Tool - Gerenciar Pedido (Multi-Tenant) — **as 5 ações desde 11/09** (gerado por `scripts/gerar-tool-pedido.mjs`) | `5rMg40Lagy3OaIo7` |
+| *(removido do repo em 11/09)* | Tool - Fechar Pedido (Multi-Tenant) — **fundida no Gerenciar**; na instância, desativar DEPOIS de importar o principal novo | `bJlew3rtuV4gRgzv` |
+| *(removido do repo em 11/09)* | Tool - Cancelar Pedido (Multi-Tenant) — idem | `rXF7LJmqNBZDUg4b` |
+| `pagamento-sandbox-passo0.json` | Pagamento Sandbox — Passo 0 (roteamento) | *(não importado)* |
 | **(nao versionado)** | Limpar Memoria (Webhook do Painel) | `Dvzv1sjECm2q2aPC` |
 
 > Ao reimportar um sub-workflow, o ID muda e **o nó `toolWorkflow` do principal

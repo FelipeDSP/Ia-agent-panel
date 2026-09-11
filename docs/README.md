@@ -69,6 +69,17 @@ documentação e material de referência.
   DATA**, então uma janela de 30 minutos não cabe nele e a autoridade sobre o
   prazo passou a ser nossa. A §7 lista as telas do painel sem construí-las e a §9
   diz qual lado dos dois vermelhos da suíte está certo.
+- [`ENTREGA-FUSAO-TOOLS-PEDIDO.md`](ENTREGA-FUSAO-TOOLS-PEDIDO.md) — **as três
+  ferramentas de pedido viraram uma (`acao=adicionar|remover|ver|fechar|cancelar`);
+  JSONs prontos, nada importado.** Não é economia: é o experimento da hipótese de
+  sobrecarga — mesmo agente, mesmo prompt, 8 → **6** ferramentas (o enunciado dizia 5;
+  a §1 corrige). A lista de ações mora num arquivo só (`n8n/tool-pedido-acoes.mjs`)
+  e o switch, a `description` do principal e a seção do system message são
+  derivados dele, com teste que reprova se divergirem. Traz a decisão de fatia 2
+  que a fusão desfaz de propósito (ação irreversível atrás de `$fromAI`), o `S`
+  calibrado por tamanho de schema (778, e por que não é regra de três), a ordem de
+  import que não deixa o principal apontar para workflow morto, e o critério de
+  medição com as duas ressalvas em destaque.
 - [`PENDENCIAS.md`](PENDENCIAS.md) — **o indice das pendencias**, com o gatilho de cada
   uma numa tabela so. Comece por aqui em vez de abrir os nove arquivos.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da

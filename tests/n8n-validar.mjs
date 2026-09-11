@@ -53,7 +53,16 @@ console.log(`\n== Validador de workflows — ${arquivos.length} arquivos ==\n`);
 console.log('-- 1. O repo passa hoje --\n');
 
 // Guarda de vacuidade: pasta vazia faria tudo abaixo passar sem medir nada.
-chk('achou os workflows do repo', arquivos.length >= 9, `${arquivos.length} arquivo(s)`);
+//
+// O PISO NÃO É A CONTAGEM DE HOJE. Era `>= 9` e ficou vermelho em 11/09 quando a
+// fusão das ferramentas de pedido tirou dois arquivos — vermelho porque o repo
+// ENCOLHEU de propósito, não porque a pasta esvaziou. Contagem cravada é
+// afirmar estado do mundo. O que a guarda quer dizer é "existe o principal e
+// existe pelo menos um sub-workflow de tool", então é isso que ela afirma.
+const nomes = arquivos.map((f) => path.basename(f));
+chk('achou os workflows do repo (o principal + ao menos uma tool)',
+  nomes.includes('agente-principal.json') && nomes.some((f) => /^tool-/i.test(f)),
+  `${arquivos.length} arquivo(s): ${nomes.join(', ')}`);
 
 const hoje = validar(arquivos);
 chk('os workflows versionados passam no validador', hoje.code === 0,
@@ -92,8 +101,11 @@ console.log('\n-- 2. SABOTAGEM: regra 8, no de banco sem credencial --\n');
 console.log('\n-- 3. SABOTAGEM: regra 9, id de credencial que e placeholder --\n');
 {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'n8nval-'));
-  const alvo = path.join(tmp, 'tool-fechar-pedido.json');
-  const wf = JSON.parse(fs.readFileSync(path.join(DIR, 'tool-fechar-pedido.json'), 'utf8'));
+  // A cobaia era `tool-fechar-pedido.json`, que deixou de existir na fusao das
+  // ferramentas de pedido (11/09/2026). A fundida tem a mesma forma — no
+  // Postgres com credencial de verdade — e serve igual.
+  const alvo = path.join(tmp, 'tool-gerenciar-pedido.json');
+  const wf = JSON.parse(fs.readFileSync(path.join(DIR, 'tool-gerenciar-pedido.json'), 'utf8'));
   const no = wf.nodes.find((n) => n.credentials && Object.keys(n.credentials).length);
 
   chk('o alvo da sabotagem 9 tem credencial com id de verdade',
@@ -115,7 +127,7 @@ console.log('\n-- 3. SABOTAGEM: regra 9, id de credencial que e placeholder --\n
   // CONTRAPROVA: um id de verdade NAO pode reprovar, senao a regra 9 estaria
   // reprovando tudo e o vermelho acima nao diria nada sobre o placeholder.
   const limpo = path.join(tmp, 'limpo.json');
-  const wf2 = JSON.parse(fs.readFileSync(path.join(DIR, 'tool-fechar-pedido.json'), 'utf8'));
+  const wf2 = JSON.parse(fs.readFileSync(path.join(DIR, 'tool-gerenciar-pedido.json'), 'utf8'));
   fs.writeFileSync(limpo, JSON.stringify(wf2, null, 2));
   const r2 = validar([limpo]);
   chk('CONTRAPROVA: o mesmo arquivo sem a sabotagem passa', r2.code === 0,

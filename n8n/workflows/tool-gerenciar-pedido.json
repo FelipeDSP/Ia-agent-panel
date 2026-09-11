@@ -24,6 +24,9 @@
             },
             {
               "name": "observacao"
+            },
+            {
+              "name": "metadados"
             }
           ]
         }
@@ -107,7 +110,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "a1",
+                    "id": "acao-adicionar",
                     "leftValue": "={{ $('When Executed by Another Workflow').item.json.acao }}",
                     "rightValue": "adicionar",
                     "operator": {
@@ -129,7 +132,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "r1",
+                    "id": "acao-remover",
                     "leftValue": "={{ $('When Executed by Another Workflow').item.json.acao }}",
                     "rightValue": "remover",
                     "operator": {
@@ -151,7 +154,7 @@
                 },
                 "conditions": [
                   {
-                    "id": "v1",
+                    "id": "acao-ver",
                     "leftValue": "={{ $('When Executed by Another Workflow').item.json.acao }}",
                     "rightValue": "ver",
                     "operator": {
@@ -163,11 +166,55 @@
                 "combinator": "and"
               },
               "outputKey": "ver"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "acao-fechar",
+                    "leftValue": "={{ $('When Executed by Another Workflow').item.json.acao }}",
+                    "rightValue": "fechar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "fechar"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "acao-cancelar",
+                    "leftValue": "={{ $('When Executed by Another Workflow').item.json.acao }}",
+                    "rightValue": "cancelar",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "outputKey": "cancelar"
             }
           ]
         },
         "options": {
-          "fallbackOutput": 3,
+          "fallbackOutput": 5,
           "renameFallbackOutput": "invalida"
         }
       },
@@ -190,18 +237,18 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "credentials": {
-        "postgres": {
-          "id": "MehTUROZlPmHG8kW",
-          "name": "Agent ia Supabase"
-        }
-      },
       "position": [
         1280,
         208
       ],
       "name": "Adiciona Item",
-      "id": "venda-ger-add00000000000000000000000"
+      "id": "venda-ger-add00000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
     },
     {
       "parameters": {
@@ -213,18 +260,18 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "credentials": {
-        "postgres": {
-          "id": "MehTUROZlPmHG8kW",
-          "name": "Agent ia Supabase"
-        }
-      },
       "position": [
         1280,
         368
       ],
       "name": "Remove Item",
-      "id": "venda-ger-rem00000000000000000000000"
+      "id": "venda-ger-rem00000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
     },
     {
       "parameters": {
@@ -236,18 +283,64 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "credentials": {
-        "postgres": {
-          "id": "MehTUROZlPmHG8kW",
-          "name": "Agent ia Supabase"
-        }
-      },
       "position": [
         1280,
         528
       ],
       "name": "Ve Pedido",
-      "id": "venda-ger-ver00000000000000000000000"
+      "id": "venda-ger-ver00000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_fechar_pedido($1::uuid, $2::bigint, $3::text) AS resultado;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id, $('When Executed by Another Workflow').item.json.metadados ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1280,
+        544
+      ],
+      "name": "Fecha Pedido",
+      "id": "venda-ger-fechar00000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_cancelar_pedido($1::uuid, $2::bigint) AS resultado;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1280,
+        672
+      ],
+      "name": "Cancela Pedido",
+      "id": "venda-ger-cancelar000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      }
     },
     {
       "parameters": {
@@ -257,7 +350,7 @@
               "id": "inv-1",
               "name": "resultado",
               "type": "string",
-              "value": "=Acao invalida. Use adicionar, remover ou ver."
+              "value": "=Acao invalida. Use adicionar, remover, ver, fechar ou cancelar."
             }
           ]
         },
@@ -271,6 +364,137 @@
       ],
       "name": "Acao Invalida",
       "id": "venda-ger-inv00000000000000000000000"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT pedido_id, numero, sessao, destino, mensagem\nFROM public.api_n8n_notificar_venda($1::uuid, $2::bigint);",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('When Executed by Another Workflow').item.json.conversation_id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1520,
+        208
+      ],
+      "name": "Reivindica Notificacao",
+      "id": "venda-not-rei00000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "not-1",
+              "leftValue": "={{ $json.destino || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1744,
+        208
+      ],
+      "name": "Tem Notificacao?",
+      "id": "venda-not-if000000000000000000000000"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Reivindica Notificacao').first().json.sessao }}",
+        "chatId": "={{ $('Reivindica Notificacao').first().json.destino }}",
+        "text": "={{ $('Reivindica Notificacao').first().json.mensagem }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        1968,
+        112
+      ],
+      "name": "Notifica Venda WAHA",
+      "id": "venda-not-waha0000000000000000000000",
+      "credentials": {
+        "wahaApi": {
+          "id": "gx2yKmYvYBBJ2Yhl",
+          "name": "WAHA account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT public.api_n8n_confirmar_notificacao($1::uuid, $2::uuid, $3::boolean, $4::text) AS confirmado;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Executed by Another Workflow').item.json.tenant_id, $('Reivindica Notificacao').first().json.pedido_id, !$json.error, $json.error ? String($json.error.message || $json.error).slice(0, 500) : null ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2192,
+        112
+      ],
+      "name": "Confirma Notificacao",
+      "id": "venda-not-conf0000000000000000000000",
+      "credentials": {
+        "postgres": {
+          "id": "MehTUROZlPmHG8kW",
+          "name": "Agent ia Supabase"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fech-1",
+              "name": "resultado",
+              "type": "string",
+              "value": "={{ $('Fecha Pedido').first().json.resultado }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2416,
+        208
+      ],
+      "name": "Resultado do Fechamento",
+      "id": "venda-ger-fech-res000000000000000000"
     },
     {
       "parameters": {
@@ -386,7 +610,94 @@
         ],
         [
           {
+            "node": "Fecha Pedido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cancela Pedido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Acao Invalida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acao Invalida": {
+      "main": [
+        [
+          {
+            "node": "Retorno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reivindica Notificacao": {
+      "main": [
+        [
+          {
+            "node": "Tem Notificacao?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem Notificacao?": {
+      "main": [
+        [
+          {
+            "node": "Notifica Venda WAHA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resultado do Fechamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notifica Venda WAHA": {
+      "main": [
+        [
+          {
+            "node": "Confirma Notificacao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirma Notificacao": {
+      "main": [
+        [
+          {
+            "node": "Resultado do Fechamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado do Fechamento": {
+      "main": [
+        [
+          {
+            "node": "Retorno",
             "type": "main",
             "index": 0
           }
@@ -426,7 +737,18 @@
         ]
       ]
     },
-    "Acao Invalida": {
+    "Fecha Pedido": {
+      "main": [
+        [
+          {
+            "node": "Reivindica Notificacao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancela Pedido": {
       "main": [
         [
           {

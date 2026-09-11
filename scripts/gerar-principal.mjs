@@ -29,6 +29,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  ACOES, ENTRADAS, ID_WORKFLOW, NO_PRINCIPAL, NOME_WORKFLOW, descricaoFerramenta, dicaFromAI, secaoPrompt,
+} from '../n8n/tool-pedido-acoes.mjs';
 
 const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 const ARQ = path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json');
@@ -121,11 +124,22 @@ const TOOLS_BASICO = [
   'Transferir para Humano',
   "Call 'Tool - Resolver Conversa (Multi-Tenant)'",
 ];
-const TOOLS_VENDAS = ['Consultar Catalogo', 'Gerenciar Pedido', 'Fechar Pedido', 'Cancelar Pedido', 'Enviar Foto do Produto'];
+// FUSAO (11/09/2026): `Fechar Pedido` e `Cancelar Pedido` deixaram de ser nos
+// proprios — viraram acoes do `Gerenciar Pedido` (n8n/tool-pedido-acoes.mjs).
+// O perfil de vendas cai de 8 para 5 ferramentas. Nao e economia: e o
+// experimento da hipotese de sobrecarga (docs/ENTREGA-FUSAO-TOOLS-PEDIDO.md).
+const TOOLS_VENDAS = ['Consultar Catalogo', NO_PRINCIPAL, 'Enviar Foto do Produto'];
+const TOOLS_FUNDIDAS = ['Fechar Pedido', 'Cancelar Pedido'];   // saem do JSON
 
 const PERFIS = {
   basico: { agente: 'AI Agent Basico', tools: TOOLS_BASICO, S: 266, medido: false, y: -224 },
-  vendas: { agente: 'AI Agent Vendas', tools: [...TOOLS_BASICO, ...TOOLS_VENDAS], S: 622, medido: true, y: 96 },
+  // S DE VENDAS DEIXOU DE SER MEDIDO. 622 foi medido em 11/08 com SETE
+  // ferramentas e as descricoes ANTIGAS; hoje sao CINCO, com as descricoes
+  // reescritas em 09/09 e a fundida. Nenhuma dessas tres coisas foi medida. O
+  // numero abaixo e ESTIMATIVA por tamanho de schema (scripts/estimar-s.mjs) e
+  // esta marcado `medido: false` ate uma execucao real do perfil: com `r` ja
+  // conhecido (3,112), UMA execucao resolve — S = tokens_n8n - chars/r.
+  vendas: { agente: 'AI Agent Vendas', tools: [...TOOLS_BASICO, ...TOOLS_VENDAS], S: 778, medido: false, y: 96 },
 };
 
 // ---------------------------------------------------------------------------
@@ -143,7 +157,39 @@ const smAtual = agenteAtual.parameters.options.systemMessage;
 const corte = smAtual.indexOf('{{');
 if (corte < 0) throw new Error('systemMessage sem a expressao do prompt do tenant');
 const CAUDA = smAtual.slice(corte); // a expressao que injeta o system_prompt do tenant
-const fixoAtual = smAtual.slice(1, corte);
+let fixoAtual = smAtual.slice(1, corte);
+
+// ---------------------------------------------------------------------------
+// 2a. A FUSAO NO SYSTEM MESSAGE — a secao de `gerenciar_pedido` e DERIVADA
+// ---------------------------------------------------------------------------
+// As secoes de `fechar_pedido` e `cancelar_pedido` saem; a de `gerenciar_pedido`
+// passa a ser escrita a partir de n8n/tool-pedido-acoes.mjs, que e a mesma fonte
+// do switch do sub-workflow e da `description` do no. Tres lugares, um texto.
+//
+// Idempotente: numa segunda geracao as duas secoes ja nao existem e a de
+// gerenciar e substituida por ela mesma.
+{
+  // `\\s` e `\\n` DUPLAMENTE escapados de proposito: dentro de template literal,
+  // `\s` vira a letra "s" e a classe `[\s\S]` viraria `[sS]` — a secao inteira
+  // deixaria de casar e o gerador diria "nao encontrada" para um texto que esta
+  // la. Foi a primeira versao desta linha.
+  const secao = (nome) => new RegExp(`## Ferramenta: ${nome}\\n[\\s\\S]*?(?=\\n## |$)`);
+  for (const fundida of ['fechar_pedido', 'cancelar_pedido']) {
+    fixoAtual = fixoAtual.replace(secao(fundida), '');
+  }
+  const reGer = secao('gerenciar_pedido');
+  if (!reGer.test(fixoAtual)) throw new Error('secao "## Ferramenta: gerenciar_pedido" nao encontrada no systemMessage');
+  fixoAtual = fixoAtual.replace(reGer, secaoPrompt().replace(/\n$/, ''));
+  // Duas quebras seguidas viram uma so onde a remocao deixou buraco.
+  fixoAtual = fixoAtual.replace(/\n{3,}/g, '\n\n');
+
+  for (const fundida of ['fechar_pedido', 'cancelar_pedido']) {
+    if (fixoAtual.includes(`## Ferramenta: ${fundida}`)) throw new Error(`a secao de ${fundida} sobreviveu a fusao`);
+  }
+  for (const a of ACOES) {
+    if (!fixoAtual.includes('`' + a.acao + '`')) throw new Error(`a secao de gerenciar_pedido nao menciona a acao ${a.acao}`);
+  }
+}
 
 const RE_SECOES_VENDAS = /## Ferramenta: consultar_catalogo[\s\S]*?(?=## Regras gerais)/;
 const casamento = fixoAtual.match(RE_SECOES_VENDAS);
@@ -413,6 +459,60 @@ w.nodes.push({
   name: 'Perfil Nao Resolvido',
   id: 'perfil-erro'.padEnd(36, '0').slice(0, 36),
 });
+
+// ---------------------------------------------------------------------------
+// 4a. A FUSAO NOS NOS DE TOOL
+// ---------------------------------------------------------------------------
+// Os dois nos fundidos saem (idempotente: numa segunda geracao ja nao existem).
+for (const nome of TOOLS_FUNDIDAS) {
+  w.nodes = w.nodes.filter((n) => n.name !== nome);
+  delete w.connections[nome];
+}
+// E o `Gerenciar Pedido` DEIXA DE SER ORFAO neste ponto: description, dica do
+// `$fromAI('acao')` e as entradas passam a sair de n8n/tool-pedido-acoes.mjs.
+// Ate aqui ele era um dos sete nos cuja description o gerador nao escrevia
+// (docs/PENDENCIA-GERADOR-CAMPO-ORFAO.md). O `workflowId` e o do sub-workflow
+// que JA existe na instancia — a fusao e importada POR CIMA dele, entao o id
+// nao muda e nada fica apontando para workflow inexistente.
+{
+  const g = no(NO_PRINCIPAL);
+  if (!g) throw new Error(`no "${NO_PRINCIPAL}" ausente do principal`);
+  const fromAI = (nome, dica, tipo) =>
+    `={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('${nome}', \`${dica}\`, '${tipo}') }}`;
+  const DICAS = {
+    acao: [dicaFromAI(), 'string'],
+    produto_id: ['id do produto vindo de consultar_catalogo; vazio quando acao=ver, fechar ou cancelar', 'string'],
+    quantidade: ['quantas unidades; 1 se o cliente nao disser', 'number'],
+    observacao: ['observacao do cliente sobre o item, ex: sem cebola. vazio se nao houver', 'string'],
+    metadados: ['json com entrega/retirada/observacao geral, ex: {"entrega":"retirada"}. vazio se nao houver; so para acao=fechar', 'string'],
+  };
+  const value = {
+    tenant_id: "={{ $('Resolve Tenant').first().json.tenant_id }}",
+    conversation_id: "={{ $('Extrair e Filtrar').first().json.conversation_id }}",
+  };
+  for (const e of ENTRADAS) {
+    if (value[e.name]) continue;
+    const d = DICAS[e.name];
+    if (!d) throw new Error(`entrada ${e.name} sem dica de $fromAI`);
+    value[e.name] = fromAI(e.name, d[0], d[1]);
+  }
+  g.parameters.description = descricaoFerramenta();
+  g.parameters.workflowId = {
+    __rl: true, value: ID_WORKFLOW, mode: 'list',
+    cachedResultUrl: `/workflow/${ID_WORKFLOW}`, cachedResultName: NOME_WORKFLOW,
+  };
+  g.parameters.workflowInputs = {
+    mappingMode: 'defineBelow',
+    value,
+    matchingColumns: [],
+    schema: ENTRADAS.map((e) => ({
+      id: e.name, displayName: e.name, required: false, defaultMatch: false,
+      display: true, canBeUsedToMatch: true, type: e.type ?? 'string',
+    })),
+    attemptToConvertTypes: false,
+    convertFieldsToString: false,
+  };
+}
 
 // Idempotencia: remove a versao da rodada anterior antes de recriar.
 w.nodes = w.nodes.filter((n) => n.name !== 'Enviar Foto do Produto');

@@ -17,6 +17,32 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// ---------------------------------------------------------------------------
+// DESATIVADO EM 11/09/2026 — ESTE GERADOR ESTA SUPERADO E DESFARIA A FUSAO.
+// ---------------------------------------------------------------------------
+// Ele e da fatia 2 (agosto). Rodado hoje, sobrescreveria
+// `tool-gerenciar-pedido.json` com a versao de TRES acoes e recriaria
+// `tool-fechar-pedido.json` e `tool-cancelar-pedido.json` — desfazendo em
+// silencio a fusao das ferramentas de pedido. E cita
+// `gerar-principal-vendas.mjs`, que nao existe mais: ja estava morto antes.
+//
+// O que o substitui:
+//   - a ferramenta de pedido (5 acoes):  node scripts/gerar-tool-pedido.mjs
+//     (fonte: n8n/tool-pedido-acoes.mjs)
+//   - o principal:                       node scripts/gerar-principal.mjs
+//
+// O corpo abaixo fica para leitura (e para o git), mas nao executa. Reativar
+// exigiria reescreve-lo sobre a fusao — nao remover estas linhas.
+console.error(`
+ABORTADO: scripts/gerar-workflows-vendas.mjs esta superado desde 11/09/2026.
+  Rodar este script sobrescreveria a ferramenta de pedido FUNDIDA com a versao
+  antiga de tres acoes. Use:
+    node scripts/gerar-tool-pedido.mjs      (ferramenta de pedido, 5 acoes)
+    node scripts/gerar-principal.mjs        (principal)
+  Ver docs/ENTREGA-FUSAO-TOOLS-PEDIDO.md.
+`);
+process.exit(1);
+
 const RAIZ = fileURLToPath(new URL('../', import.meta.url));
 const DIR = path.join(RAIZ, 'n8n', 'workflows');
 

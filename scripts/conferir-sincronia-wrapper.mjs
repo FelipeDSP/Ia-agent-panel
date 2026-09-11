@@ -94,7 +94,15 @@ for (const p of perfis) {
 
 console.log('\n  -- 3. cada agent tem exatamente as tools do seu perfil --');
 const TOOLS_BASICO = ['Busca Conhecimento', 'Transferir para Humano', "Call 'Tool - Resolver Conversa (Multi-Tenant)'"];
-const TOOLS_VENDAS = ['Consultar Catalogo', 'Gerenciar Pedido', 'Fechar Pedido', 'Cancelar Pedido', 'Enviar Foto do Produto'];
+// ESTA LISTA E UMA SEGUNDA COPIA DE PROPOSITO — e o oraculo contra o qual a
+// saida do gerador e conferida, entao nao pode ser importada dele (o gerador
+// escreve o arquivo ao ser importado). O preco e que toda mudanca no conjunto
+// de tools tem de ser feita nos DOIS lugares, e este check fica vermelho ate
+// isso acontecer — que e exatamente o que ele existe para acusar.
+//
+// 11/09/2026: `Fechar Pedido` e `Cancelar Pedido` sairam — viraram acoes do
+// `Gerenciar Pedido` (fusao; ver n8n/tool-pedido-acoes.mjs).
+const TOOLS_VENDAS = ['Consultar Catalogo', 'Gerenciar Pedido', 'Enviar Foto do Produto'];
 const ESPERADO = { basico: TOOLS_BASICO, vendas: [...TOOLS_BASICO, ...TOOLS_VENDAS] };
 
 for (const p of perfis) {
