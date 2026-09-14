@@ -30,7 +30,7 @@ Medido no ato da aplicação:
 
 | # | artefato | estado |
 |---|---|---|
-| 0 | `n8n/workflows/pagamento-sandbox-passo0.json` + `n8n/passo0-identifica-origem.js` + `scripts/gerar-passo0.mjs` | escrito, **não importado** |
+| 0 | `n8n/workflows/pagamento-sandbox-passo0.json` + `n8n/passo0-identifica-origem.js` + `scripts/gerar-passo0.mjs` | **importado** (`dCBDl1MdSY7ZpVZl`, 10/09) e idêntico ao repo, mas **INATIVO** e sem o webhook do Chatwoot apontado — conferido na instância em 14/09 |
 | 0 | `scripts/conferir-roteamento-sandbox.mjs` (`npm run n8n:roteamento-sandbox`) | roda; hoje diz **PASSO 0 NÃO PROVADO** |
 | 5 | `n8n/workflows/tool-gerar-link-pagamento.json` + `webhook-pagamento-asaas.json` | escritos em 11/09, **não importados** — só depois do experimento; §11 |
 | 1 | `supabase/migrations/20260910230000_61_pagamento_asaas_sandbox.sql` + rollback | **APLICADA** em 10/09; `teste:pagamento-asaas` 100/100 |

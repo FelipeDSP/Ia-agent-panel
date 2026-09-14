@@ -135,3 +135,22 @@ dependem de saber quem chama; agora se sabe, e a resposta escolheu por elas:
    (`docs/VARIAVEIS-DE-AMBIENTE.md` já apontava para `lib/n8n.ts:29`), e a
    limpeza de 08/09 funcionou, então ela **está** definida no ambiente do painel.
    Nada órfão aqui.
+
+## Conferido na instância em 14/09/2026 — e o segredo é LITERAL no Code
+
+Lido pela sessão do navegador (`/rest/workflows/Dvzv1sjECm2q2aPC`): 8 nós,
+`Webhook Limpar (POST /limpar-memoria) → Valida e Prepara (Code) → Busca Chaves
+(KEYS) → Expande Chaves (Code) → Tem Chave? → Apaga Chave (DEL) → Responde OK /
+Responde Vazio`. Escopos `conversa` (padrões `tenant_<id>_memory_<conv>*` e
+`tenant_<id>_conv_<conv>_acumulo*`) e `todas` (`tenant_<id>_*`). Credencial
+só do Redis. Ativo, `updatedAt` 30/07 — nunca mais tocado.
+
+**O `x-limpeza-secret` esperado está cravado como constante no `Valida e
+Prepara`** (`const SEGREDO = '…'`, com um `// TODO: trocar pelo mesmo valor de
+N8N_LIMPEZA_SECRET no painel`). É a mesma classe de
+`PENDENCIA-SEGREDO-FOTO.md`: parâmetro de nó sai inteiro em todo export, e
+saiu de novo na conferência de 14/09 (o export foi apagado em seguida). Então
+**versionar este workflow como está publicaria o segredo no git** — antes de
+versionar, o segredo tem de sair do Code (credencial do n8n, ou comparação
+contra `$env`) e ser rotacionado nos dois lados (`N8N_LIMPEZA_SECRET` no
+painel).

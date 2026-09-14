@@ -196,3 +196,13 @@ reprova.
 Não editar o valor literal no JSON do repo para "arrumar" o arquivo. Isso
 colocaria o segredo no controle de versão, que é estritamente pior do que estar
 só na instância: git não esquece.
+
+## Reconferido na instância em 14/09/2026: continua exposto
+
+O nó `Assina URL` do `Tool - Enviar Foto do Produto` (`xRGPiuoKtxrrMA6q`)
+ainda tem `x-foto-secret` como VALOR LITERAL de header em `headerParameters`,
+além da credencial `Header Auth account 4` — o repo (`tool-enviar-foto.json`)
+manda só `Content-Type` por parâmetro e o segredo pela credencial `Foto Produto
+- x-foto-secret`. A instância nunca recebeu essa versão. O segredo saiu de novo
+na leitura de 14/09 (apagada em seguida). A rotação continua sendo o único
+fecho, e o `Limpar Memoria` tem o mesmo defeito (`PENDENCIA-LIMPAR-MEMORIA.md`).

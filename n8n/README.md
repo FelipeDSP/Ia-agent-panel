@@ -32,7 +32,7 @@ ele **muda** quando você reimporta (import cria workflow novo).
 | `tool-gerenciar-pedido.json` | Tool - Gerenciar Pedido (Multi-Tenant) — **as 5 ações desde 11/09** (gerado por `scripts/gerar-tool-pedido.mjs`) | `5rMg40Lagy3OaIo7` |
 | *(removido do repo em 11/09)* | Tool - Fechar Pedido (Multi-Tenant) — **fundida no Gerenciar**; na instância, desativar DEPOIS de importar o principal novo | `bJlew3rtuV4gRgzv` |
 | *(removido do repo em 11/09)* | Tool - Cancelar Pedido (Multi-Tenant) — idem | `rXF7LJmqNBZDUg4b` |
-| `pagamento-sandbox-passo0.json` | Pagamento Sandbox — Passo 0 (roteamento) | *(não importado)* |
+| `pagamento-sandbox-passo0.json` | Pagamento Sandbox — Passo 0 (roteamento) — **importado em 10/09, INATIVO** (idêntico ao repo, conferido 14/09); o passo 0 continua não provado porque nunca foi ativado nem apontado no Chatwoot | `dCBDl1MdSY7ZpVZl` |
 | **(nao versionado)** | Limpar Memoria (Webhook do Painel) | `Dvzv1sjECm2q2aPC` |
 
 > Ao reimportar um sub-workflow, o ID muda e **o nó `toolWorkflow` do principal
