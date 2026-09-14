@@ -130,6 +130,11 @@ documentação e material de referência.
   respondeu "NAO ENTENDI", que foi a unica vez que um humano a viu acontecer. Nao
   torna o filtro errado, torna-o incompleto: **o detector tinha de ter ido junto, no
   mesmo commit.**
+- [`DESENHO-AGENTE-EM-CODIGO.md`](DESENHO-AGENTE-EM-CODIGO.md) — o agente
+  saindo do n8n para um serviço próprio: runtime, mapa nó-a-nó, o que é
+  implícito do n8n e vira decisão, testes antes de migrar, critério de paridade,
+  trace por turno, convivência com prazo e ordem por caixa. Só desenho; as
+  cinco perguntas para o Felipe estão no fim
 - [`DESENHO-PORTAO-VENDA-AFIRMADA.md`](DESENHO-PORTAO-VENDA-AFIRMADA.md) —
   **DESENHO, nada aplicado.** O passo seguinte do doc acima: como impedir a mensagem
   de sair quando ela afirma escrita que nao houve. Confirma que o `Estima Tokens` e o
