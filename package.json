@@ -102,7 +102,8 @@
     "teste:principal-sandbox": "node tests/principal-sandbox.mjs",
     "teste:transcricao": "node tests/transcricao-e-mensagem-pronta.mjs",
     "teste:foto-e-kb": "node --env-file=.env.local tests/foto-resposta-e-kb-consolida.mjs",
-    "teste:modelos": "node tests/modelos-debounce-e-memoria.mjs"
+    "teste:modelos": "node tests/modelos-debounce-e-memoria.mjs",
+    "teste:migracao-agente": "node --env-file=.env.local tests/migracao-agente-fatia1.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

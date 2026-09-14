@@ -299,6 +299,27 @@ BufferWindowMemory) — suposição a conferir na versão instalada, isolada em
 Os cenários são a **interface** que o código novo implementa: `simular(cenario)`
 com a mesma saída, e os mesmos casos dizem onde diverge.
 
+**Fatia 1, lado do banco — ESCRITA em 14/09/2026, NÃO APLICADA:**
+`supabase/migrations/20260914200000_62_agente_em_codigo_fatia1.sql` (+ rollback,
+que aborta com tenant em `codigo` ou turno gravado). `teste:migracao-agente`
+59/59 em transação abortada, rollback-first, aplicada duas vezes:
+
+| o que a 62 cria | o teste prova |
+|---|---|
+| `tenants.agente_runtime` (`n8n`/`codigo`, default `n8n`) | aplicar não liga ninguém; fora da lista branca do guard; `42501` sem claim; CHECK |
+| `conversas.memoria_cortada_em` | o corte substitui o DEL do Limpar Memoria |
+| `agente_fila` + `api_agente_enfileirar` / `reivindicar` / `turno_da_conversa` / `concluir` | responder / desistir / adiar / lease vencido, com três tenants e a mesma `conversation_id` em dois; B não alcança a fila de A (`22023`) |
+| `agente_prompts`, `agente_turnos`, `agente_passos` + `prompt_registrar` / `turno_abrir` / `passo` / `turno_fechar` / `varrer_passos` | hash por tenant; saída de tool truncada a 16 KB e marcada, bruto do modelo inteiro; ordem única; retenção apaga só o velho |
+| `api_agente_memoria` + `agente_texto_entrada` | **idêntica ao modelo JS** sobre o mesmo log em 7 casos (silêncio 41/39, 25 pares, corte, literal de array `{oi,"…"}`); B não vê o log de A |
+| RLS + policy em cada tabela; `anon` sem grant; ACL das 13 funções **igual ao da irmã** `api_n8n_gerar_cobranca`; chamada real como `n8n_agent` | `teste:grants-n8n` passou a varrer `api_agente_*` também |
+
+Dois defeitos que o teste pegou antes de a migração existir em produção: "mais
+nova" comparava `executar_em`, e o `adiar` empurra `executar_em` para o
+futuro — a mensagem **mais velha** passava por mais nova e a conversa nunca
+respondia; e `criado_em` não serve para "chegou depois" dentro de uma
+transação (mesmo `now()`). A fila ganhou `seq` de identidade, e "mais nova" é
+`seq` maior.
+
 ---
 
 ## 5. Critério de paridade — o que precisa estar verde para o `emporio` mudar de lado

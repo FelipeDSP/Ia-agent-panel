@@ -19,7 +19,8 @@
  * quatro primeiras quebravam a chamada; esta quebra a AUTORIZAÇÃO, e o sintoma
  * chega igual: a tool para no primeiro cliente.
  *
- * O teste é de PROPRIEDADE e não de lista: varre `api_n8n_*` no banco, então
+ * O teste é de PROPRIEDADE e não de lista: varre `api_n8n_*` E `api_agente_*`
+ * (a porta do agente em código, migração 62) no banco, então
  * função nova entra na vigilância sozinha. Uma lista fixa aqui envelheceria
  * calada — e guarda que envelhece calada é a classe de bug que ela deveria pegar.
  *
@@ -82,7 +83,8 @@ try {
             coalesce(has_function_privilege($1, p.oid, 'execute'), false) as pode,
             coalesce(array_to_string(p.proacl, ' '), '(sem acl)') as acl
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public' and p.proname like 'api\\_n8n\\_%'
+      where n.nspname = 'public'
+        and (p.proname like 'api\\_n8n\\_%' or p.proname like 'api\\_agente\\_%')
       order by p.proname`,
     [ROLE_N8N],
   );
@@ -106,7 +108,8 @@ try {
   const { rows: fnsSr } = await c.query(
     `select p.proname, coalesce(has_function_privilege('service_role', p.oid, 'execute'), false) as pode
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'public' and p.proname like 'api\\_n8n\\_%'`,
+      where n.nspname = 'public'
+        and (p.proname like 'api\\_n8n\\_%' or p.proname like 'api\\_agente\\_%')`,
   );
   const semSr = fnsSr.filter((f) => !f.pode).map((f) => f.proname);
   checar('todas continuam executáveis por service_role', semSr.length === 0, semSr.join(', '));
@@ -212,13 +215,16 @@ try {
     // Fora da superficie `api_n8n_*`, o agente so tem grant explicito nestas.
     // Lista declarada e versionada, com motivo — sao helpers de texto chamados
     // DENTRO das api_n8n_*, e receberam grant proprio nas migracoes 52 e 53.
-    const HELPERS_COM_GRANT_AO_AGENTE = ['contato_exibivel', 'texto_normalizado'];
+    // `agente_texto_entrada` (migracao 62): desfaz o literal de array do log,
+    // chamado dentro de `api_agente_memoria`, exposto ao agente em codigo.
+    const HELPERS_COM_GRANT_AO_AGENTE = ['contato_exibivel', 'texto_normalizado', 'agente_texto_entrada'];
 
     const { rows } = await c.query(
       `select p.proname
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname = 'public' and p.prokind = 'f'
           and p.proname not like 'api\\_n8n\\_%'
+          and p.proname not like 'api\\_agente\\_%'
           and exists (select 1 from unnest(coalesce(p.proacl, '{}'::aclitem[])) a
                        where a::text like 'n8n_agent=%')
         order by p.proname`,
@@ -255,7 +261,7 @@ try {
     ];
     const { rows } = await c.query(
       `select p.proname,
-              (p.proname like 'api\\_n8n\\_%') as e_superficie,
+              (p.proname like 'api\\_n8n\\_%' or p.proname like 'api\\_agente\\_%') as e_superficie,
               coalesce((select string_agg(split_part(a::text, '=', 1), '+'
                                           order by split_part(a::text, '=', 1))
                           from unnest(p.proacl) a), '(NULO)') as forma
