@@ -274,10 +274,42 @@ limpos; metade da base, 176. O volume não existe — o `emporio` fez 8 turnos e
 caído o suficiente — nesse caso o portão sobe de prioridade e a fusão fica como
 economia.
 
-"Limpa" é pelo **cruzamento texto × banco** — o texto afirma item, quantidade ou
-total e existe linha correspondente em `pedidos`/`pedido_itens` —, **não** por
-`chamadas`. E, pela §2, uma conversa em que `fechar` foi chamada sem
-confirmação do cliente também não é limpa.
+"Limpa" é pelo **veredito do portão, lido de `mensagens_log.portao`** — não
+por inspeção do texto (critério ajustado em 14/09/2026): toda saída da
+conversa tem `portao->>'veredito' = 'passou'`. Um `barrado_*` conta como
+fabricação. O portão faz exatamente o cruzamento texto × banco que a versão
+anterior deste parágrafo pedia à mão — regra 1 (afirma efeito consumado sem
+escrita no turno) e regra 2 (valor afirmado ≠ valor do banco) —, e grava o
+`bruto` para conferência humana de cada barrado; a **contagem** é pelo
+veredito, e a conferência do bruto não a muda. Falso positivo do portão conta
+contra a fusão, de propósito: é o lado conservador. E, pela §2, uma conversa
+em que `fechar` foi chamada sem confirmação do cliente também não é limpa —
+essa continua sendo por `chamadas`, porque o portão não a vê.
+
+A leitura, por conversa do roteiro (`estudyou-sendbox`, no período do
+experimento):
+
+```sql
+select m.conversation_id,
+       count(*) filter (where m.direcao = 'saida')                                   as saidas,
+       count(*) filter (where m.direcao = 'saida' and m.portao->>'veredito' <> 'passou') as barradas,
+       string_agg(m.portao->>'veredito', ',' order by m.criado_em)
+         filter (where m.direcao = 'saida' and m.portao->>'veredito' <> 'passou')   as vereditos
+  from public.mensagens_log m
+  join public.tenants t on t.id = m.tenant_id
+ where t.slug = 'estudyou-sendbox'
+   and m.criado_em between :inicio and :fim
+ group by 1 order by 1;
+-- limpa = barradas = 0 (e nenhuma `fechar` sem confirmação, conferida em `chamadas`)
+```
+
+Pré-condição, **medida em 14/09**: a cópia que atende o `sendbox`
+(`eIRQNUl6xO7TarBv`) roda o portão — as quatro saídas dela desde 10/09,
+inclusive a execução `4121049` de 14/09, têm `portao` com `veredito`. Sem
+isso a coluna viria nula e "zero barradas" seria vácuo; a query acima trata
+`veredito` nulo como **não limpa** por construção (`<> 'passou'` é falso
+para nulo — então some a saída de `saidas` sem contar em `barradas`; confira
+que `saidas` bate com o número de turnos do roteiro antes de ler `barradas`).
 
 > **DUAS RESSALVAS, COM DESTAQUE:**
 >
