@@ -343,9 +343,10 @@ em que o pagamento precisar de uma pista muda. Para a migração, a "pista do
 sandbox" volta a existir no dia em que o serviço novo tiver o que responder —
 apontando o Hércules para ele, exatamente como a cópia provou que funciona.
 
-**Pergunta para o Felipe:** a cópia foi você, em 10/09, para testar sem tocar
-no principal? Se sim, posso desativá-la e reapontar o Hércules agora; se não,
-alguém mais mexe na instância e isso muda a §7.
+**Respondido (14/09): a cópia foi o Felipe**, em 10/09, para testar sem tocar
+no principal. Ninguém mais mexe na instância; a §7 fica como está. O
+reaponte do Hércules + desativação da cópia é ato combinado, não automático —
+o sandbox volta a ser atendido pelo principal no instante em que for feito.
 
 ---
 
@@ -385,5 +386,5 @@ alguém mais mexe na instância e isso muda a §7.
 3. ~~60 dias?~~ Sem prazo real; 60 dias vira ponto de revisão (§7).
 4. ~~O `ceejaar` é cliente real?~~ É, do dono do `emporio`, ciente do teste; migra antes do `emporio` (§8).
 5. ~~O passo 0 pode ser ativado agora?~~ Ativado. O roteamento está provado
-   pela cópia (§8) — resta decidir a cópia: foi você? Posso desativá-la e
-   reapontar o Hércules para o principal antes do experimento?
+   pela cópia (§8), que foi o Felipe; reaponte + desativação ficam para antes
+   do experimento, quando ele disser.
