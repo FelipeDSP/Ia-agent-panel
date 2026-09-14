@@ -97,7 +97,9 @@
     "sonda:c-subconta": "node --env-file=.env.local scripts/sonda-c-subconta.mjs",
     "sonda:d-criar": "node --env-file=.env.local scripts/sonda-d-desativar-x-remover.mjs --criar",
     "sonda:d-medir": "node --env-file=.env.local scripts/sonda-d-desativar-x-remover.mjs --medir",
-    "sonda:d-limpar": "node --env-file=.env.local scripts/sonda-d-desativar-x-remover.mjs --limpar"
+    "sonda:d-limpar": "node --env-file=.env.local scripts/sonda-d-desativar-x-remover.mjs --limpar",
+    "n8n:principal-sandbox": "node scripts/derivar-principal-sandbox.mjs",
+    "teste:principal-sandbox": "node tests/principal-sandbox.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

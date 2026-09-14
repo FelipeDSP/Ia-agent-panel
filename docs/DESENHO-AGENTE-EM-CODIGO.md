@@ -1,9 +1,9 @@
 # Desenho — o agente em código
 
 **Só desenho.** Nenhum código de runtime, nenhum serviço, nenhuma migração.
-Escrito em 14/09/2026 a partir do `agente-principal.json` do repo (64 nós, 6
-tools — a fusão), dos 8 sub-workflows e da conferência da instância do mesmo
-dia. Cada seção termina com uma **decisão** ou uma **pergunta para o Felipe**.
+Escrito em 14/09/2026 a partir do `agente-principal.json` do repo (62 nós, 6
+tools — a fusão; a instância tem 64, com `Fechar Pedido` e `Cancelar Pedido`
+ainda ligados), dos 8 sub-workflows e da conferência da instância do mesmo dia. Cada seção termina com uma **decisão** ou uma **pergunta para o Felipe**.
 
 ## 0. O que este desenho NÃO promete
 
@@ -201,9 +201,11 @@ conversa, compartilhado pelos dois sistemas, e é a fonte da verdade.
 | decisão | consequência |
 |---|---|
 | memória = últimas N mensagens da conversa em `mensagens_log` **a partir de um corte** (`conversas.memoria_cortada_em`) | "Limpar memória" (botão do painel) **marca o corte** em vez de apagar chave — nada some, o log segue auditável |
-| a semântica atual vira **parâmetro**: janela 20, e "silêncio de 40 min zera o contexto" reproduzido na paridade | hoje esquecer após 40 min é efeito colateral do nó, não escolha. Depois da paridade, vira decisão de produto |
-| a memória **sobrevive à migração** | conversa que troca de lado no meio mantém contexto, porque o n8n escreveu no mesmo log. Com Redis compartilhado ela dependeria do formato; com Redis separado se perderia |
+| **ISTO MUDA O COMPORTAMENTO, e é decisão, não efeito colateral.** A memória do Redis guarda a saída **bruta** do modelo; `mensagens_log` guarda o texto **depois do portão** — a substituta, quando barrou (o bruto só existe em `componentes_json.portao.bruto`, e só nesse caso; `aplica-portao.js:488`). Foi da memória bruta que saiu o achado de que **a memória envenenada agrava a modalidade C**: o recital fabricado volta ao contexto no turno seguinte | **Decisão: a memória é o texto pós-portão.** O contexto deixa de ser contaminado pela fabricação anterior. O bruto vai para o trace, nunca para a memória. E o teste de paridade da memória **diverge exatamente aí** — no turno em que o portão barrou, o n8n tem o bruto e o código tem a substituta — e essa divergência está **nomeada no teste como esperada**, para ninguém "consertar" lendo o bruto e reintroduzir o envenenamento |
+| **os 40 minutos já foram decididos**, em `5e717f4` (08/09): 264 intervalos medidos, 2 h dominado, e o desempate foi "memória expirada não perde o pedido — ele está em `pedidos` e `ver` o recupera". Posição do Felipe em 14/09, para a paridade: **esquecer é mais seguro que lembrar demais** | reproduzido como parâmetro explícito, `MEMORIA_SILENCIO_MIN = 40`, **deslizante por escrita** como o nó faz (`EXPIRE` a cada escrita, lido no `@langchain/redis`): a memória começa **depois do último intervalo maior que 40 min** entre mensagens consecutivas da conversa, e só então pega as últimas 20. Não é "nada nos últimos 40 min": a mensagem que acabou de chegar renovaria o prazo e traria tudo de volta — a regra tem de olhar o **intervalo**, não o instante |
+| a memória **sobrevive à migração** | conversa que troca de lado no meio mantém contexto, porque o n8n escreveu no mesmo log. Com Redis separado se perderia |
 | o que entra: pares humano/agente, como hoje | tool calls **não** entram na memória (o LangChain também não as guarda); ficam no trace |
+| **custo de tirar o Redis, medido** (14/09): `idx_log_conversa (tenant_id, conversation_id, criado_em)` já existe; a consulta da memória é `Index Scan Backward`, **4 buffers / 2,7 ms** na janela de 40 min e **10 buffers / 0,7 ms** no pior caso — a conv 20 do `emporio`, com 11.286 linhas (o laço de agosto). Tabela: 12.262 linhas, 11 MB | irrelevante no volume atual e continua irrelevante com o índice; se um dia a tabela for particionada por tempo, a memória precisa do prefixo `tenant_id, conversation_id` na partição também |
 
 Isto muda a linha "memória do LangChain no Redis" da §3: o formato do
 LangChain deixa de precisar ser reproduzido. O teste de paridade da memória
@@ -243,8 +245,13 @@ conflito: as chaves são dele, ninguém mais as lê.
 - **qual lado atende o tenant**: `tenants.agente_runtime` (`'n8n' | 'codigo'`)
   — o painel consulta para o "limpar memória" chamar o lado certo, e o alarme
   de agente mudo usa para saber quem vigiar. É a única coluna nova que a
-  transição pede em `tenants`, e nasce agência-only pela lista branca do
-  `tenants_guard_colunas`.
+  transição pede em `tenants`. **Guarda de agência, nascendo junto:** a lista
+  branca de `tenants_guard_colunas` é o que o `tenant_admin` **pode** editar
+  (`system_prompt, agente_ativo, debounce_segundos, msg_midia_nao_suportada,
+  msg_fora_escopo`); `modelo` e `temperatura` já estão fora, e
+  `agente_runtime` nasce fora — o teste da migração afirma que a coluna **não
+  está na lista** e que `tenant_admin` recebe `42501` ao tocá-la. Um cliente
+  não troca o próprio runtime.
 
 O que **não** muda: as 28 funções do banco, o portão, o filtro de injection,
 a pausa e a anomalia da 53 — já é código ou já é banco.
@@ -327,8 +334,30 @@ primeiro no índice — regras do CLAUDE.md), e os passos em `agente_passos`:
 Quem lê: **eu, pelo banco** (`select` por `turno_id`, sem sessão de navegador
 que expira); **o Felipe, pelo painel** — `/admin/turnos` (agência, todos os
 tenants) e, no painel do cliente, o turno por trás de cada mensagem em
-`/painel/conversas`. Retenção: 30 dias de passos, turnos para sempre (é
-auditoria de dinheiro quando há pedido).
+`/painel/conversas`.
+
+**Retenção, decidida antes da primeira linha** — porque o trace grava prompt
+montado e retorno de tool por turno, cresce rápido e contém dado de cliente,
+e `mensagens_log` já mostrou o que acontece sem política (11.286 linhas de um
+laço, ninguém sabendo o que pode apagar):
+
+| tabela | o que tem | fica | truncado na escrita |
+|---|---|---|---|
+| `agente_prompts` | o system message montado, **uma linha por hash** (versão do código × prompt do tenant × tools oferecidas) | para sempre — são dezenas de linhas, não milhares; é o que torna experimento atribuível | não |
+| `agente_turnos` | ids, caixa, `acao`, `prompt_hash`, modelo, `usage` real, veredito do portão, status, latências, `mensagens_log.id` da saída | **para sempre** — é auditoria de dinheiro quando há pedido, e é leve (uma linha, sem texto longo) | não |
+| `agente_passos` | cada chamada ao modelo (mensagens enviadas **por referência** ao hash + memória), cada tool (argumentos e retorno), o **texto bruto do modelo**, cada falha | **30 dias** | retorno de tool a **16 KB**; argumentos a 4 KB; o bruto do modelo **não** é truncado (é a evidência da fabricação) e o prompt não é repetido (vai pelo hash) |
+
+Quem limpa: **o próprio processo do agente**, varredura diária às 04:00
+(Brasília), `delete from agente_passos where criado_em < now() - interval
+'30 days'` por tenant, com o total removido gravado em `agente_turnos` de um
+turno sintético de manutenção — para a limpeza ser visível, não silenciosa.
+Sem `pg_cron`, sem infra nova: o agente já é um processo vivo. A anomalia da
+53 continua sendo o que contém laço; retenção não substitui isso — um laço de
+uma tarde ainda cabe em 30 dias e precisa ser pausado, não apagado.
+
+Dado de cliente: mesmo regime de `mensagens_log` — RLS por tenant, FK com
+`on delete cascade` para o tenant, e o texto do cliente já está lá; o trace
+não cria categoria nova de dado, cria volume.
 
 **Decisão:** a tabela do trace é a **primeira migração** da fatia 1, junto com
 a fila. O `mensagens_log` continua sendo escrito igual — é o que o painel de
@@ -411,17 +440,50 @@ pelo passo 0. E a cópia é um problema com prazo: **o experimento da fusão rod
 no `sendbox`, e o `sendbox` não está no principal.** Importar a fusão em
 `1fqJokfU8M2pXhzo` e rodar as 10 conversas no sandbox mediria a versão velha.
 
-**Decisão:** antes do experimento, o Hércules volta a apontar para o principal
-(`/agente-lavanderia-chatwoot-teste-teste`) e a cópia é **desativada** (não
-apagada, até a fusão ser medida). O passo 0 fica ativo e sem caixa, para o dia
-em que o pagamento precisar de uma pista muda. Para a migração, a "pista do
-sandbox" volta a existir no dia em que o serviço novo tiver o que responder —
-apontando o Hércules para ele, exatamente como a cópia provou que funciona.
-
 **Respondido (14/09): a cópia foi o Felipe**, em 10/09, para testar sem tocar
-no principal. Ninguém mais mexe na instância; a §7 fica como está. O
-reaponte do Hércules + desativação da cópia é ato combinado, não automático —
-o sandbox volta a ser atendido pelo principal no instante em que for feito.
+no principal. Ninguém mais mexe na instância; a §7 fica como está.
+
+**Decisão REVISTA (14/09, pelo Felipe): a cópia FICA, e é a pista do
+experimento.** A primeira versão desta seção mandava devolver o `sendbox` ao
+principal — resolvia medir a versão certa e criava problema maior: com o
+`sendbox` no principal, importar a fusão lá dentro poria `emporio` **e**
+`ceejaar` na versão fundida ao mesmo tempo, os dois com tráfego real. A cópia
+é o isolamento que já existe:
+
+1. importar a **tool fundida** por cima de `5rMg40Lagy3OaIo7`. É
+   retrocompatível: tem as 5 ações, o principal antigo chama 3, e `Fechar
+   Pedido`/`Cancelar Pedido` continuam como sub-workflows separados;
+2. importar o **principal fundido só na cópia** (`eIRQNUl6xO7TarBv`);
+3. `emporio` e `ceejaar` seguem no principal antigo, intocados. Sem reapontar
+   webhook, sem janela de risco.
+
+**As duas confirmações que o import exige, medidas:**
+
+- **o path.** O gerador **não seta** o path do webhook — é campo órfão do
+  `agente-principal.json` (a família de `PENDENCIA-GERADOR-CAMPO-ORFAO`).
+  Importar o JSON do repo por cima da cópia trocaria o path para
+  `/agente-lavanderia-chatwoot-teste-teste`, e o n8n **recusa ativar** dois
+  workflows no mesmo path: a cópia ficaria inativa e o `sendbox` mudo, sem
+  ninguém ver. **Decisão: o JSON já vem com o path** — uma variante
+  `agente-principal.sandbox.json`, **derivada** do principal por script
+  (`scripts/derivar-principal-sandbox.mjs`), diferindo só em `Webhook.path`
+  (`Hercules-teste`) e no `name` (sufixo ` — SANDBOX (copia)`, para o
+  `n8n:diff` parar de confundir as duas). Um teste afirma que a variante
+  difere do principal **exatamente** nesses dois campos e em nada mais; se o
+  principal mudar, a variante é regerada, não editada. Depois do import:
+  Save, **recarregar**, e `GET /rest/workflows/eIRQNUl6xO7TarBv` com
+  `active:true` e `path:Hercules-teste` — e uma mensagem no `sendbox` com a
+  execução na cópia;
+- **as credenciais.** A comparação de 14/09 normalizou os nós **com**
+  `credentials` e achou só duas diferenças (path e `Portao Transferiu?`):
+  Postgres `Agent ia Supabase`, Redis, OpenAI e WAHA são os mesmos do
+  principal — a cópia foi duplicada pela UI. O JSON do repo traz id **e nome**
+  das credenciais, e o import por cima preserva a resolução pelo id; ainda
+  assim, antes do Save, os quatro nós com credencial são conferidos na tela
+  — o `Consulta Pausa` ficou dez dias quebrado por uma credencial vazia.
+
+O passo 0 fica ativo e sem caixa. Para a migração, a pista do sandbox já é a
+cópia: no dia em que o serviço novo responder, o Hércules aponta para ele.
 
 ---
 
@@ -461,5 +523,5 @@ o sandbox volta a ser atendido pelo principal no instante em que for feito.
 3. ~~60 dias?~~ Sem prazo real; 60 dias vira ponto de revisão (§7).
 4. ~~O `ceejaar` é cliente real?~~ É, do dono do `emporio`, ciente do teste; migra antes do `emporio` (§8).
 5. ~~O passo 0 pode ser ativado agora?~~ Ativado. O roteamento está provado
-   pela cópia (§8), que foi o Felipe; reaponte + desativação ficam para antes
-   do experimento, quando ele disser.
+   pela cópia (§8), que foi o Felipe — e a cópia **fica**: é nela que a fusão
+   entra. Nada é reapontado.
