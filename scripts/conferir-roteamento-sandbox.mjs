@@ -20,8 +20,17 @@
  *
  *   PARTE B (uma execução só) — depois de você mandar UMA mensagem no sendbox,
  *     `mensagens_log` mostra a marca da duplicidade se ela existir: a MESMA
- *     mensagem gravada por execuções DIFERENTES. Dois workflows inscritos no
- *     mesmo par produzem exatamente isso.
+ *     mensagem gravada por execuções DIFERENTES, quase ao mesmo tempo. Dois
+ *     workflows inscritos no mesmo par produzem exatamente isso.
+ *
+ *     LIMITE, descoberto em 14/09/2026: a parte B só enxerga quem ESCREVE em
+ *     `mensagens_log`. O passo 0 não escreve por desenho — então, com a caixa
+ *     282 apontada para ele, a B diria "NADA A MEDIR" justamente quando o
+ *     roteamento funciona. Nesse arranjo a prova é a lista de execuções do
+ *     n8n (passo 0 com uma execução por mensagem do sendbox; o principal com
+ *     zero para ela). O que a B mede bem é o arranjo que existe hoje: uma
+ *     CÓPIA do principal (`eIRQNUl6xO7TarBv`, path /Hercules-teste) atendendo
+ *     a conta 57, e o principal atendendo a 59 — os dois escrevem no log.
  *
  * ---------------------------------------------------------------------------
  * SEM TRÁFEGO ELE FALHA, E ISSO É DE PROPÓSITO. Um verificador que devolve
@@ -122,15 +131,28 @@ try {
     falha(`NADA A MEDIR: nenhuma mensagem no sendbox nos últimos ${MINUTOS} min. `
       + 'Mande uma mensagem de cliente e rode de novo — passo 0 NÃO está provado.');
   } else {
-    // A MARCA DA DUPLICIDADE: mesma mensagem, execuções diferentes.
+    // A MARCA DA DUPLICIDADE: mesma mensagem, execuções diferentes — DENTRO DE
+    // 10 SEGUNDOS. A primeira versão agrupava só por conteúdo e acusou "oi"
+    // cinco vezes em 14/09: eram cinco mensagens do cliente, com minutos de
+    // distância, uma execução cada. Dois workflows no mesmo par processam a
+    // MESMA mensagem quase ao mesmo tempo; cliente repetindo "oi" não é isso.
+    // (`mensagens_log` não guarda o id da mensagem do Chatwoot; a janela curta
+    // é o que separa os dois casos sem coluna nova.)
     const dup = (await c.query(
-      `select conversation_id, direcao, left(coalesce(conteudo,''),60) trecho,
-              count(distinct execucao_id)::int execs, count(*)::int linhas
-         from public.mensagens_log
-        where tenant_id = $1
-          and criado_em > now() - make_interval(mins => $2)
-        group by 1,2,3
-       having count(distinct execucao_id) > 1`, [tid, MINUTOS])).rows;
+      `select a.conversation_id, a.direcao, left(coalesce(a.conteudo,''),60) trecho,
+              count(distinct b.execucao_id)::int + 1 as execs, count(*)::int + 1 as linhas
+         from public.mensagens_log a
+         join public.mensagens_log b
+           on b.tenant_id = a.tenant_id
+          and b.conversation_id = a.conversation_id
+          and b.direcao = a.direcao
+          and coalesce(b.conteudo,'') = coalesce(a.conteudo,'')
+          and b.execucao_id is distinct from a.execucao_id
+          and b.criado_em > a.criado_em
+          and b.criado_em <= a.criado_em + interval '10 seconds'
+        where a.tenant_id = $1
+          and a.criado_em > now() - make_interval(mins => $2)
+        group by 1,2,3`, [tid, MINUTOS])).rows;
 
     if (dup.length === 0) {
       okk('nenhuma mensagem foi gravada por mais de uma execução');

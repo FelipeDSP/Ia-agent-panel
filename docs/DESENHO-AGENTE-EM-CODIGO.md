@@ -59,9 +59,13 @@ existem:
   detector;
 - deploy do agente só por tag/commit explícito, não a cada push do painel.
 
-**Pergunta para o Felipe:** o painel hoje roda em Coolify (há `Dockerfile`),
-mas o `CLAUDE.md` diz Vercel. Onde está de fato, e o Coolify tem CPU/RAM para
-um segundo container com Node + cliente Redis?
+**Respondido (14/09): o painel roda no Coolify**, e a escolha entre um
+container e dois é nossa. **Decisão: dois projetos no Coolify**, mesmo repo,
+`Dockerfile` próprio para `agente/`. O motivo é o de cima — deploy do painel
+não pode reiniciar o agente no meio de um turno — e o segundo é operacional:
+o painel pode ficar fora do ar sem o atendimento parar, que é o que acontece
+hoje com o n8n em outra máquina. (O `CLAUDE.md` diz Vercel; está errado e
+sai na próxima passada.)
 
 ---
 
@@ -164,9 +168,11 @@ para agradar o nome é a migração que quebra o n8n no meio da transição.
 | `$execution.id` em `mensagens_log` | Registra Mensagem | vira `turno_id` (uuid) — coluna já é `text` |
 | `Estima Tokens` / `componentes_json` | pós-turno | tokens **reais** por chamada (`usage.prompt_tokens`/`completion_tokens`, somados). `componentes_json` continua sendo gravado com o rateio **estimado** (system, memória, tools, mensagem) porque é o que separa "quem usa mais ferramenta" — e ganha um campo `real_total` ao lado |
 
-**Pergunta para o Felipe:** com o total real da OpenAI, o rateio por
-componente continua importando para a cobrança por consumo, ou o número certo
-basta? Muda o que `/admin/consumo` mostra.
+**Respondido (14/09): o rateio por componente continua importando.**
+Decisão: `componentes_json` continua sendo gravado com o rateio estimado
+(system, memória, tools, mensagem) e ganha `real_total` ao lado; o total real
+é o que vai para a cobrança e o rateio é o que explica quem gasta com quê. A
+diferença entre os dois, por turno, vira o dado que a §5.8 registra.
 
 ---
 
@@ -269,9 +275,11 @@ Durante a transição o banco tem três consumidores: painel, n8n (`emporio`, e
 | quem decide | o Felipe decide o que é "defeito" × "feature"; eu proponho o lado no commit |
 | prazo | **60 dias** a partir do `sendbox` roteado. No dia 60, ou o `emporio` mudou de lado pelos oito critérios da §5, ou a migração é declarada **parada** e o n8n volta a receber feature. Transição sem prazo é dois sistemas para sempre |
 
-**Pergunta para o Felipe:** 60 dias é o número certo? É o tempo de uma
-migração por tenant a cada ~2 semanas com folga; menos que isso pula o
-critério 4 (7 dias de `sendbox`).
+**Respondido (14/09): não existe prazo real, mas quanto antes melhor.**
+Decisão: os 60 dias deixam de ser regra e viram **ponto de revisão** — no dia
+60 a partir do `sendbox` roteado, olha-se a lista da §5 e decide-se
+continuar ou parar. Sem prazo nenhum "quanto antes" não tem como ser medido;
+com um ponto de revisão, tem.
 
 ---
 
@@ -297,10 +305,47 @@ sem webhook apontado, e `mensagens_log` não tem linha do `sendbox` desde
 Nada disto começa pelo `emporio` — é o único tenant com cliente real
 **conhecido**.
 
-**Pergunta para o Felipe, e ela muda o passo 5:** o `ceejaar` (conta 60, caixa
-281) tem **262 mensagens nos últimos 7 dias** — mais que o `emporio` (64). É
-cliente real? Se for, "o `emporio` é o único com cliente real" está errado, o
-`ceejaar` é o último a migrar junto com ele, e o critério 5.2 (replay) o inclui.
+**Respondido (14/09): o `ceejaar` é cliente real, do mesmo dono do
+`emporio`, que sabe que é período de teste.** Decisão: o `ceejaar` entra no
+replay da §5.2 (é o maior volume) e é o passo 5 — migra **antes** do
+`emporio`, com aviso ao dono, porque é o único tenant real cujo dono já
+aceitou o risco. O `emporio` continua sendo o último.
+
+### O passo 0, medido em 14/09 — e o que ele revelou
+
+Ao ativar o `Pagamento Sandbox — Passo 0` (feito; `active:true` relido) e
+olhar como a caixa 282 está apontada, apareceu o que ninguém tinha registrado:
+
+- cada conta tem **bot próprio** no Chatwoot (Hércules/57, Ana Maria/59,
+  CLARA/60), cada um com a sua `outgoing_url` — então apontar um não toca nos
+  outros. É isso que faz "uma caixa de cada lado" funcionar;
+- o Hércules aponta para `/webhook/Hercules-teste`, que é uma **cópia ativa
+  do principal fora da pasta** (`eIRQNUl6xO7TarBv`, criada em 10/09 20:29,
+  idêntica ao principal exceto o path). O `sendbox` está sendo atendido por
+  ela desde então — a execução `4121049` (19:16 de 14/09) é dela; o principal
+  `1fqJokfU8M2pXhzo` só tem execuções do `emporio`/`ceejaar`; o passo 0 tem
+  **zero**, porque ninguém o apontou;
+- `npm run n8n:roteamento-sandbox 6000` verde depois de consertar um falso
+  positivo do próprio checker (agrupava por conteúdo; cinco "oi" com minutos
+  de distância viravam "duplicidade"). Duplicidade agora é mesmo conteúdo em
+  execuções diferentes **dentro de 10 s** — sabotado com janela de 10 dias,
+  acusa; restaurado, verde.
+
+**Então o mecanismo está provado** — por uma cópia que ninguém versionou, não
+pelo passo 0. E a cópia é um problema com prazo: **o experimento da fusão roda
+no `sendbox`, e o `sendbox` não está no principal.** Importar a fusão em
+`1fqJokfU8M2pXhzo` e rodar as 10 conversas no sandbox mediria a versão velha.
+
+**Decisão:** antes do experimento, o Hércules volta a apontar para o principal
+(`/agente-lavanderia-chatwoot-teste-teste`) e a cópia é **desativada** (não
+apagada, até a fusão ser medida). O passo 0 fica ativo e sem caixa, para o dia
+em que o pagamento precisar de uma pista muda. Para a migração, a "pista do
+sandbox" volta a existir no dia em que o serviço novo tiver o que responder —
+apontando o Hércules para ele, exatamente como a cópia provou que funciona.
+
+**Pergunta para o Felipe:** a cópia foi você, em 10/09, para testar sem tocar
+no principal? Se sim, posso desativá-la e reapontar o Hércules agora; se não,
+alguém mais mexe na instância e isso muda a §7.
 
 ---
 
@@ -335,8 +380,10 @@ cliente real? Se for, "o `emporio` é o único com cliente real" está errado, o
 
 ## 11. As perguntas, juntas
 
-1. Onde o painel roda hoje (Coolify × Vercel) e há espaço para o segundo container?
-2. Rateio por componente continua importando com o total real da OpenAI?
-3. 60 dias de transição é o prazo certo?
-4. O `ceejaar` é cliente real?
-5. O passo 0 pode ser ativado agora, para provar o roteamento antes de qualquer código?
+1. ~~Onde o painel roda?~~ Coolify; dois projetos (§1).
+2. ~~Rateio por componente?~~ Continua importando (§3).
+3. ~~60 dias?~~ Sem prazo real; 60 dias vira ponto de revisão (§7).
+4. ~~O `ceejaar` é cliente real?~~ É, do dono do `emporio`, ciente do teste; migra antes do `emporio` (§8).
+5. ~~O passo 0 pode ser ativado agora?~~ Ativado. O roteamento está provado
+   pela cópia (§8) — resta decidir a cópia: foi você? Posso desativá-la e
+   reapontar o Hércules para o principal antes do experimento?

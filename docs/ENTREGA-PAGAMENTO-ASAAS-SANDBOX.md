@@ -30,8 +30,8 @@ Medido no ato da aplicação:
 
 | # | artefato | estado |
 |---|---|---|
-| 0 | `n8n/workflows/pagamento-sandbox-passo0.json` + `n8n/passo0-identifica-origem.js` + `scripts/gerar-passo0.mjs` | **importado** (`dCBDl1MdSY7ZpVZl`, 10/09) e idêntico ao repo, mas **INATIVO** e sem o webhook do Chatwoot apontado — conferido na instância em 14/09 |
-| 0 | `scripts/conferir-roteamento-sandbox.mjs` (`npm run n8n:roteamento-sandbox`) | roda; hoje diz **PASSO 0 NÃO PROVADO** |
+| 0 | `n8n/workflows/pagamento-sandbox-passo0.json` + `n8n/passo0-identifica-origem.js` + `scripts/gerar-passo0.mjs` | **importado e ATIVO** (`dCBDl1MdSY7ZpVZl`, ativado 14/09), sem caixa apontada. O roteamento por caixa foi **provado em 14/09 por outro caminho**: uma cópia do principal atende a conta 57 e o principal atende a 59/60, sem duplicidade — ver `DESENHO-AGENTE-EM-CODIGO.md` §8 |
+| 0 | `scripts/conferir-roteamento-sandbox.mjs` (`npm run n8n:roteamento-sandbox`) | **verde em 14/09** (`6000` min), depois de consertar o falso positivo por conteúdo (duplicidade = mesmo conteúdo em execuções diferentes dentro de 10 s). Limite escrito no cabeçalho: a parte B só enxerga quem escreve em `mensagens_log`; com a caixa no passo 0 a prova é a lista de execuções do n8n |
 | 5 | `n8n/workflows/tool-gerar-link-pagamento.json` + `webhook-pagamento-asaas.json` | escritos em 11/09, **não importados** — só depois do experimento; §11 |
 | 1 | `supabase/migrations/20260910230000_61_pagamento_asaas_sandbox.sql` + rollback | **APLICADA** em 10/09; `teste:pagamento-asaas` 100/100 |
 | 2 | regra 3 do portão em `n8n/aplica-portao.js` | escrita; `teste:portao-pagamento` 43/43 |

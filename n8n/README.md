@@ -34,6 +34,14 @@ ele **muda** quando você reimporta (import cria workflow novo).
 | *(removido do repo em 11/09)* | Tool - Cancelar Pedido (Multi-Tenant) — idem | `rXF7LJmqNBZDUg4b` |
 | `pagamento-sandbox-passo0.json` | Pagamento Sandbox — Passo 0 (roteamento) — **importado em 10/09, INATIVO** (idêntico ao repo, conferido 14/09); o passo 0 continua não provado porque nunca foi ativado nem apontado no Chatwoot | `dCBDl1MdSY7ZpVZl` |
 | **(nao versionado)** | Limpar Memoria (Webhook do Painel) | `Dvzv1sjECm2q2aPC` |
+| **(nao versionado, FORA da pasta)** | Agente Multi-Tenant (Supabase) — **cópia ativa** do principal, path `/Hercules-teste`, criada 10/09; é o que atende a conta 57 (`sendbox`) via bot Hércules. Idêntica ao principal em 14/09; **vai divergir no próximo import** | `eIRQNUl6xO7TarBv` |
+| **(nao versionado, FORA da pasta)** | IA Agente lavanderia Oficial — o agente antigo da Acqua, ativo, path `/agente-lavanderia-chatwoot-teste` | `Z3z74OVO7d3nO71Z` |
+
+> **Como o Chatwoot chega ao n8n (conferido 14/09):** cada conta tem um Agent
+> Bot próprio com a sua `outgoing_url` em `https://webhook.chatyou.chat/webhook/<path>`
+> — Hércules (57) → `/Hercules-teste` (a cópia), Ana Maria (59) e CLARA (60) →
+> `/agente-lavanderia-chatwoot-teste-teste` (o principal). Rotear uma conta é
+> trocar a URL do bot dela; não toca nas outras.
 
 > Ao reimportar um sub-workflow, o ID muda e **o nó `toolWorkflow` do principal
 > aponta pro ID velho**. Atualize a referência no principal e a tabela acima.
