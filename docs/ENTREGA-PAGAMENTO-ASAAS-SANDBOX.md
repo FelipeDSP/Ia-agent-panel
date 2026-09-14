@@ -37,7 +37,10 @@ Medido no ato da aplicação:
 | 2 | regra 3 do portão em `n8n/aplica-portao.js` | escrita; `teste:portao-pagamento` 43/43 |
 | 3 | `tests/notificacao-nao-pausa.mjs` | 17/17 |
 | 4 | `scripts/sonda-asaas-expiracao.mjs` (`npm run sonda:asaas-expiracao`) | **RODOU** em 10/09 — resposta parcial, §6 |
-| 4 | `scripts/lib/asaas.mjs` + `tests/asaas-classificacao.mjs` | 29/29, sem rede |
+| 4 | `scripts/lib/asaas.mjs` + `tests/asaas-classificacao.mjs` | 73/73, sem rede |
+| 4 | sondas A/B (`sonda:a-criar`, `sonda:b-conferir`) | **RODARAM** 11/09 e 14/09 — `expirou_aceita`, §6.9 |
+| 4 | sonda D (`sonda:d-criar` / `d-medir` / `d-limpar`) — desativar x remover com cobrança REAL | **RODOU** em 14/09 — `cobranca_intacta` + `remocao_recusada`, §6.11 |
+| 6 | o encerramento ao fim da janela (`ENCERRAMENTO` em `tool-pagamento-fonte.mjs`, §12) | **desenhado, não implementado** — `PENDENCIA-ENCERRAMENTO-LINK.md` |
 
 **O passo 0 não pôde ser executado por mim**, e ele é a porta de tudo. Importar
 workflow e repontar o webhook do Chatwoot são atos na instância, e os dois estão
@@ -470,7 +473,7 @@ ter duas respostas diferentes conforme quem pergunta.
 |---|---|
 | **`fora_do_prazo` continua obrigatório** | e continua sendo o caminho normal, não a corrida rara. Sem desativação explícita, nada faz o link parar de valer ao fim da nossa janela — `endDate` é de dia |
 | **desativar ao fim da janela deixou de ser opcional** | agora se sabe que `active=false` **funciona**: a página recusa. Era a incógnita que travava a decisão. Vira trabalho próprio: quem dispara (preguiçoso, como a expiração de pedido, ou agendado), e o que responder a quem chegar depois |
-| **o que ainda falta** | rodar o `endDate`=hoje + `GET` amanhã, para saber se link expirado se comporta como desativado. Se sim, a desativação vira redundância barata; se não, ela é a única defesa |
+| **o que ainda faltava** | rodar o `endDate`=hoje + `GET` amanhã. **Rodado (§6.9): `expirou_aceita`** — link expirado NÃO se comporta como desativado; a desativação é a única defesa, e não basta sozinha (§6.11) |
 
 ### 6.7b A chave quase vazou, e quem pegou foi varredura
 
@@ -573,7 +576,56 @@ Três coisas que a B garante, e onde cada uma está provada:
 | **`expirou_recusa`** | o descompasso entre a nossa janela (minutos) e a do Asaas (fim do dia) é inofensivo: no pior caso o link vale até 23:59 do dia, e depois disso o Asaas mesmo o fecha. "Pagamento chegou para pedido expirado" volta a ser **caso raro** — a corrida de quem pagou no último minuto da nossa janela. Desativar ao fim da janela vira redundância barata |
 | **`expirou_aceita`** | **deixa de ser caso de borda.** Nada do lado do Asaas fecha o link, nunca. A diferença entre a nossa janela e a vida do link passa a ser de **horas ou dias, todo dia**, e "pagamento chegou para pedido expirado" vira **caminho central** — o `fora_do_prazo` da 61 passa a ser o que acontece com todo cliente que demora. Desativar ao fim da janela (`PUT active=false`, que a sonda de 10/09 provou funcionar) deixa de ser opcional e vira a única defesa |
 
-*(veredito da B: pendente — rodar em 12/09 depois das 00:00 de Brasília)*
+**B rodou em 14/09/2026, 08:26 local (12:26 UTC), três dias depois do
+`endDate` — veredito da B: **expirou_aceita**.**
+
+```
+######## 0. Autoteste ########
+    criar link de R$ 1,00  -> HTTP 400 -> falha_de_chamada   ✓ erro de valor não é expiração
+    GET id inexistente     -> HTTP 404 -> falha_de_chamada   ✓ 404 não é "expirou e removeu"
+
+######## 1. Que dia é no Asaas? ########
+    header Date (UTC): Mon, 14 Sep 2026 12:26:34 GMT
+    dia em Brasília:   2026-09-14   (endDate do link: 2026-09-11)
+
+######## 2. O link, pela API ########
+    GET /v3/paymentLinks/uc21d65el566a7nq -> HTTP 200
+    ->  expirou_aceita  (dia 2026-09-14 > endDate 2026-09-11, e a API AINDA diz active:true)
+    campos: active=true | deleted=false | endDate=2026-09-11 | diaAsaas=2026-09-14
+    campos que mudaram desde a criação: NENHUM
+
+--- remover o link -> HTTP 200
+```
+
+Os 16 campos do objeto foram comparados um a um com o que a A gravou em 11/09
+e **nenhum mudou**. Não há campo em que a expiração se manifeste: para a API,
+o link de três dias atrás é idêntico ao do dia em que nasceu.
+
+**A ressalva que vai junto, não separada:** a B mediu a **descrição** do link,
+não uma tentativa real de pagamento. `active: true` diz que o Asaas não o
+desligou; não prova que um pagamento seria aceito — não existe API para pagar
+um link, e a página é SPA (a lição da §6.4). A ressalva empurra para o lado
+conservador: se o Asaas aceitasse a página e recusasse o dinheiro, teríamos
+desativado à toa; se o contrário, teríamos um pedido morto pago. O desenho
+assume o pior dos dois, então **a ressalva não muda o desenho** — mas o
+veredito não se escreve sem ela.
+
+**O que muda de peso.** A linha `expirou_aceita` da tabela acima deixou de ser
+hipótese. Nossa janela é de minutos e o link fica de pé por dias; pagamento
+fora do prazo deixa de ser a corrida do último segundo e vira caminho central.
+Três consequências, e as três estão no desenho da §12:
+
+1. **desativar o link ao fim da janela deixa de ser opcional.** Se ninguém
+   desliga, ele fica pagável indefinidamente. Entra no caminho de expiração do
+   pedido;
+2. **o tratamento de dinheiro fora do prazo existe de verdade**, não como
+   exceção defensiva. O pedido não reabre sozinho: vira caso para humano, com o
+   pagamento retido e a divergência registrada (61 + nota privada, já escritos);
+3. **expiração curta fica mais atraente, não menos**: quanto antes desativamos,
+   menor a janela em que o link é pagável e o pedido já morreu.
+
+E "desativar" abriu a pergunta seguinte — desativar ou remover, e o que
+acontece com a cobrança que o cliente já gerou — que é a §6.11.
 
 ### 6.10 Sonda C — subconta no sandbox: **BLOQUEADA no cadastro da conta raiz**
 
@@ -645,6 +697,91 @@ raiz`). O quase-vazamento de ontem é o motivo.
 | a criação passa mas **sem `apiKey`** na resposta | não há como a subconta cobrar por API — a sonda para ali e diz isso |
 
 *(estado em 11/09: bloqueado em 1 — aguardando a conta raiz virar PJ)*
+
+### 6.11 Sonda D — desativar x remover: o que acontece com a COBRANÇA já gerada
+
+Com `expirou_aceita`, o caminho de expiração **precisa** desligar o link, e há
+duas mutações: `PUT active=false` e `DELETE`. A sonda B encerrou com um
+`DELETE` (HTTP 200) — mas o link dela não tinha cobrança nenhuma, e é a
+cobrança que importa: link e cobrança são objetos diferentes. O link é a
+página; a cobrança (`payment`) nasce quando o cliente preenche a página e
+escolhe Pix, e a partir daí tem `id`, `status`, `dueDate`, QR Code e fatura
+próprios, com `paymentLink` apontando para a origem. É exatamente o cliente
+que gerou o Pix no minuto 29 e foi pagar na hora 5.
+
+**A documentação foi lida antes de medir (14/09: remover, restaurar, atualizar,
+introdução) e responde metade:** remover "impede novos pagamentos por esse
+link" e "pode ser restaurado"; desativar é para "interromper temporariamente
+novos pagamentos". Sobre a cobrança já gerada, **nenhuma palavra**. O artigo
+da central de ajuda ("Como desabilitar e encerrar links") responde 403 ao
+fetch; o trecho indexado fala do botão Comprar ficar desabilitado, nada sobre
+cobrança. Então: medido.
+
+`npm run sonda:d-criar` cria o link; a cobrança foi gerada **pela página
+pública, no navegador**, com dados sintéticos (nome fictício, CPF
+`123.456.789-09`, `sonda-d@example.com`) até o QR Code aparecer;
+`npm run sonda:d-medir` mede; `npm run sonda:d-limpar` remove — e a ordem da
+limpeza é medição também. Rodada em 14/09/2026, 08:34–08:50 local:
+
+```
+######## 1. A cobrança gerada pelo link — existe? ########
+    GET /v3/payments?paymentLink=nty7sshjm68rd0nq -> 1 cobrança
+    pay_2lrx883a88py0uk1: status=PENDING deleted=false dueDate=2026-09-15 | pixQrCode HTTP 200 payload=true
+
+######## 2. DESATIVAR o link (PUT active=false) ########
+    PUT -> HTTP 200; relido: active=false            ✓ a mutação entrou
+    pay_2lrx883a88py0uk1: status=PENDING deleted=false | pixQrCode HTTP 200 payload=true
+      -> cobranca_intacta
+
+######## 3. REMOVER o link (DELETE) ########
+    DELETE -> HTTP 400 -> remocao_recusada
+      · Não é permitido remover links de pagamento com cobranças geradas.
+    GET do link depois -> active=false deleted=false
+    pay_2lrx883a88py0uk1 -> cobranca_intacta
+
+######## limpar ########
+    DELETE link COM cobrança viva          -> HTTP 400 (a mesma frase)
+    DELETE /v3/payments/pay_2lrx883a88py0uk1 -> HTTP 200; relida: HTTP 200 deleted=true status=PENDING
+    DELETE link SEM cobrança viva          -> HTTP 200; relido: deleted=true
+```
+
+E o que o **cliente** vê, aberto no navegador em cada estado:
+
+| estado | página do link (`/c/…`) | fatura da cobrança (`/i/…`) |
+|---|---|---|
+| link desativado, cobrança viva | "Seu fornecedor desabilitou esse link de pagamento" (10/09) | **"Aguardando Pagamento"**, QR Code Pix, código copia-e-cola **e Open Finance** — pagável |
+| cobrança removida | — | "Fatura cancelada — Esta fatura foi removida pelo seu fornecedor. Não é possivel realizar o pagamento" |
+| link removido (sem cobrança) | "Ops! Link de pagamento não encontrado" | — |
+
+**As três respostas que o enunciado pediu:**
+
+| pergunta | resposta, com rótulo |
+|---|---|
+| pagamento em link **desativado** | a página não gera cobrança nova, mas a cobrança **já gerada fica `cobranca_intacta`**: `PENDING`, QR Code servido, fatura oferecendo Pix e Open Finance. **Desativar o link não fecha o Pix que o cliente já tem na mão** |
+| pagamento em link **removido** | **`remocao_recusada`: não existe.** O Asaas não remove link com cobrança gerada (HTTP 400, frase acima — virou fixture e classe própria em `scripts/lib/asaas.mjs`). Remover só funciona em link sem cobrança, que é o caso que não importa |
+| remover apaga o histórico da cobrança? | **não.** `DELETE /v3/payments/{id}` é soft delete: o registro continua legível (`200`, `deleted:true`, `status` preservado), a fatura diz "removida pelo fornecedor", e a doc tem `POST /v3/payments/{id}/restore`. O link só se remove depois, e também é restaurável |
+
+**Então "desativar OU remover" era a pergunta errada.** O encerramento ao fim
+da janela são **dois passos**, sobre objetos diferentes: o link se **desativa**
+(única mutação que existe para link com cobrança) e a cobrança pendente se
+**remove** (soft, restaurável). Sem o segundo, quem gerou o Pix antes de a
+janela fechar paga depois — e é o `fora_do_prazo` acontecendo todo dia. O
+desenho está na §12.
+
+**Ressalva, a mesma da B:** tudo isto mede o que a API **diz** do objeto e o
+que a página **mostra**, não dinheiro se movendo — não há como pagar Pix de
+sandbox por API. "Intacta" é a API descrevendo a cobrança como existente, não
+removida, no mesmo status e com QR Code servido.
+
+**O que a primeira execução pegou na própria sonda:** ela tratou o 400 do
+`DELETE` como "a mutação não entrou" e parou. Era veredito, não falha — a
+frase real virou fixture, ganhou a classe `remocao_recusada` em
+`classificarRemocaoDeLink`, e `teste:asaas-classificacao` §3d afirma que ela
+**não** sai como `falha_de_chamada` (com a sabotagem 6b, que troca a frase por
+outra do mesmo comprimento e exige que o md5 mude e a classe caia). E a
+classificação da cobrança **recusa opinar** sem uma leitura ANTES com 2xx e
+`id` — um 404 só é "sumiu" porque o mesmo id leu 200 segundos antes, na mesma
+execução.
 
 ---
 
@@ -984,19 +1121,28 @@ no n8n. O que dá para fazer é configurar a retenção do workflow de pagamento
 para não salvar execuções bem-sucedidas (*Settings → Save successful
 executions: off*), e isso é passo do import, anotado na §11.6.
 
-### 11.5 Pendente da sonda B: a política de expiração
+### 11.5 A política de expiração: DECIDIDA em 14/09 — `expirou_aceita`
 
-`n8n/tool-pagamento-fonte.mjs` tem `POLITICA_EXPIRACAO = null`. O gerador do
-webhook lê daí e **não liga nenhum passo de desativação** enquanto for `null`; o
-teste afirma que o JSON do webhook não contém `active: false`.
+`n8n/tool-pagamento-fonte.mjs` tem `POLITICA_EXPIRACAO = 'expirou_aceita'`
+(§6.9), e `ENCERRAMENTO` é **derivado** dela por `encerramentoDaPolitica()` —
+não escrito ao lado. A política está em dois lugares (a fonte e o doc §6.9), e
+`teste:tool-pagamento` §3b reprova se os rótulos divergirem; foi verificado
+vermelho enquanto o doc ainda dizia "pendente".
 
-| se a B disser… | a política vira | e o que muda |
+| a B disse | a política é | e o que muda |
 |---|---|---|
-| `expirou_recusa` | `'expirou_recusa'` | descompasso inofensivo; fora do prazo é a corrida do último minuto; desativar ao fim da janela é redundância barata — pode ficar sem |
-| `expirou_aceita` | `'expirou_aceita'` | a diferença é de horas todo dia; **desativar o link (`PUT active=false`) ao fim da nossa janela deixa de ser opcional**, e vira passo próprio — quem dispara (preguiçoso ou agendado) é decisão a tomar |
+| ~~`expirou_recusa`~~ | — | não é o caso. Fica na tabela porque a sonda foi escrita para separar os dois, e provou que separa |
+| **`expirou_aceita`** | `'expirou_aceita'` | a diferença é de horas todo dia; o encerramento ao fim da janela é **obrigatório**, tem **dois passos** (§6.11) e é **agendado** (§12) |
 
-Nos dois: pedido expirado que recebe pagamento **não reabre sozinho** — já está
-na função da 61 e na nota privada do webhook.
+**O webhook não carrega o encerramento, seja qual for a política.** Ele é o
+caminho de confirmação; o encerramento é o caminho de expiração, workflow
+próprio. O teste afirma que o JSON do webhook não contém `active: false` nem
+toca `/paymentLinks` — regenerado com a política decidida, o md5 do arquivo não
+mudou.
+
+Pedido expirado que recebe pagamento **não reabre sozinho** — já está na função
+da 61 e na nota privada do webhook, e com `expirou_aceita` isso é o caminho
+normal, não a exceção.
 
 ### 11.6 Ordem de import — depois das 10 conversas
 
@@ -1014,3 +1160,79 @@ na função da 61 e na nota privada do webhook.
 7. contratar `pagamento` para o `estudyou-sendbox` e pôr a chave em
    `asaas_api_key_sandbox` — **a chave da raiz, enquanto a subconta estiver
    bloqueada (§6.10)**. A ferramenta não sabe a diferença: lê a chave do tenant.
+
+---
+
+## 12. O encerramento — desenho, NÃO implementado
+
+O que `expirou_aceita` + a sonda D obrigam, escrito antes de construir. Nada
+abaixo existe em banco nem em workflow; a pendência com gatilho é
+[`PENDENCIA-ENCERRAMENTO-LINK.md`](PENDENCIA-ENCERRAMENTO-LINK.md), e o
+descritor que o código já lê é `ENCERRAMENTO` em `n8n/tool-pagamento-fonte.mjs`.
+
+### 12.1 Dois passos, dois objetos
+
+| passo | chamada | fecha | não fecha |
+|---|---|---|---|
+| **desativar o link** | `PUT /v3/paymentLinks/{link_id}` `{active:false}` | a página, para quem ainda não gerou cobrança | o Pix de quem já gerou (§6.11: `cobranca_intacta`) |
+| **remover a cobrança pendente** | `GET /v3/payments?paymentLink={link_id}` → para cada `PENDING`: `DELETE /v3/payments/{id}` | o Pix na mão do cliente ("Não é possivel realizar o pagamento") | o registro — soft delete, `restore` existe |
+
+Remover o **link** não entra: o Asaas recusa com cobrança gerada, e sem
+cobrança não há o que fechar. A ordem é desativar primeiro (para não nascer
+cobrança nova entre os dois passos) e remover depois.
+
+### 12.2 Agendado, não preguiçoso
+
+A expiração de pedido hoje é preguiçosa: `expirar_pedidos_vencidos` só roda
+quando **a mesma conversa** age (`PENDENCIA-EXPIRACAO-PEDIDO.md`). Para o
+encerramento isso não serve, e o motivo é o próprio caso central: **o cliente
+que nunca volta é o que deixa o link pagável para sempre**. Então é varredura
+agendada — Schedule Trigger no n8n a cada `intervalo_minutos` (5, em
+`ENCERRAMENTO`), chamando uma função que devolve as cobranças com
+`expira_em < now()`, `url is not null`, `pago_em is null`, `falhou_em is null`
+e `encerrada_em is null`.
+
+O intervalo põe teto no excesso: o link fica pagável por no máximo
+`expira_em + intervalo`. É por isso que a consequência 3 da §6.9 vale —
+expiração curta e varredura frequente reduzem a janela em que "pagou pedido
+morto" pode acontecer.
+
+### 12.3 O que a migração seguinte precisa (não aplicada, não escrita)
+
+- `pedido_cobrancas.encerrada_em timestamptz` e `encerramento_detalhe text` —
+  quando o encerramento rodou e o que o Asaas respondeu. Sem a coluna, a
+  varredura reprocessa a mesma cobrança a cada 5 minutos;
+- `api_n8n_cobrancas_a_encerrar()` — **sem tenant**, porque a varredura é
+  global e o n8n roda como `n8n_agent`; devolve `(tenant_id, cobranca_id,
+  link_id, base_url, api_key)` por linha, com a chave do **tenant** de cada
+  cobrança (a mesma regra da ferramenta: nunca chave global);
+- `api_n8n_confirmar_encerramento(tenant_id, cobranca_id, ok, detalhe)` —
+  grava `encerrada_em` só quando os dois passos deram 2xx; falha fica em
+  `encerramento_detalhe` e a próxima varredura tenta de novo;
+- `revoke` + os **dois** `grant` (`service_role` e `n8n_agent`) em cada função,
+  e `teste:grants-n8n` as pega sozinho pelo prefixo.
+
+**Quem escreve em `pedidos` mexe no relógio da expiração de pedido** (defeito 1
+da pendência). O encerramento escreve em `pedido_cobrancas`, não em `pedidos`
+— de propósito. `expira_em` é a autoridade e não muda.
+
+### 12.4 O que o encerramento NÃO faz
+
+- **não marca o pedido `expirado`** — isso continua sendo da expiração de
+  pedido, com outro relógio (24 h). Um pedido pode estar com o link encerrado e
+  ainda `aguardando_pagamento`: o atendente pode receber por fora, como hoje;
+- **não reabre nada e não estorna nada** — se o dinheiro chegou na corrida
+  (entre `expira_em` e a varredura), o webhook grava `fora_do_prazo_em` e a
+  nota privada vai ao humano. É o caminho da 61, intacto;
+- **não gera link novo**. Se o cliente voltar e o pedido ainda estiver
+  `aguardando_pagamento`, `api_n8n_gerar_cobranca` não reaproveita a cobrança
+  encerrada (`expira_em > now()` já a exclui) e cria outra — com janela nova.
+
+### 12.5 A corrida, dita de frente
+
+Entre a janela fechar e a varredura remover a cobrança há até 5 minutos em que
+o Pix é pagável e o pedido já "morreu" para nós. E o `DELETE` de uma cobrança
+que acabou de ser paga presumivelmente é recusado pelo Asaas (não medido: não
+há como pagar no sandbox). Nos dois casos a resposta é a mesma e já existe:
+`fora_do_prazo`, retido, humano decide. O encerramento reduz a frequência; não
+a zera, e o desenho não finge que zera.

@@ -200,8 +200,24 @@ console.log('\n== 3b. O webhook extrai só o que o banco recebe ==\n');
     /message_type: 'outgoing', private: false/.test(no(WH, 'Notifica Cliente').parameters.body)
     && /api_n8n_credencial_chatwoot/.test(no(WH, 'Credencial Chatwoot').parameters.query));
   chk('a nota de fora do prazo é PRIVADA', /private: true/.test(no(WH, 'Nota Privada Fora do Prazo').parameters.body));
-  chk('POLITICA_EXPIRACAO ainda é null: nenhum passo de desativação foi ligado',
-    PAG.POLITICA_EXPIRACAO === null && !JSON.stringify(WH).includes('active": false'));
+  // A POLÍTICA, DECIDIDA — e escrita em DOIS lugares (a fonte e o doc §6.9).
+  // A guarda contra divergirem: o rótulo do doc tem de ser o da fonte, e o
+  // encerramento derivado dela tem de dizer que é obrigatório. Se alguém
+  // reescrever um lado, o outro acusa.
+  chk('POLITICA_EXPIRACAO está decidida (não é null) e é um rótulo válido',
+    ['expirou_recusa', 'expirou_aceita'].includes(PAG.POLITICA_EXPIRACAO), String(PAG.POLITICA_EXPIRACAO));
+  const doc = fs.readFileSync(path.join(RAIZ, 'docs', 'ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md'), 'utf8');
+  const noDoc = doc.match(/veredito da B: \*\*(\w+)\*\*/);
+  chk('o doc §6.9 escreve o MESMO rótulo que a fonte (`veredito da B: **<rótulo>**`)',
+    noDoc !== null && noDoc[1] === PAG.POLITICA_EXPIRACAO, `doc=${noDoc?.[1]} fonte=${PAG.POLITICA_EXPIRACAO}`);
+  chk('ENCERRAMENTO é derivado da política (mesma função, mesmo valor)',
+    JSON.stringify(PAG.encerramentoDaPolitica(PAG.POLITICA_EXPIRACAO)) === JSON.stringify(PAG.ENCERRAMENTO));
+  chk('com `expirou_aceita`, o encerramento é OBRIGATÓRIO: desativa o link E remove a cobrança pendente, agendado',
+    PAG.POLITICA_EXPIRACAO !== 'expirou_aceita'
+    || (PAG.ENCERRAMENTO.obrigatorio === true && PAG.ENCERRAMENTO.desativa_link === true
+        && PAG.ENCERRAMENTO.remove_cobrancas_pendentes === true && PAG.ENCERRAMENTO.disparo === 'agendado'));
+  chk('e o webhook NÃO carrega o encerramento, seja qual for a política (quem confirma não desliga)',
+    !JSON.stringify(WH).includes('active": false') && !/paymentLinks/.test(JSON.stringify(WH)));
 }
 
 // ===========================================================================

@@ -65,25 +65,123 @@ export const ENTRADAS = [
 export const DUE_DATE_LIMIT_DAYS = 1;
 
 /**
- * POLÍTICA DE EXPIRAÇÃO — PENDENTE DA SONDA B (roda em 12/09).
+ * POLÍTICA DE EXPIRAÇÃO — DECIDIDA PELA SONDA B EM 14/09/2026: `expirou_aceita`.
  *
- *   'expirou_recusa'  o Asaas fecha o link ao fim do dia do endDate: o
- *                     descompasso com a nossa janela (minutos) é inofensivo, e
- *                     pagamento fora do prazo é a corrida rara do último minuto.
- *                     Desativar ao fim da janela é redundância barata.
- *   'expirou_aceita'  o link fica válido além do endDate: a diferença é de
- *                     HORAS todo dia, e desativar o link (`PUT active=false`)
- *                     ao fim da nossa janela deixa de ser opcional.
+ * Medido três dias depois do `endDate` (link criado em 11/09 com endDate
+ * 2026-09-11; lido em 14/09, relógio do Asaas Mon, 14 Sep 2026 12:26:34 GMT):
  *
- * NOS DOIS CASOS: pedido expirado que recebe pagamento NÃO reabre sozinho — o
- * webhook grava `fora_do_prazo_em`, retém o `pagamento_id`, devolve
- * `precisa_humano` e a nota privada vai ao atendente. Isso já está na 61 e no
- * webhook; o que a política muda é se existe um passo ATIVO de desativação.
+ *   GET /v3/paymentLinks/uc21d65el566a7nq -> HTTP 200
+ *   active: true | deleted: false | endDate: 2026-09-11 | dia no Asaas: 2026-09-14
+ *   campos que mudaram desde a criação: NENHUM
  *
- * `null` enquanto a sonda B não responder. O gerador do webhook e o teste leem
- * daqui e reprovam se alguém tentar ligar a desativação sem a política decidida.
+ * O Asaas NÃO desliga o link no `endDate`. A ressalva vai junto e não separada:
+ * a sonda mediu a DESCRIÇÃO do link pela API, não uma tentativa de pagamento.
+ * `active:true` diz que o Asaas não o desligou; não prova que um pagamento
+ * seria aceito. A ressalva empurra para o lado conservador, então o desenho
+ * não muda — o que segue assume que o link continua pagável.
+ *
+ * O que isso muda de peso: a nossa janela é de MINUTOS e o link fica de pé por
+ * DIAS. Pagamento fora do prazo deixa de ser a corrida do último segundo e
+ * vira caminho central — é o que acontece com todo cliente que demora. Três
+ * consequências, e as três estão em `ENCERRAMENTO` abaixo:
+ *
+ *   1. DESATIVAR O LINK AO FIM DA JANELA DEIXA DE SER OPCIONAL. Se ninguém
+ *      desliga, ele fica pagável indefinidamente. Entra no caminho de expiração
+ *      do pedido.
+ *   2. O tratamento de dinheiro que chega fora do prazo existe de verdade, não
+ *      como exceção defensiva. O pedido NÃO reabre sozinho: vira caso para
+ *      humano, com o pagamento retido e a divergência registrada (61 + nota
+ *      privada do webhook — já estão escritos).
+ *   3. Expiração curta fica mais atraente, não menos: quanto antes desativamos,
+ *      menor a janela em que o link é pagável e o pedido já morreu.
+ *
+ * E A SONDA D (14/09) DECIDIU COMO SE DESLIGA — ver `ENCERRAMENTO`.
+ *
+ * Os dois valores, para quem ler isto sem o histórico:
+ *   'expirou_recusa'  o Asaas fecharia o link ao fim do dia do endDate — NÃO É
+ *                     O CASO. Ficou registrado porque a sonda foi escrita para
+ *                     separar os dois e provou que separa.
+ *   'expirou_aceita'  o link fica válido além do endDate. É o medido.
  */
-export const POLITICA_EXPIRACAO = null; // 'expirou_recusa' | 'expirou_aceita'
+export const POLITICA_EXPIRACAO = 'expirou_aceita'; // 'expirou_recusa' | 'expirou_aceita' | null
+
+/**
+ * O ENCERRAMENTO — o que o caminho de expiração faz com o link e com a
+ * cobrança quando `expira_em` passa. DERIVADO da política, não escrito ao lado
+ * dela: se alguém trocar `POLITICA_EXPIRACAO`, isto acompanha, e o teste
+ * (`teste:tool-pagamento` §3b) afirma que o doc §6.9 diz o mesmo rótulo.
+ *
+ * ---------------------------------------------------------------------------
+ * A SONDA D (14/09/2026) — desativar x remover, medido com uma cobrança REAL
+ * gerada pela página pública (`pay_2lrx883a88py0uk1`, link `nty7sshjm68rd0nq`):
+ *
+ *   DESATIVAR o link (PUT active=false)   a PÁGINA recusa (10/09), mas a
+ *                                         COBRANÇA já gerada fica INTACTA:
+ *                                         PENDING, deleted:false, QR Code Pix
+ *                                         servido, fatura oferecendo Pix e
+ *                                         Open Finance (visto no navegador)
+ *   REMOVER o link (DELETE) com cobrança  o Asaas RECUSA — HTTP 400, "Não é
+ *                                         permitido remover links de pagamento
+ *                                         com cobranças geradas." Só remove link
+ *                                         sem cobrança (a sonda B removeu o dela)
+ *   REMOVER a cobrança (DELETE /payments) registro CONTINUA legível (200,
+ *                                         deleted:true, status PENDING); a fatura
+ *                                         vira "Fatura cancelada — Esta fatura foi
+ *                                         removida pelo seu fornecedor. Não é
+ *                                         possivel realizar o pagamento";
+ *                                         restaurável (`POST /payments/{id}/restore`,
+ *                                         pela doc). Histórico NÃO some
+ *
+ * Então "desativar OU remover" era a pergunta errada: o link se DESATIVA (a
+ * única mutação que existe para link com cobrança) e a COBRANÇA pendente se
+ * REMOVE (soft delete, restaurável). Sem o segundo passo, o cliente que gerou
+ * o Pix no minuto 29 paga na hora 5 — e cai em `fora_do_prazo` todo dia.
+ *
+ * `disparo: 'agendado'`, e não preguiçoso como a expiração de pedido: o
+ * preguiçoso só roda quando a MESMA conversa age, e o cliente que nunca volta é
+ * exatamente o que deixa o link pagável para sempre. Uma varredura a cada
+ * `intervalo_minutos` põe teto no excesso: o link é pagável por, no máximo,
+ * `expira_em + intervalo`.
+ *
+ * RESSALVA, a mesma da sonda B: tudo isto mede o que a API DIZ do objeto, não
+ * dinheiro se movendo. Não há como pagar Pix de sandbox por API. O caminho
+ * `fora_do_prazo` da 61 continua obrigatório para a corrida (pagamento entre a
+ * janela fechar e o encerramento rodar) e para o encerramento falhar.
+ *
+ * NADA DISTO ESTÁ IMPLEMENTADO. É desenho: a migração (colunas + funções de
+ * varredura) e o workflow agendado são a próxima entrega, e a pendência com
+ * gatilho está em docs/PENDENCIA-ENCERRAMENTO-LINK.md.
+ */
+export function encerramentoDaPolitica(politica) {
+  if (politica === null) {
+    return { obrigatorio: null, motivo: 'política não decidida' };
+  }
+  if (politica === 'expirou_recusa') {
+    return {
+      obrigatorio: false,
+      motivo: 'o Asaas fecha o link ao fim do dia; desativar é redundância barata',
+      desativa_link: false, remove_cobrancas_pendentes: false, disparo: null, intervalo_minutos: null,
+    };
+  }
+  if (politica === 'expirou_aceita') {
+    return {
+      obrigatorio: true,
+      motivo: 'o Asaas nunca fecha o link; sem encerramento ele fica pagável indefinidamente',
+      // PUT active=false: fecha a PÁGINA para quem ainda não gerou cobrança.
+      desativa_link: true,
+      // DELETE /v3/payments/{id} em cada cobrança PENDING do link (soft delete,
+      // restaurável): fecha o Pix de quem já gerou. Remover o LINK não existe
+      // para link com cobrança (400, medido).
+      remove_cobrancas_pendentes: true,
+      // Varredura agendada, não preguiçosa — ver o comentário acima.
+      disparo: 'agendado',
+      intervalo_minutos: 5,
+    };
+  }
+  throw new Error(`POLITICA_EXPIRACAO invalida: ${politica}`);
+}
+
+export const ENCERRAMENTO = encerramentoDaPolitica(POLITICA_EXPIRACAO);
 
 /** Texto que o modelo lê para decidir SE chama. */
 export function descricaoFerramenta() {

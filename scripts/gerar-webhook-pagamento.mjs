@@ -39,10 +39,15 @@
  *
  * ---------------------------------------------------------------------------
  * FORA DO PRAZO: a função não reabre o pedido e devolve `precisa_humano`. O
- * webhook manda uma NOTA PRIVADA (o cliente não vê) com o que aconteceu. A
- * política de expiração (`POLITICA_EXPIRACAO` em tool-pagamento-fonte.mjs)
- * decide se existe um passo ATIVO de desativar o link — pendente da sonda B —
- * e este gerador NÃO liga nada disso enquanto ela for `null`.
+ * webhook manda uma NOTA PRIVADA (o cliente não vê) com o que aconteceu.
+ *
+ * A política de expiração (`POLITICA_EXPIRACAO` em tool-pagamento-fonte.mjs)
+ * é `expirou_aceita` desde 14/09/2026, e o ENCERRAMENTO que ela obriga
+ * (desativar o link + remover a cobrança pendente, agendado) NÃO mora aqui:
+ * este é o caminho de CONFIRMAÇÃO, e o encerramento é o caminho de EXPIRAÇÃO
+ * — workflow próprio, ainda não escrito (docs/PENDENCIA-ENCERRAMENTO-LINK.md).
+ * O teste afirma que este JSON não contém `active: false` seja qual for a
+ * política: quem confirma não desliga.
  *
  * Uso: node scripts/gerar-webhook-pagamento.mjs
  */
@@ -201,5 +206,5 @@ for (let i = 0; i < ordem.length - 1; i++) {
 const w = { name: 'Pagamento Asaas — Webhook (Sandbox)', nodes, pinData: {}, connections, active: false, settings: { executionOrder: 'v1' }, tags: [] };
 fs.writeFileSync(ARQ, JSON.stringify(w, null, 2) + '\n');
 console.log(`escrito: ${path.relative(RAIZ, ARQ)} (${nodes.length} nós, path /${PATH_WEBHOOK})`);
-console.log(`POLITICA_EXPIRACAO = ${POLITICA_EXPIRACAO ?? 'null (pendente da sonda B) — nenhum passo de desativacao ligado'}`);
+console.log(`POLITICA_EXPIRACAO = ${POLITICA_EXPIRACAO ?? 'null (pendente da sonda B)'} — o encerramento nao mora no webhook (caminho de expiracao, workflow proprio)`);
 console.log('IMPORTAR É PASSO HUMANO — e só depois das 10 conversas do experimento.');
