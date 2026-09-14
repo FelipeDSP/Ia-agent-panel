@@ -275,10 +275,29 @@ código novo ter o que igualar. Sem isso "paridade" é leitura.
 | memória: as N mensagens que entram no prompt | nenhum | dado um `mensagens_log` sintético (com corte e com silêncio de 40 min), o código monta a mesma lista que o n8n teria na chave Redis — comparável pelo log, sem Redis |
 | busca KB: consolidação e o piso de similaridade | `teste:recall` (custa OpenAI) | `busca-kb-consolida.js` com fixtures — hoje sem teste |
 
-**Decisão:** os seis sem teste (debounce, corrida, transcrição, mensagem
+**Decisão:** os sete sem teste (debounce, corrida, transcrição, mensagem
 pronta, foto-resposta, memória, consolida KB) são **pré-requisito da fatia 1**,
 escritos contra o JS atual. Nenhum módulo é migrado antes de o teste do
 comportamento atual existir.
+
+**Fatia 0 entregue em 14/09/2026** — os sete existem, todos com sabotagem por
+md5:
+
+| teste | cobre | o que fixou |
+|---|---|---|
+| `teste:transcricao` (20) | `Filtra Transcricao` e `Mensagem Pronta`, do corpo no JSON | `audio_segundos` é o **cobrado** (`usage.seconds`=2, não 1,78); injection falada bloqueia; `Mensagem Pronta` lê `Extrair e Filtrar` por nome e **lança** sem mensagem |
+| `teste:foto-e-kb` (19) | `Resposta ao Agente` e `Consolida Resultado` | o domínio de `motivo` vem do CHECK **no banco** (`pg_get_constraintdef`), não de lista copiada; `NENHUM_RESULTADO`; aviso de fonte com `vende` |
+| `teste:modelos` (32) | debounce e memória como **modelos executáveis** (`tests/lib/debounce-modelo.mjs`, `memoria-modelo.mjs`) | as condições vêm lidas do JSON (comprimento, `d2`, LPOP, `Limit 1`, TTL 2400, janela 20); 8 cenários do debounce inclusive a **corrida do README** (DEL entre RPUSH e GET) e a pausa que hoje vira erro vermelho (`divergencia_esperada`); memória n8n × código idênticas em 7 casos e **divergindo só na saída barrada** (nomeado); a armadilha do "agora − 40 min" provada |
+
+Dois limites escritos nos próprios modelos: a brecha de milissegundos entre
+o GET depois e o LPOP não é representável em instantes discretos (fica como
+limite, e é uma das razões da fila com lock); e `contextWindowLength = 20` é
+tratado como 20 **pares** (40 mensagens, o `slice(-k*2)` do
+BufferWindowMemory) — suposição a conferir na versão instalada, isolada em
+`JANELA_PARES`.
+
+Os cenários são a **interface** que o código novo implementa: `simular(cenario)`
+com a mesma saída, e os mesmos casos dizem onde diverge.
 
 ---
 
