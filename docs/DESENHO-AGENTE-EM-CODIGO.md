@@ -41,7 +41,7 @@ tools não tem teto curto.
 | onde | **Coolify, container separado do painel** (o repo já tem `Dockerfile` para o painel; o agente ganha o dele). Separado porque deploy do painel não pode reiniciar o agente no meio de um turno |
 | entrada | `POST /chatwoot/<inbox>` responde **200 em < 1 s** e só enfileira — é o que o n8n faz hoje (`responseMode` default) |
 | fila | **tabela no Postgres** (`agente_fila`, `for update skip locked`, `executar_em`), não memória do processo. Motivo na §3: o `Wait` do n8n é durável, e um `setTimeout` morre no restart |
-| Redis | continua — memória da conversa e acúmulo do debounce, **nas mesmas chaves** (§3) |
+| Redis | **não** — memória vem de `mensagens_log` e o debounce vem da fila (§3b). O Redis fica só com o n8n durante a transição |
 | segredos | env do container (Coolify), nunca em código nem em tabela. O `x-foto-secret` vira env do agente; o `Limpar Memoria` vira endpoint do agente e o `N8N_LIMPEZA_SECRET` do painel passa a valer contra env, não contra constante |
 
 **O que muda na operação, dito de frente.** Hoje o painel pode cair que o
@@ -108,7 +108,7 @@ Sessenta e quatro nós do principal, por módulo. **Negrito** = sem equivalente
 | nó | módulo | nota |
 |---|---|---|
 | Sync Conversa (`api_n8n_conversa_sync`) | `conversa/sync.ts` | **`alwaysOutputData`** |
-| Acumula Mensagem (RPUSH), Lista Antes (GET), **Wait Debounce**, Lista Depois (GET), Ultima Mensagem? (`antes == depois` **e** `depois.length > 0`), Acumulo Sumiu?, Acumulo Sumiu (corrida) (**stopAndError**), Separa Lidos, Remove Lidos do Acumulo (LPOP ×N), Volta a Um Item | `debounce/janela.ts` | a corrida custou três execuções para aparecer (README). O `Wait` é **durável** no n8n; o `Limit` impede N respostas |
+| Acumula Mensagem (RPUSH), Lista Antes (GET), **Wait Debounce**, Lista Depois (GET), Ultima Mensagem? (`antes == depois` **e** `depois.length > 0`), Acumulo Sumiu?, Acumulo Sumiu (corrida) (**stopAndError**), Separa Lidos, Remove Lidos do Acumulo (LPOP ×N), Volta a Um Item | `debounce/janela.ts` | os dez nós viram a fila + lock por conversa (§3b). A corrida custou três execuções para aparecer (README); o `Wait` é **durável** no n8n e a fila também |
 
 ### `perfil/` e `agente/`
 
@@ -116,7 +116,7 @@ Sessenta e quatro nós do principal, por módulo. **Negrito** = sem equivalente
 |---|---|---|
 | Tools Ativas (`api_n8n_tools_ativas`), Vende?, Perfil Nao Resolvido (**stopAndError**) | `perfil/resolver.ts` | básico × vendas |
 | **OpenAI Chat Model** | `agente/modelo.ts` | modelo e temperatura por tenant (`Resolve Tenant`) |
-| **Redis Chat Memory** (`tenant_<t>_memory_<conv>`, TTL 2400, janela 20) | `agente/memoria.ts` | formato do LangChain — §3 |
+| **Redis Chat Memory** (`tenant_<t>_memory_<conv>`, TTL 2400, janela 20) | `agente/memoria.ts` | derivada de `mensagens_log`, sem Redis — §3b |
 | **AI Agent Basico / AI Agent Vendas** | `agente/loop.ts` | o loop de tools do LangChain: **máximo de iterações, formato do resultado de tool, o que acontece quando o modelo devolve texto e tool ao mesmo tempo** — nada disso está escrito em lugar nenhum hoje |
 | Busca Conhecimento, Transferir para Humano, Resolver Conversa (3 tools do básico) + Consultar Catalogo, Gerenciar Pedido, Enviar Foto (só vendas) | `tools/*.ts` | `$fromAI` vira JSON Schema explícito; as `description` (7 de 8 órfãs hoje) viram **código versionado e testado** |
 
@@ -161,7 +161,7 @@ para agradar o nome é a migração que quebra o n8n no meio da transição.
 | `Wait` durável | Wait Debounce | a espera vive na fila do Postgres (`executar_em = now() + debounce`), não em `setTimeout`. Restart no meio do debounce **não perde** a mensagem — hoje o n8n retoma a execução |
 | item linking / `.first()` | 112 ocorrências | some: um turno é **um objeto**, sem itens |
 | `Limit maxItems=1` | Volta a Um Item | some pelo mesmo motivo — e o teto de **uma resposta por mensagem** vira asserção do trace (um `saida` por turno) |
-| memória do LangChain no Redis | Redis Chat Memory | **mesmo formato e mesma chave** (`tenant_<t>_memory_<conv>`, lista de `{type:'human'\|'ai', data:{content}}`, TTL 2400, janela 20). Motivo: o `Limpar Memoria` do painel apaga por padrão de chave, e uma conversa que troca de lado no meio (não planejado, mas possível) não pode perder o contexto. Vira teste: escrever pelo código, ler o que o LangChain leria |
+| memória do LangChain no Redis | Redis Chat Memory | **substituída** por memória derivada de `mensagens_log` com corte (§3b). O formato do LangChain deixa de precisar ser reproduzido; a semântica (janela 20, 40 min) vira parâmetro |
 | loop do AI Agent | AI Agent Basico/Vendas | escrever o que hoje é default do nó: **máximo de 10 iterações** (default do LangChain), tool + texto na mesma resposta → executa a tool e ignora o texto, resultado de tool volta como string. Cada decisão dessas muda comportamento e **nenhuma está medida** — é o maior risco de paridade |
 | `$fromAI` | 6 tools | JSON Schema por tool, `additionalProperties: false`; `tenant_id`/`conversation_id` **nunca** no schema (regra do README, mantida) |
 | tool não contratada | sub-workflow recusa com `tool_ativa=false` | o código **nem oferece** a tool ao modelo (lista vem de `api_n8n_tools_ativas`) — **e** a função de banco continua conferindo por dentro. Duas camadas, como hoje. Muda o que o modelo vê; por isso é **depois** do experimento da fusão |
@@ -173,6 +173,81 @@ Decisão: `componentes_json` continua sendo gravado com o rateio estimado
 (system, memória, tools, mensagem) e ganha `real_total` ao lado; o total real
 é o que vai para a cobrança e o rateio é o que explica quem gasta com quê. A
 diferença entre os dois, por turno, vira o dado que a §5.8 registra.
+
+---
+
+## 3b. Modelo, memória e debounce — o que NÃO é copiar do n8n
+
+Pergunta do Felipe em 14/09: "não dá pra dar ctrl-c ctrl-v do n8n para a
+aplicação". Não dá, e estas são as três peças em que copiar seria copiar a
+limitação.
+
+### Modelo: SDK da OpenAI direto, loop nosso
+
+| decisão | motivo |
+|---|---|
+| SDK oficial `openai`, **Responses API** | é a que a instância já usa (`responsesApiEnabled: true`) |
+| **sem LangChain, sem AI SDK** | o loop de tools do LangChain é o que hoje ninguém sabe descrever (§3: iterações, texto+tool, formato do retorno). Em código são ~50 linhas: mensagens + schemas → `tool_call`? executa, anexa, repete; teto explícito; `usage` real por chamada |
+| `modelo` e `temperatura` por tenant, do banco | como hoje; **não** muda durante a paridade |
+| interface `Modelo` de um arquivo | trocar provedor um dia é trocar um arquivo, sem abstração que esconda o loop |
+| system message montado de **partes versionadas** + `prompt_sistema` do tenant + a seção de cada tool **oferecida** | acaba o template gigante no gerador; o **hash do prompt montado** vai no trace, e experimento passa a ser atribuível a uma versão |
+
+### Memória: sai do Redis, vem de `mensagens_log`
+
+Hoje: lista no Redis no formato do LangChain, TTL 2400 s renovado a cada
+escrita, janela de 20. O banco **já tem** cada entrada e cada saída por
+conversa, compartilhado pelos dois sistemas, e é a fonte da verdade.
+
+| decisão | consequência |
+|---|---|
+| memória = últimas N mensagens da conversa em `mensagens_log` **a partir de um corte** (`conversas.memoria_cortada_em`) | "Limpar memória" (botão do painel) **marca o corte** em vez de apagar chave — nada some, o log segue auditável |
+| a semântica atual vira **parâmetro**: janela 20, e "silêncio de 40 min zera o contexto" reproduzido na paridade | hoje esquecer após 40 min é efeito colateral do nó, não escolha. Depois da paridade, vira decisão de produto |
+| a memória **sobrevive à migração** | conversa que troca de lado no meio mantém contexto, porque o n8n escreveu no mesmo log. Com Redis compartilhado ela dependeria do formato; com Redis separado se perderia |
+| o que entra: pares humano/agente, como hoje | tool calls **não** entram na memória (o LangChain também não as guarda); ficam no trace |
+
+Isto muda a linha "memória do LangChain no Redis" da §3: o formato do
+LangChain deixa de precisar ser reproduzido. O teste de paridade da memória
+passa a ser "as N últimas mensagens que o código monta são as que o n8n teria
+na lista" — comparável pelo log.
+
+### Debounce: também sai do Redis — a fila resolve
+
+O RPUSH/LPOP, o `Limit` e a corrida que custou três execuções existem porque
+o n8n não tem fila. Com a fila no Postgres (§1):
+
+1. cada mensagem entra em `agente_fila` com `executar_em = now() + debounce`;
+2. ao acordar, o worker trava a conversa (`pg_advisory_xact_lock(tenant,
+   conversa)`) e pega **todas** as mensagens ainda não respondidas dela;
+3. se existe mensagem **mais nova** que a sua já na fila, desiste — a mais
+   nova responde por todas. É o `Ultima Mensagem?` sem GET/GET/DEL;
+4. responde uma vez, marca todas como respondidas.
+
+Ganhos que o n8n nunca deu: **um turno por vez por conversa** (o lock), zero
+mensagem perdida em restart (a fila é durável), e a corrida deixa de ser
+possível por construção — o teste da §4 continua obrigatório, mas passa a
+provar ausência, não cuidado.
+
+**Decisão: o agente não usa Redis.** Um serviço a menos para instalar,
+monitorar e vazar. O n8n continua com o dele durante a transição, sem
+conflito: as chaves são dele, ninguém mais as lê.
+
+### O resto, em uma linha cada
+
+- **tools**: um módulo cada — schema (`zod` → JSON Schema, `additionalProperties:
+  false`), `description` versionada (7 de 8 são órfãs hoje), `executar()` que
+  chama a `api_n8n_*`, e o texto que volta ao modelo. `tenant_id` e
+  `conversation_id` vêm do turno, nunca do schema;
+- **transcrição e embeddings**: o mesmo SDK (Whisper com `verbose_json` pela
+  duração cobrada; `text-embedding-3-small`, 1536, fixo). Sai só o nó HTTP à mão;
+- **tokens**: reais por chamada + rateio estimado ao lado (respondido na §3);
+- **qual lado atende o tenant**: `tenants.agente_runtime` (`'n8n' | 'codigo'`)
+  — o painel consulta para o "limpar memória" chamar o lado certo, e o alarme
+  de agente mudo usa para saber quem vigiar. É a única coluna nova que a
+  transição pede em `tenants`, e nasce agência-only pela lista branca do
+  `tenants_guard_colunas`.
+
+O que **não** muda: as 28 funções do banco, o portão, o filtro de injection,
+a pausa e a anomalia da 53 — já é código ou já é banco.
 
 ---
 
@@ -190,7 +265,7 @@ código novo ter o que igualar. Sem isso "paridade" é leitura.
 | anomalia da 53 (loop bot-a-bot) | `teste:anti-loop` (função de banco) | só o ramo "notifica por WAHA e não responde" precisa de teste no código; a decisão continua no banco |
 | transcrição: bloqueio, áudio longo, falha, `verbose_json` | nenhum para `filtra-transcricao.js` e `mensagem-pronta.js` | fixtures da resposta da OpenAI (sucesso, vazio, injection na fala) |
 | foto via WAHA/Chatwoot | `teste:fotos` (isolamento) | resposta ao agente (`enviar-foto-resposta.js`) por caso: permitido, não permitido, falha de download |
-| memória: formato do LangChain | nenhum | escrever pelo código, ler com o cliente do LangChain (ou fixture do formato real lido do Redis de produção) |
+| memória: as N mensagens que entram no prompt | nenhum | dado um `mensagens_log` sintético (com corte e com silêncio de 40 min), o código monta a mesma lista que o n8n teria na chave Redis — comparável pelo log, sem Redis |
 | busca KB: consolidação e o piso de similaridade | `teste:recall` (custa OpenAI) | `busca-kb-consolida.js` com fixtures — hoje sem teste |
 
 **Decisão:** os seis sem teste (debounce, corrida, transcrição, mensagem
