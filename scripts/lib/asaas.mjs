@@ -333,3 +333,131 @@ export function classificarCobrancaDaSubconta(r) {
 function semAcentoLocal(s) {
   return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }
+
+/**
+ * A COBRANÇA (`payment`) gerada a partir de um link, lida ANTES e DEPOIS de
+ * uma mutação no LINK — desativar (`active=false`) ou remover (`DELETE`).
+ *
+ * ---------------------------------------------------------------------------
+ * A PERGUNTA QUE ISTO RESPONDE, E A QUE NÃO RESPONDE
+ *
+ * Link e cobrança são objetos diferentes no Asaas: o link é a PÁGINA; a
+ * cobrança nasce quando o cliente preenche a página e escolhe pagar (Pix, no
+ * nosso caso), e a partir daí tem `id`, `status`, `dueDate` e QR Code próprios,
+ * com `paymentLink` apontando para a origem. A documentação (lida em
+ * 14/09/2026: remover, restaurar, atualizar, introdução) diz que remover
+ * "impede novos pagamentos por esse link" e NÃO diz uma palavra sobre a
+ * cobrança já gerada. Esta função existe para a sonda D medir isso.
+ *
+ * O que ela responde: a cobrança continua EXISTINDO e continua se
+ * DESCREVENDO como pagável (2xx, não removida, mesmo `status`, QR Code Pix
+ * ainda servido) depois da mutação no link.
+ *
+ * O que ela NÃO responde: se o dinheiro se move. Não há como pagar um Pix de
+ * sandbox por API. "Intacta" é o que a API do Asaas diz da cobrança, não um
+ * pagamento observado — a mesma ressalva da sonda B.
+ *
+ * ---------------------------------------------------------------------------
+ * AS CLASSES, E O QUE SEPARA UMA DA OUTRA
+ *
+ *   `cobranca_intacta`     2xx, `deleted:false`, `status` igual ao de antes, e
+ *                          o QR Code Pix continua vindo (se vinha antes)
+ *   `cobranca_removida`    2xx com `deleted:true` — o Asaas a marcou removida
+ *                          junto com o link
+ *   `cobranca_sumiu`       o MESMO id que leu 2xx antes agora lê 404 — o
+ *                          registro deixou de ser alcançável (é o caso que
+ *                          importa para "remover apaga histórico?")
+ *   `cobranca_mudou`       2xx, não removida, mas `status` mudou ou o QR Code
+ *                          Pix parou de vir — virou outra coisa
+ *   `falha_de_chamada`     a leitura DEPOIS falhou por outro motivo (401, 400,
+ *                          5xx) — não diz nada sobre a cobrança
+ *
+ * 404 aqui é `cobranca_sumiu` e não `falha_de_chamada` de propósito, e a
+ * diferença para `classificarLinkDepoisDoPrazo` é o ARRANJO: lá o 404 podia
+ * ser id errado; aqui o mesmo id foi lido com 2xx segundos antes, na mesma
+ * execução — `antes` é exigido e tem de ter sido 2xx, senão a função devolve
+ * `indeterminado` em vez de opinar.
+ *
+ * @param {{
+ *   antes:  {status:number, json:any},
+ *   depois: {status:number, json:any},
+ *   pixAntes?:  {status:number, json:any}|null,
+ *   pixDepois?: {status:number, json:any}|null,
+ * }} p
+ */
+export function classificarCobrancaAposMutacaoDoLink({ antes, depois, pixAntes = null, pixDepois = null }) {
+  const ok2xx = (r) => r && r.status >= 200 && r.status < 300;
+  const temPix = (r) => ok2xx(r) && typeof r.json?.payload === 'string' && r.json.payload.length > 0;
+
+  if (!ok2xx(antes) || !antes.json?.id) {
+    return { classe: 'indeterminado', motivo: 'a leitura ANTES não foi 2xx com id — não há base de comparação', campos: {} };
+  }
+  const campos = {
+    id: antes.json.id,
+    status_antes: antes.json.status ?? null,
+    status_depois: ok2xx(depois) ? (depois.json?.status ?? null) : null,
+    deleted_antes: antes.json.deleted ?? null,
+    deleted_depois: ok2xx(depois) ? (depois.json?.deleted ?? null) : null,
+    http_depois: depois?.status ?? null,
+    pix_antes: pixAntes ? temPix(pixAntes) : null,
+    pix_depois: pixDepois ? temPix(pixDepois) : null,
+  };
+
+  if (depois?.status === 404) {
+    return { classe: 'cobranca_sumiu', motivo: `o id ${campos.id} leu 2xx antes e 404 depois`, campos };
+  }
+  if (!ok2xx(depois)) {
+    const api = classificarRespostaApi(depois ?? { status: 0, json: null });
+    return { classe: 'falha_de_chamada', motivo: `${api.classe}: ${api.motivo}`, campos };
+  }
+  if (depois.json?.deleted === true) {
+    return { classe: 'cobranca_removida', motivo: 'a API passou a dizer deleted:true', campos };
+  }
+  if (campos.status_antes !== campos.status_depois) {
+    return { classe: 'cobranca_mudou', motivo: `status ${campos.status_antes} -> ${campos.status_depois}`, campos };
+  }
+  if (pixAntes && pixDepois && campos.pix_antes === true && campos.pix_depois !== true) {
+    return { classe: 'cobranca_mudou', motivo: 'o QR Code Pix vinha antes e parou de vir', campos };
+  }
+  return {
+    classe: 'cobranca_intacta',
+    motivo: `2xx, deleted:false, status ${campos.status_depois}`
+      + (pixDepois ? (campos.pix_depois ? ', QR Code Pix ainda servido' : ', sem QR Code (também não vinha antes)') : ''),
+    campos,
+  };
+}
+
+/**
+ * A frase REAL do 400 que o sandbox devolveu em 14/09/2026 ao `DELETE` de um
+ * link com cobrança gerada. Fixture, não invenção — e é o achado que decide a
+ * pergunta "desativar ou remover": para o caso que importa (o cliente já gerou
+ * o Pix), REMOVER O LINK NÃO EXISTE.
+ */
+export const RECUSA_REMOVER_LINK_COM_COBRANCA =
+  'Não é permitido remover links de pagamento com cobranças geradas.';
+
+/**
+ * O `DELETE /v3/paymentLinks/{id}`, classificado.
+ *
+ *   `removeu`             2xx com `deleted:true`
+ *   `remocao_recusada`    400 cuja mensagem é a regra acima — o link tem
+ *                         cobrança gerada. É VEREDITO sobre o Asaas, não falha
+ *                         da chamada, e a primeira versão da sonda D parou
+ *                         aqui achando que "a mutação não entrou"
+ *   `falha_de_chamada`    qualquer outra recusa (401, 404, 400 por outro motivo)
+ *   `indeterminado`       2xx sem `deleted:true`
+ *
+ * @param {{status:number, json:any}} r
+ */
+export function classificarRemocaoDeLink(r) {
+  const api = classificarRespostaApi(r);
+  if (api.classe === 'ok') {
+    return r.json?.deleted === true
+      ? { classe: 'removeu', motivo: api.motivo, erros: api.erros }
+      : { classe: 'indeterminado', motivo: '2xx sem deleted:true', erros: api.erros };
+  }
+  if (r.status === 400 && api.erros.some((e) => semAcentoLocal(e).includes('cobrancas geradas'))) {
+    return { classe: 'remocao_recusada', motivo: 'o Asaas não remove link com cobrança gerada', erros: api.erros };
+  }
+  return { classe: 'falha_de_chamada', motivo: `${api.classe}: ${api.motivo}`, erros: api.erros };
+}

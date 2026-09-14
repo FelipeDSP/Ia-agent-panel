@@ -23,11 +23,14 @@
  * Uso: npm run teste:asaas-classificacao
  */
 import {
+  classificarCobrancaAposMutacaoDoLink,
   classificarCobrancaDaSubconta,
   classificarLinkDepoisDoPrazo,
   classificarPaginaPublica,
+  classificarRemocaoDeLink,
   classificarRespostaApi,
   redigir,
+  RECUSA_REMOVER_LINK_COM_COBRANCA,
   RECUSA_SUBCONTA_PF,
   VALIDACOES_CONHECIDAS,
 } from '../scripts/lib/asaas.mjs';
@@ -237,6 +240,57 @@ console.log('\n== 3c. Cobrar com a chave da SUBCONTA — pendência de cadastro 
 }
 
 // ---------------------------------------------------------------------------
+console.log('\n== 3d. Desativar x remover — a COBRANÇA já gerada, e a recusa de remover ==\n');
+// ---------------------------------------------------------------------------
+// A sonda D (14/09/2026) mede o que acontece com a cobrança que o cliente já
+// gerou pela página quando o LINK é desativado ou removido. Duas coisas que a
+// primeira execução ensinou e que este bloco fixa:
+//
+//   1. o Asaas RECUSA remover link com cobrança gerada — a frase real é a
+//      fixture. A primeira versão da sonda tratou o 400 como "a mutação não
+//      entrou" e parou; é veredito, e tem classe própria;
+//   2. um 404 na releitura da cobrança só é "sumiu" porque o MESMO id leu 2xx
+//      segundos antes — sem a leitura ANTES válida, a função recusa opinar.
+{
+  const recusaReal = { status: 400, json: { errors: [{ code: 'invalid_action', description: RECUSA_REMOVER_LINK_COM_COBRANCA }] } };
+  const r = classificarRemocaoDeLink(recusaReal);
+  chk('o 400 REAL de remover link com cobrança -> remocao_recusada', r.classe === 'remocao_recusada', r.classe);
+  chk('  ...e NÃO falha_de_chamada (é regra do Asaas, não erro da chamada)', r.classe !== 'falha_de_chamada');
+  chk('  ...e a frase chega inteira', r.erros.length === 1 && /cobranças geradas/.test(r.erros[0]));
+  chk('o 400 de VALOR no DELETE -> falha_de_chamada, NÃO remocao_recusada',
+    classificarRemocaoDeLink(QUATROCENTOS_REAL).classe === 'falha_de_chamada');
+  chk('404 -> falha_de_chamada', classificarRemocaoDeLink({ status: 404, json: {} }).classe === 'falha_de_chamada');
+  chk('ESPELHO: 200 com deleted:true -> removeu (a sonda B, link sem cobrança)',
+    classificarRemocaoDeLink({ status: 200, json: { id: 'x', deleted: true } }).classe === 'removeu');
+  chk('200 SEM deleted:true -> indeterminado, não "removeu"',
+    classificarRemocaoDeLink({ status: 200, json: { id: 'x' } }).classe === 'indeterminado');
+
+  // A cobrança, antes e depois — os objetos reais têm mais campos; estes são os
+  // que a função lê.
+  const pend = (extra) => ({ status: 200, json: { id: 'pay_1', status: 'PENDING', deleted: false, ...extra } });
+  const pix = { status: 200, json: { payload: '00020101021226820014br.gov.bcb.pix...' } };
+  const semPix = { status: 404, json: {} };
+
+  const intacta = classificarCobrancaAposMutacaoDoLink({ antes: pend(), depois: pend(), pixAntes: pix, pixDepois: pix });
+  chk('mesma cobrança, mesmo status, Pix ainda servido -> cobranca_intacta (o medido em 14/09)',
+    intacta.classe === 'cobranca_intacta', intacta.classe);
+  const removida = classificarCobrancaAposMutacaoDoLink({ antes: pend(), depois: pend({ deleted: true }) });
+  chk('deleted:true depois -> cobranca_removida', removida.classe === 'cobranca_removida', removida.classe);
+  const sumiu = classificarCobrancaAposMutacaoDoLink({ antes: pend(), depois: { status: 404, json: {} } });
+  chk('2xx antes e 404 depois, mesmo id -> cobranca_sumiu', sumiu.classe === 'cobranca_sumiu', sumiu.classe);
+  const mudou = classificarCobrancaAposMutacaoDoLink({ antes: pend(), depois: pend({ status: 'REFUNDED' }) });
+  chk('status mudou -> cobranca_mudou', mudou.classe === 'cobranca_mudou', mudou.classe);
+  const pixSumiu = classificarCobrancaAposMutacaoDoLink({ antes: pend(), depois: pend(), pixAntes: pix, pixDepois: semPix });
+  chk('mesmo status mas o QR Code parou de vir -> cobranca_mudou, NÃO intacta', pixSumiu.classe === 'cobranca_mudou', pixSumiu.classe);
+  const falhou = classificarCobrancaAposMutacaoDoLink({ antes: pend(), depois: { status: 401, json: {} } });
+  chk('401 depois -> falha_de_chamada (não diz nada sobre a cobrança)', falhou.classe === 'falha_de_chamada', falhou.classe);
+  // A GUARDA CONTRA O VÁCUO: sem leitura ANTES válida, nada é "intacta".
+  const vacua = classificarCobrancaAposMutacaoDoLink({ antes: { status: 404, json: {} }, depois: pend() });
+  chk('sem leitura ANTES válida -> indeterminado (não há base de comparação)', vacua.classe === 'indeterminado', vacua.classe);
+  chk('  ...nem com antes 2xx sem id', classificarCobrancaAposMutacaoDoLink({ antes: { status: 200, json: {} }, depois: pend() }).classe === 'indeterminado');
+}
+
+// ---------------------------------------------------------------------------
 console.log('\n== 4. A chave nunca sai impressa ==\n');
 // ---------------------------------------------------------------------------
 // O `x-foto-secret` deste projeto vazou três vezes por estar onde alguém
@@ -368,6 +422,46 @@ console.log('\n== 6. SABOTAGEM: o classificador virando otimista ==\n');
 
     chk('SABOTAGEM -> o erro de VALOR passaria por "link indisponível"',
       classeSabotada === 'link_indisponivel', String(classeSabotada));
+  }
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n== 6b. SABOTAGEM: a recusa de remover virando "falha de chamada" ==\n');
+// ---------------------------------------------------------------------------
+// Se a classe `remocao_recusada` deixar de existir, a sonda D volta a tratar
+// a regra do Asaas como erro dela mesma — que é o que a primeira execução fez.
+{
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const crypto = await import('node:crypto');
+  const { fileURLToPath } = await import('node:url');
+  const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const ARQ = path.join(RAIZ, 'scripts', 'lib', 'asaas.mjs');
+  const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
+
+  const original = fs.readFileSync(ARQ, 'utf8');
+  const alvo = "semAcentoLocal(e).includes('cobrancas geradas')";
+  const n = original.split(alvo).length - 1;
+  if (n !== 1) {
+    falhas++;
+    console.log(`  FALHA a sabotagem casa ${n}x, esperava 1 — o alvo mudou de forma`);
+  } else {
+    // Mesmo comprimento de propósito: o que prova a mutação é o md5.
+    const mutado = original.split(alvo).join("semAcentoLocal(e).includes('cobrancas GERADAX')");
+    fs.writeFileSync(ARQ, mutado);
+    const relido = fs.readFileSync(ARQ, 'utf8');
+    chk('a sabotagem ENTROU no arquivo', relido !== original, `md5 ${md5(original)} -> ${md5(relido)}`);
+    let classeSabotada = null;
+    try {
+      const url = new URL('../scripts/lib/asaas.mjs', import.meta.url);
+      url.searchParams.set('v', String(Date.now()));
+      const mod = await import(url.href);
+      classeSabotada = mod.classificarRemocaoDeLink({ status: 400, json: { errors: [{ code: 'invalid_action', description: RECUSA_REMOVER_LINK_COM_COBRANCA }] } }).classe;
+    } finally {
+      fs.writeFileSync(ARQ, original);
+      chk('o arquivo foi restaurado byte a byte', fs.readFileSync(ARQ, 'utf8') === original);
+    }
+    chk('SABOTAGEM -> a recusa real cairia em `falha_de_chamada`', classeSabotada === 'falha_de_chamada', String(classeSabotada));
   }
 }
 
