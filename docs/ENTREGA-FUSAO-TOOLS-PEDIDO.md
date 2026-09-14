@@ -293,6 +293,7 @@ experimento):
 select m.conversation_id,
        count(*) filter (where m.direcao = 'saida')                                   as saidas,
        count(*) filter (where m.direcao = 'saida' and m.portao->>'veredito' <> 'passou') as barradas,
+       count(*) filter (where m.direcao = 'saida' and m.portao->>'veredito' is null)     as sem_veredito,
        string_agg(m.portao->>'veredito', ',' order by m.criado_em)
          filter (where m.direcao = 'saida' and m.portao->>'veredito' <> 'passou')   as vereditos
   from public.mensagens_log m
@@ -300,16 +301,16 @@ select m.conversation_id,
  where t.slug = 'estudyou-sendbox'
    and m.criado_em between :inicio and :fim
  group by 1 order by 1;
--- limpa = barradas = 0 (e nenhuma `fechar` sem confirmação, conferida em `chamadas`)
+-- limpa = barradas = 0 E sem_veredito = 0 (e nenhuma `fechar` sem confirmação, em `chamadas`)
 ```
 
 Pré-condição, **medida em 14/09**: a cópia que atende o `sendbox`
 (`eIRQNUl6xO7TarBv`) roda o portão — as quatro saídas dela desde 10/09,
 inclusive a execução `4121049` de 14/09, têm `portao` com `veredito`. Sem
-isso a coluna viria nula e "zero barradas" seria vácuo; a query acima trata
-`veredito` nulo como **não limpa** por construção (`<> 'passou'` é falso
-para nulo — então some a saída de `saidas` sem contar em `barradas`; confira
-que `saidas` bate com o número de turnos do roteiro antes de ler `barradas`).
+isso a coluna viria nula e "zero barradas" seria vácuo — `<> 'passou'` é
+falso para nulo, então uma saída sem veredito **não** entra em `barradas`. É
+por isso que `sem_veredito` existe e tem de ser zero: é a contraprova de que
+o portão rodou em toda saída contada.
 
 > **DUAS RESSALVAS, COM DESTAQUE:**
 >
