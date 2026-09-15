@@ -273,6 +273,25 @@ as $function$
 $function$;
 
 -- ---------------------------------------------------------------------
+-- 5.1b api_agente_par_chatwoot — o par (conta, caixa) do tenant
+-- ---------------------------------------------------------------------
+-- O worker tem so o tenant_id da linha da fila, e a resolucao de tenant que
+-- existe (`api_n8n_tenant_por_chatwoot`) e pelo PAR. Esta devolve o par, e o
+-- worker resolve pela mesma funcao do receptor — uma resolucao so.
+drop function if exists public.api_agente_par_chatwoot(uuid);
+create or replace function public.api_agente_par_chatwoot(p_tenant_id uuid)
+returns table(chatwoot_account_id bigint, chatwoot_inbox_id bigint)
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select t.chatwoot_account_id::bigint, t.chatwoot_inbox_id::bigint
+    from public.tenants t
+   where t.id = p_tenant_id and t.deletado_em is null;
+$function$;
+
+-- ---------------------------------------------------------------------
 -- 5.2 api_agente_enfileirar
 -- ---------------------------------------------------------------------
 drop function if exists public.api_agente_enfileirar(uuid, bigint, jsonb, integer);
@@ -376,11 +395,14 @@ begin
     raise exception 'api_agente: fila % nao esta reivindicada por %', p_fila_id, p_worker using errcode = '55P03';
   end if;
 
-  -- 'desistir': ha mensagem MAIS NOVA (chegou depois: seq maior) pendente —
-  -- ela responde por todas.
+  -- 'desistir': ha mensagem MAIS NOVA (chegou depois: seq maior) que vai
+  -- responder por todas — pendente, ou ja reivindicada por ESTE worker no
+  -- mesmo lote (ela e a proxima do laco, e vai varrer esta de volta).
   if exists (select 1 from public.agente_fila f
               where f.tenant_id = p_tenant_id and f.conversation_id = p_conversation_id
-                and f.estado = 'pendente' and f.seq > v_minha.seq) then
+                and f.seq > v_minha.seq
+                and (f.estado = 'pendente'
+                     or (f.estado = 'processando' and f.reivindicada_por = p_worker))) then
     update public.agente_fila f
        set estado = 'pendente', reivindicada_por = null, reivindicada_em = null
      where f.id = p_fila_id;
@@ -388,7 +410,7 @@ begin
     return;
   end if;
 
-  -- 'adiar': outro turno desta conversa em andamento, com lease viva.
+  -- 'adiar': turno desta conversa em andamento em OUTRO worker, com lease viva.
   if exists (select 1 from public.agente_fila f
               where f.tenant_id = p_tenant_id and f.conversation_id = p_conversation_id
                 and f.estado = 'processando' and f.id <> p_fila_id
@@ -440,6 +462,34 @@ begin
          erro = left(coalesce(p_erro, ''), 2000)
    where f.tenant_id = p_tenant_id and f.id = any(coalesce(p_fila_ids, array[]::uuid[]))
      and f.estado = 'processando';
+  get diagnostics v_n = row_count;
+  return v_n;
+end;
+$function$;
+
+-- ---------------------------------------------------------------------
+-- 5.5b api_agente_descartar_pendentes — humano assumiu: o DEL do acumulo
+-- ---------------------------------------------------------------------
+-- No n8n, `Limpa Redis Debounce` apaga o acumulo quando um humano assume, e
+-- a execucao pendente morre em "Acumulo Sumiu (corrida)". Aqui as pendentes
+-- da conversa viram `descartada`, em silencio, com o motivo — e nada vira
+-- erro. E a divergencia esperada do modelo do debounce.
+drop function if exists public.api_agente_descartar_pendentes(uuid, bigint, text);
+create or replace function public.api_agente_descartar_pendentes(
+  p_tenant_id uuid, p_conversation_id bigint, p_motivo text)
+returns integer
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_n integer;
+begin
+  perform public.n8n_assert_tenant(p_tenant_id);
+  update public.agente_fila f
+     set estado = 'descartada', erro = left(coalesce(p_motivo, 'descartada'), 200)
+   where f.tenant_id = p_tenant_id and f.conversation_id = p_conversation_id
+     and f.estado = 'pendente';
   get diagnostics v_n = row_count;
   return v_n;
 end;
@@ -656,6 +706,35 @@ begin
 end;
 $function$;
 
+-- O botao "Limpar memoria" do painel, no contrato do webhook do n8n: escopo
+-- 'conversa' (lista de ids) ou 'todas' (nulo = todas as conversas do tenant).
+-- Devolve quantas conversas ganharam corte. Nada e apagado.
+drop function if exists public.api_agente_memoria_cortar_tenant(uuid, bigint[]);
+create or replace function public.api_agente_memoria_cortar_tenant(p_tenant_id uuid, p_conversation_ids bigint[] default null)
+returns integer
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  v_n integer := 0;
+  v_id bigint;
+begin
+  perform public.n8n_assert_tenant(p_tenant_id);
+  if p_conversation_ids is null then
+    update public.conversas c set memoria_cortada_em = now()
+     where c.tenant_id = p_tenant_id;
+    get diagnostics v_n = row_count;
+    return v_n;
+  end if;
+  foreach v_id in array p_conversation_ids loop
+    perform public.api_agente_memoria_cortar(p_tenant_id, v_id);
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end;
+$function$;
+
 -- ---------------------------------------------------------------------
 -- 5.8 api_agente_varrer_passos — a retencao (global; o agente chama 1x/dia)
 -- ---------------------------------------------------------------------
@@ -676,6 +755,31 @@ begin
 end;
 $function$;
 
+-- ---------------------------------------------------------------------
+-- 5.9 api_agente_mudos — o alarme de agente mudo (global)
+-- ---------------------------------------------------------------------
+-- Tenant em 'codigo' com mensagem na fila ha mais de N minutos e ainda nao
+-- concluida (pendente ou processando). Cobre worker morto, turno travado e
+-- fila parada. NAO cobre webhook que nao chegou — disso nao ha sinal nenhum
+-- do nosso lado, e o desenho diz isso (§1).
+drop function if exists public.api_agente_mudos(integer);
+create or replace function public.api_agente_mudos(p_minutos integer default 10)
+returns table(tenant_id uuid, slug text, ultima_entrada timestamptz, minutos_mudo numeric)
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select t.id, t.slug, min(f.criado_em),
+         round(extract(epoch from (now() - min(f.criado_em))) / 60, 1)
+    from public.tenants t
+    join public.agente_fila f on f.tenant_id = t.id
+   where t.deletado_em is null and t.agente_runtime = 'codigo'
+     and f.estado in ('pendente', 'processando')
+     and f.criado_em < now() - make_interval(mins => greatest(coalesce(p_minutos, 10), 1))
+   group by t.id, t.slug;
+$function$;
+
 -- =====================================================================
 -- 6. GRANTS — revoke ANTES do grant, os DOIS roles, pela lista de tipos
 -- =====================================================================
@@ -684,17 +788,21 @@ declare f text;
 begin
   foreach f in array array[
     'public.api_agente_runtime(uuid)',
+    'public.api_agente_par_chatwoot(uuid)',
     'public.api_agente_enfileirar(uuid, bigint, jsonb, integer)',
     'public.api_agente_reivindicar(text, integer, integer)',
     'public.api_agente_turno_da_conversa(uuid, bigint, uuid, text, integer)',
     'public.api_agente_concluir(uuid, uuid[], text, uuid, text)',
+    'public.api_agente_descartar_pendentes(uuid, bigint, text)',
     'public.api_agente_prompt_registrar(uuid, text, text, text)',
     'public.api_agente_turno_abrir(uuid, bigint, uuid, text, text, text, text)',
     'public.api_agente_passo(uuid, uuid, integer, text, text, jsonb, jsonb, text, integer)',
     'public.api_agente_turno_fechar(uuid, uuid, text, integer, integer, integer, integer, text, uuid, text)',
     'public.api_agente_memoria(uuid, bigint, integer, integer)',
     'public.api_agente_memoria_cortar(uuid, bigint)',
+    'public.api_agente_memoria_cortar_tenant(uuid, bigint[])',
     'public.api_agente_varrer_passos(integer)',
+    'public.api_agente_mudos(integer)',
     'public.agente_texto_entrada(text)'
   ] loop
     execute format('revoke all on function %s from public', f);

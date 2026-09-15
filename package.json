@@ -103,7 +103,10 @@
     "teste:transcricao": "node tests/transcricao-e-mensagem-pronta.mjs",
     "teste:foto-e-kb": "node --env-file=.env.local tests/foto-resposta-e-kb-consolida.mjs",
     "teste:modelos": "node tests/modelos-debounce-e-memoria.mjs",
-    "teste:migracao-agente": "node --env-file=.env.local tests/migracao-agente-fatia1.mjs"
+    "teste:migracao-agente": "node --env-file=.env.local tests/migracao-agente-fatia1.mjs",
+    "teste:agente-fatia1": "node --env-file=.env.local tests/agente-fatia1.mjs",
+    "teste:agente-tipos": "node tests/agente-tipos.mjs",
+    "agente:start": "npm --prefix agente start"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

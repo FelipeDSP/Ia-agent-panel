@@ -72,9 +72,9 @@ const aclFn = async (nome) => (await um(
   `select coalesce(string_agg(coalesce(p.proacl::text,'(NULO)'), ' | ' order by p.oid), '(AUSENTE)') acl
      from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname=$1`, [nome])).acl;
 
-const FUNCOES = ['api_agente_runtime', 'api_agente_enfileirar', 'api_agente_reivindicar', 'api_agente_turno_da_conversa',
-  'api_agente_concluir', 'api_agente_prompt_registrar', 'api_agente_turno_abrir', 'api_agente_passo',
-  'api_agente_turno_fechar', 'api_agente_memoria', 'api_agente_memoria_cortar', 'api_agente_varrer_passos', 'agente_texto_entrada'];
+const FUNCOES = ['api_agente_runtime', 'api_agente_par_chatwoot', 'api_agente_enfileirar', 'api_agente_reivindicar', 'api_agente_turno_da_conversa',
+  'api_agente_concluir', 'api_agente_descartar_pendentes', 'api_agente_prompt_registrar', 'api_agente_turno_abrir', 'api_agente_passo',
+  'api_agente_turno_fechar', 'api_agente_memoria', 'api_agente_memoria_cortar', 'api_agente_memoria_cortar_tenant', 'api_agente_varrer_passos', 'api_agente_mudos', 'agente_texto_entrada'];
 const TABELAS = ['agente_fila', 'agente_prompts', 'agente_turnos', 'agente_passos'];
 
 try {
@@ -198,8 +198,15 @@ try {
   await c.query(`update public.agente_fila set executar_em = now() - interval '1 second' where id = $1`, [m3]);
   lote = await reiv('w1');
   chk('agora as duas vencem e são reivindicadas', lote.length === 2);
+  // m3 (mais nova) foi reivindicada no MESMO lote por w1: m2 desiste — a mais
+  // nova responde por todas. ADIAR é só quando o outro turno é de OUTRO worker:
+  await c.query(`update public.agente_fila set reivindicada_por = 'w-outro' where id = $1`, [m3]);
   const r2b = await turno(T.a, 2, m2, 'w1');
-  chk('m2 de novo: ADIAR (m3 está processando com lease viva)', r2b.decisao === 'adiar', r2b.decisao);
+  chk('m2 com m3 processando em OUTRO worker: ADIAR', r2b.decisao === 'adiar', r2b.decisao);
+  await c.query(`update public.agente_fila set reivindicada_por = 'w1', estado = 'processando', reivindicada_em = now() where id = $1`, [m3]);
+  await c.query(`update public.agente_fila set estado = 'processando', reivindicada_por = 'w1', reivindicada_em = now() where id = $1`, [m2]);
+  const r2c = await turno(T.a, 2, m2, 'w1');
+  chk('m2 com m3 reivindicada pelo MESMO worker: DESISTIR (a mais nova varre)', r2c.decisao === 'desistir', r2c.decisao);
   const r3 = await turno(T.a, 2, m3, 'w1');
   chk('RESPONDER pela mais nova, com as DUAS mensagens em ordem de chegada',
     r3.decisao === 'responder' && r3.fila_ids.length === 2 && r3.mensagens.map((m) => m.texto).join('|') === 'quero um bolo|de cenoura', JSON.stringify(r3));
@@ -211,6 +218,14 @@ try {
     lote.length === 2 && lote.every((x) => x.reivindicada_por === 'w2' && x.tentativas === 1));
   chk('concluir só mexe em linhas processando do próprio tenant (B tentando as de A: 0)',
     (await um(`select public.api_agente_concluir($1,$2,'concluida') n`, [T.b, r3.fila_ids])).n === 0);
+
+  // HUMANO ASSUMIU: as pendentes da conversa viram descartadas, em silêncio.
+  const m5 = await enf(T.a, 3, 'oi', 8); const m6 = await enf(T.a, 3, 'tem?', 8);
+  const mB3 = await enf(T.b, 3, 'oi do B', 8);
+  chk('descartar_pendentes: as duas de A na conversa 3 viram descartada com o motivo; a de B fica',
+    (await um(`select public.api_agente_descartar_pendentes($1, 3, 'humano_assumiu') n`, [T.a])).n === 2
+    && (await tudo(`select estado, erro from public.agente_fila where id = any($1)`, [[m5, m6]])).every((x) => x.estado === 'descartada' && x.erro === 'humano_assumiu')
+    && (await um(`select estado from public.agente_fila where id=$1`, [mB3])).estado === 'pendente');
 
   // =========================================================================
   console.log('\n== 5. O trace ==\n');
@@ -284,6 +299,20 @@ try {
   await c.query(`update public.conversas set memoria_cortada_em = now() - interval '5 minutes' where tenant_id=$1 and conversation_id=14`, [T.a]);
   const f6 = await daFuncao(T.a, 14);
   chk('corte há 5 min: função == modelo, só o turno de 4 min atrás', igual(f6, doModelo(log6, agora - min(5))) && f6.length === 2 && f6[0].texto === 'quero x', JSON.stringify(f6));
+  // o botão do painel: escopo 'todas' corta todas as conversas do tenant; B intacto.
+  // Em savepoint, porque o corte mudaria os casos seguintes (é o que ele faz).
+  {
+    await c.query('savepoint sp_cortar');
+    await c.query(`select public.api_n8n_conversa_sync($1, 9, 'x', null)`, [T.a]);
+    await c.query(`select public.api_n8n_conversa_sync($1, 10, 'x', null)`, [T.a]);
+    await c.query(`select public.api_n8n_conversa_sync($1, 9, 'y', null)`, [T.b]);
+    chk('memoria_cortar_tenant(todas) corta as 3 conversas de A e a de B fica sem corte',
+      Number((await um(`select public.api_agente_memoria_cortar_tenant($1, null) n`, [T.a])).n) === 3
+      && (await um(`select count(*)::int n from public.conversas where tenant_id=$1 and memoria_cortada_em is not null`, [T.b])).n === 0);
+    chk('  ...e com o corte, a memória da conversa 10 fica VAZIA', (await daFuncao(T.a, 10)).length === 0);
+    chk('memoria_cortar_tenant([9,10]) devolve 2', Number((await um(`select public.api_agente_memoria_cortar_tenant($1, $2::bigint[]) n`, [T.a, [9, 10]])).n) === 2);
+    await c.query('rollback to savepoint sp_cortar');
+  }
   // caso 7: entrada em literal de array (o log do n8n de hoje)
   await logar(T.a, 15, 'entrada', '{oi,"quero 2 bolos"}', min(2));
   await logar(T.a, 15, 'saida', 'Anotei 2 bolos', min(2));
@@ -302,6 +331,21 @@ try {
     (await um(`select public.api_agente_varrer_passos(30) n`)).n === 1
     && (await um(`select count(*)::int n from public.agente_passos where turno_id=$1`, [turnoId])).n === 1);
 
+  // ALARME DE AGENTE MUDO: só tenant em 'codigo', só fila parada há mais de N min.
+  {
+    await c.query('savepoint sp_mudo');
+    await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
+    await c.query(`update public.tenants set agente_runtime = 'codigo' where id = $1`, [T.c]);
+    const mC = await enf(T.c, 7, 'oi', 0);
+    chk('mudos(10): fila recém-criada NÃO acusa', (await tudo(`select * from public.api_agente_mudos(10)`)).length === 0);
+    await c.query(`update public.agente_fila set criado_em = now() - interval '11 minutes' where id = $1`, [mC]);
+    const mudos = await tudo(`select * from public.api_agente_mudos(10)`);
+    chk('mudos(10): fila pendente há 11 min em tenant \'codigo\' ACUSA, com os minutos', mudos.length === 1 && mudos[0].tenant_id === T.c && Number(mudos[0].minutos_mudo) >= 11, JSON.stringify(mudos));
+    await c.query(`update public.tenants set agente_runtime = 'n8n' where id = $1`, [T.c]);
+    chk('  ...e o mesmo tenant em \'n8n\' NÃO acusa (a fila dele não é nossa)', (await tudo(`select * from public.api_agente_mudos(10)`)).length === 0);
+    await c.query('rollback to savepoint sp_mudo');
+  }
+
   // =========================================================================
   console.log('\n== 8. Rollback aborta com tenant em código ou turno gravado ==\n');
   // =========================================================================
@@ -317,11 +361,11 @@ try {
   console.log('\n== 9. SABOTAGEM (na própria migração, em savepoint) ==\n');
   // =========================================================================
   {
-    const alvo = "and f.estado = 'pendente' and f.seq > v_minha.seq) then";
-    const n = M62.split(alvo).length - 1;
+    const alvo = /^(\s+and f\.seq > v_minha\.seq)$/m;
+    const n = (M62.match(new RegExp(alvo.source, 'gm')) ?? []).length;
     if (n !== 1) chk('S1 localizou o alvo', false, `${n}x`);
     else {
-      const mut = M62.split(alvo).join("and f.estado = 'pendente' and f.seq > v_minha.seq and false) then");
+      const mut = M62.replace(alvo, '$1 and false');
       console.log(`     [mutou "desistir nunca": md5 ${md5(M62)} -> ${md5(mut)}]`);
       await c.query('savepoint sp_s1');
       await c.query(semTx(mut));

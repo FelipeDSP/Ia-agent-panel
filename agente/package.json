@@ -1,0 +1,20 @@
+{
+  "name": "agente",
+  "version": "0.1.0",
+  "private": true,
+  "description": "O agente de IA em código — fatia 1: receptor do Chatwoot, fila, pausa, trace, resposta fixa. Ver docs/DESENHO-AGENTE-EM-CODIGO.md.",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.0",
+    "typescript": "^5.7.0"
+  }
+}

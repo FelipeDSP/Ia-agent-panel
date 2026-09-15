@@ -15,7 +15,36 @@ Toda a documentação vive em `docs/` (veja `docs/README.md` para o índice).
 - `@supabase/ssr` para integração com App Router
 - Tailwind + shadcn/ui
 - OpenAI `text-embedding-3-small` (1536 dimensões, fixo)
-- Deploy na Vercel
+- Deploy no **Coolify**, em dois projetos: o painel (`Dockerfile` da raiz) e o
+  agente em código (`agente/Dockerfile`, contexto = raiz). Não é Vercel.
+
+## O agente em código (`agente/`) — e o n8n congelado
+
+Desde 15/09/2026 o agente está sendo migrado do n8n para `agente/` (desenho em
+`docs/DESENHO-AGENTE-EM-CODIGO.md`; roteiro em `agente/README.md`). Regras que
+valem durante a transição:
+
+- **o n8n não recebe mais nada**: nem import, nem conserto, nem experimento.
+  Decisão do Felipe em 15/09 — o que está lá fica como está até o último
+  tenant migrar. `n8n/workflows/*.json` e `n8n/*.js` continuam versionados
+  porque descrevem o comportamento que o código precisa igualar (e dois deles,
+  `extrair-e-filtrar.js` e `filtro-texto.js`, são executados pelo próprio
+  serviço enquanto os dois lados coexistem);
+- **quem atende cada tenant é `tenants.agente_runtime`** (`n8n` | `codigo`,
+  migração 62, agência-only). O serviço descarta com 200 qualquer webhook de
+  tenant que não esteja em `codigo` — é o que impede resposta dupla enquanto
+  um bot é apontado. Mudar de lado é trocar a `outgoing_url` do Agent Bot da
+  conta no Chatwoot e a coluna; voltar é o inverso, e a memória (que vem de
+  `mensagens_log`) sobrevive;
+- **o serviço conecta como `n8n_agent`** e só fala com o banco por
+  `api_n8n_*` e `api_agente_*` (`teste:grants-n8n` varre as duas). Nunca a URL
+  de `postgres` — `config.ts` recusa;
+- **sem Redis no agente**: memória de `mensagens_log` com corte, debounce pela
+  fila `agente_fila` com lock por conversa. Os modelos executáveis em
+  `tests/lib/debounce-modelo.mjs` e `memoria-modelo.mjs` são a especificação;
+- os comportamentos que mudam de propósito estão nomeados nos testes como
+  `divergencia_esperada` (memória pós-portão em vez do bruto; pausa dentro do
+  debounce vira descarte em vez de erro). Não "conserte" nenhum deles.
 
 ## Contexto crítico
 

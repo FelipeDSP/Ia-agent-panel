@@ -45,7 +45,9 @@ begin
   end if;
 end $$;
 
+drop function if exists public.api_agente_mudos(integer);
 drop function if exists public.api_agente_varrer_passos(integer);
+drop function if exists public.api_agente_memoria_cortar_tenant(uuid, bigint[]);
 drop function if exists public.api_agente_memoria_cortar(uuid, bigint);
 drop function if exists public.api_agente_memoria(uuid, bigint, integer, integer);
 drop function if exists public.agente_texto_entrada(text);
@@ -53,10 +55,12 @@ drop function if exists public.api_agente_turno_fechar(uuid, uuid, text, integer
 drop function if exists public.api_agente_passo(uuid, uuid, integer, text, text, jsonb, jsonb, text, integer);
 drop function if exists public.api_agente_turno_abrir(uuid, bigint, uuid, text, text, text, text);
 drop function if exists public.api_agente_prompt_registrar(uuid, text, text, text);
+drop function if exists public.api_agente_descartar_pendentes(uuid, bigint, text);
 drop function if exists public.api_agente_concluir(uuid, uuid[], text, uuid, text);
 drop function if exists public.api_agente_turno_da_conversa(uuid, bigint, uuid, text, integer);
 drop function if exists public.api_agente_reivindicar(text, integer, integer);
 drop function if exists public.api_agente_enfileirar(uuid, bigint, jsonb, integer);
+drop function if exists public.api_agente_par_chatwoot(uuid);
 drop function if exists public.api_agente_runtime(uuid);
 
 drop table if exists public.agente_passos;

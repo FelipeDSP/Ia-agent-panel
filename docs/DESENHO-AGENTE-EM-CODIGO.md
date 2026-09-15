@@ -318,7 +318,19 @@ nova" comparava `executar_em`, e o `adiar` empurra `executar_em` para o
 futuro — a mensagem **mais velha** passava por mais nova e a conversa nunca
 respondia; e `criado_em` não serve para "chegou depois" dentro de uma
 transação (mesmo `now()`). A fila ganhou `seq` de identidade, e "mais nova" é
-`seq` maior.
+`seq` maior. E um terceiro, pego pelo teste do serviço: quando o lote reivindica
+a mensagem velha e a nova de uma vez, a nova já não está `pendente` e a velha
+caía em `adiar`; agora "mais nova reivindicada por **este** worker" também é
+`desistir`, e `adiar` é só turno de **outro** worker em andamento.
+
+**Fatia 1, o serviço — ESCRITO em 15/09/2026 (`agente/`, sem deploy):**
+receptor com token na URL, `classificar` provado igual ao `Roteia Evento` do
+JSON, `extrair` rodando o **mesmo** JS do n8n, portão de runtime nos dois
+caminhos (cliente e humano), pausa com descarte silencioso, worker da fila,
+turno com texto fixo, trace completo, `limpar-memoria`, retenção e alarme de
+agente mudo. `teste:agente-fatia1` 46/46 em transação abortada com Chatwoot e
+WAHA falsos; `teste:agente-tipos` (`tsc`). Roteiro de apontar uma conta em
+`agente/README.md`.
 
 ---
 
@@ -529,13 +541,20 @@ cópia: no dia em que o serviço novo responder, o Hércules aponta para ele.
 
 ## 9. O que já está decidido e o desenho não reabre
 
-- o experimento da fusão roda **antes e no n8n** — importar e rodar as 10
-  conversas. Medir no sistema novo não responde a pergunta sobre o atual;
-- a rotação do `x-foto-secret` e do `x-limpeza-secret` **não espera** a
-  migração: os dois vazam a cada export enquanto o n8n existir;
+**Revisto em 15/09 pelo Felipe: o n8n congela.** Nada mais entra nele — nem a
+fusão, nem a tool de pagamento, nem rotação de segredo dentro dos workflows.
+"A funcionalidade dos dois vai ser diferente; foco na migração o mais rápido
+possível e depois ajustamos." Consequências:
+
+- o experimento da fusão **não roda no n8n**; a pergunta da sobrecarga fica
+  para o código, com a versão do prompt no trace (hash) e conversas sintéticas;
+- os dois segredos (`x-foto-secret`, `x-limpeza-secret`) nascem como env do
+  serviço; os valores antigos continuam nos workflows até o n8n ser desligado
+  — a exposição por export acaba com o n8n, não antes;
 - o encerramento do link (desativar + remover cobrança pendente) continua
-  sendo pré-requisito de contratar `pagamento` para qualquer tenant — no n8n
-  ou no código, quem chegar primeiro.
+  sendo pré-requisito de contratar `pagamento`, e nasce no código;
+- o `sendbox` é a caixa do serviço novo; a cópia `/Hercules-teste` fica onde
+  está até a caixa ser apontada.
 
 ---
 
