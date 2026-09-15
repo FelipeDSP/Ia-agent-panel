@@ -323,7 +323,17 @@ a mensagem velha e a nova de uma vez, a nova já não está `pendente` e a velha
 caía em `adiar`; agora "mais nova reivindicada por **este** worker" também é
 `desistir`, e `adiar` é só turno de **outro** worker em andamento.
 
-**Fatia 1, o serviço — ESCRITO em 15/09/2026 (`agente/`, sem deploy):**
+**15/09/2026, 21:58 UTC — o `sendbox` está no código.** Migração 62 aplicada
+(ledger `20260914200000`, 16 `api_agente_*`, 28 `api_n8n_*` intactas, ninguém
+ligado no ato); serviço no Coolify em `https://hercules.chatyou.chat` (projeto
+próprio, role `agente_codigo` membro de `n8n_agent`); `estudyou-sendbox` em
+`agente_runtime = 'codigo'` e o bot Hércules apontado para
+`/chatwoot/<token>/282`. Primeira mensagem real: fila → turno `9f6612ba…` em
+4,5 s (3 s de debounce), Chatwoot `5266023`, log com `execucao_id` = turno, e
+os webhooks de volta da própria resposta descartados sem pausar. `emporio` e
+`ceejaar` seguem no n8n, intocados.
+
+**Fatia 1, o serviço — ESCRITO em 15/09/2026 (`agente/`):**
 receptor com token na URL, `classificar` provado igual ao `Roteia Evento` do
 JSON, `extrair` rodando o **mesmo** JS do n8n, portão de runtime nos dois
 caminhos (cliente e humano), pausa com descarte silencioso, worker da fila,
