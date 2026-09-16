@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/card';
 import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
+import { desdeJanela } from '@/lib/retencao';
 
 import { ListaConversas } from './lista';
 
@@ -29,6 +30,8 @@ export default async function PaginaConversas() {
     .from('conversas_painel')
     .select('conversation_id, contact_name, phone, status_efetivo, motivo_pausa, pausa_expira_em, atualizado_em')
     .eq('tenant_id', usuario.tenantId)
+    // Janela da retenção (docs/POLITICA-RETENCAO.md): o que é mais velho já não tem texto.
+    .gte('atualizado_em', desdeJanela())
     .order('atualizado_em', { ascending: false })
     .limit(200);
 

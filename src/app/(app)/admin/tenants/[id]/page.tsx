@@ -13,6 +13,7 @@ import {
 import { exigirSuperAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { urlDoWebhookNoAgente } from '@/lib/pagamento/asaas-tenant';
+import { desdeJanela } from '@/lib/retencao';
 import { normalizarRuntime, roteiroDaTroca, urlsDoBot } from '@/lib/agente/runtime';
 import { definicaoTool, grupoTool } from '@/lib/tools/registro';
 import { TOOL_TRANSFERIR, type ConfigTransferir } from '@/lib/tools/transferir-humano';
@@ -75,6 +76,7 @@ export default async function PaginaDetalheTenant({
       .from('conversas_painel')
       .select('conversation_id, contact_name, phone, status_efetivo, atualizado_em')
       .eq('tenant_id', id)
+      .gte('atualizado_em', desdeJanela())
       .order('atualizado_em', { ascending: false })
       .limit(30),
     supabase

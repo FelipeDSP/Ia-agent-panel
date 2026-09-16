@@ -80,6 +80,8 @@ documentação e material de referência.
   calibrado por tamanho de schema (778, e por que não é regra de três), a ordem de
   import que não deixa o principal apontar para workflow morto, e o critério de
   medição com as duas ressalvas em destaque.
+- [`POLITICA-RETENCAO.md`](POLITICA-RETENCAO.md) — quanto tempo cada dado fica (45 dias de texto, global; migração 67, diário pelo serviço).
+- [`REVISAO-PAINEL-2026-09-16.md`](REVISAO-PAINEL-2026-09-16.md) — o que a migração deixou morto no painel e a ordem de conserto.
 - [`PENDENCIAS.md`](PENDENCIAS.md) — **o indice das pendencias**, com o gatilho de cada
   uma numa tabela so. Comece por aqui em vez de abrir os nove arquivos.
 - [`PENDENCIA-STATUS-CONVERSA.md`](PENDENCIA-STATUS-CONVERSA.md) — **a fazer, depois da

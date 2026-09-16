@@ -22,7 +22,11 @@ import type { Waha } from './waha/notificar.ts';
 import { log, erroTexto } from './log.ts';
 import type { Asaas } from './pagamento/asaas.ts';
 
-export interface DepsManutencao { db: Db; waha: Waha | null; retencaoDias: number; mudoMinutos: number; alarme: { sessao: string; destino: string } | null; asaas?: Asaas | null }
+export interface Retencao { textoDias: number; turnosDias: number; contagemDias: number; conversasDias: number }
+/** A política global (docs/POLITICA-RETENCAO.md). Decidida em 16/09: 45 dias de texto. */
+export const RETENCAO_PADRAO: Retencao = { textoDias: 45, turnosDias: 45, contagemDias: 400, conversasDias: 180 };
+
+export interface DepsManutencao { db: Db; waha: Waha | null; retencaoDias: number; mudoMinutos: number; alarme: { sessao: string; destino: string } | null; asaas?: Asaas | null; retencao?: Retencao }
 
 interface CobrancaVencida { tenant_id: string; cobranca_id: string; link_id: string; ambiente: string; base_url: string; api_key: string; expira_em: Date; tentativas_detalhe: string | null }
 
@@ -79,6 +83,21 @@ export async function varrerRetencao(deps: DepsManutencao): Promise<number> {
   const n = Number(await fnValor<number>(deps.db, 'api_agente_varrer_passos', [deps.retencaoDias]) ?? 0);
   log('info', 'manutencao.retencao', { removidos: n, dias: deps.retencaoDias });
   return n;
+}
+
+/**
+ * A retenção de DADOS (67): texto das mensagens, linhas antigas, trace, fila e
+ * identidade em `conversas`. Uma vez por dia, junto da varredura de passos.
+ * Apagar é visível: cada corte vai ao log com a contagem. Falha (ex.: 67 não
+ * aplicada) é logada e não derruba a manutenção — o resto continua.
+ */
+export async function aplicarRetencao(deps: DepsManutencao): Promise<Record<string, number>> {
+  const r = deps.retencao ?? RETENCAO_PADRAO;
+  const linhas = await fnTodas<{ alvo: string; linhas: number | string }>(deps.db, 'api_agente_retencao', [r.textoDias, r.turnosDias, r.contagemDias, r.conversasDias]);
+  const resultado: Record<string, number> = {};
+  for (const l of linhas) resultado[l.alvo] = Number(l.linhas);
+  log('info', 'manutencao.retencao_dados', { ...resultado, politica: r });
+  return resultado;
 }
 
 interface Mudo { tenant_id: string; slug: string; ultima_entrada: Date; minutos_mudo: number }

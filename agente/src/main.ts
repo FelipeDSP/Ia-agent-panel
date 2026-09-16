@@ -14,7 +14,7 @@ import { criarWaha } from './waha/notificar.ts';
 import { criarModeloOpenAI } from './agente/modelo.ts';
 import { criarEmbeddingsOpenAI, criarTranscritorOpenAI } from './agente/openai-servicos.ts';
 import { umCiclo } from './fila/worker.ts';
-import { alarmeAgenteMudo, varrerRetencao, encerrarLinksVencidos } from './manutencao.ts';
+import { alarmeAgenteMudo, varrerRetencao, encerrarLinksVencidos, aplicarRetencao, RETENCAO_PADRAO } from './manutencao.ts';
 import { criarAsaas } from './pagamento/asaas.ts';
 import { ENCERRAMENTO } from '../../n8n/tool-pagamento-fonte.mjs';
 import { log, erroTexto } from './log.ts';
@@ -78,6 +78,11 @@ async function lacoDeManutencao(): Promise<void> {
       const agora = new Date();
       if (agora.getUTCHours() === 7 && Date.now() - ultimaVarredura > 20 * 60 * 60 * 1000) {
         await varrerRetencao({ db: pool, waha, retencaoDias: cfg.retencaoDias, mudoMinutos: cfg.mudoMinutos, alarme });
+        try {
+          await aplicarRetencao({ db: pool, waha, retencaoDias: cfg.retencaoDias, mudoMinutos: cfg.mudoMinutos, alarme, retencao: cfg.retencao });
+        } catch (e) {
+          log('erro', 'manutencao.retencao_dados_falhou', { erro: erroTexto(e) });
+        }
         ultimaVarredura = Date.now();
       }
     } catch (e) {

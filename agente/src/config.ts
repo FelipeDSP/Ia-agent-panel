@@ -30,6 +30,8 @@ export interface Config {
   /** Alarme de agente mudo: minutos sem saída depois de uma entrada, por tenant em `codigo`. */
   mudoMinutos: number;
   versaoCodigo: string;
+  /** A política de retenção (67); defaults em RETENCAO_PADRAO. */
+  retencao: { textoDias: number; turnosDias: number; contagemDias: number; conversasDias: number };
 }
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
@@ -83,5 +85,11 @@ export function lerConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // Coolify injeta no AMBIENTE do container (16/09: o build arg não chegou; /saude
     // saiu 'dev'). Só então 'dev'.
     versaoCodigo: versaoDoCodigo(env),
+    retencao: {
+      textoDias: inteiro('RETENCAO_TEXTO_DIAS', 45),
+      turnosDias: inteiro('RETENCAO_TURNOS_DIAS', 45),
+      contagemDias: inteiro('RETENCAO_CONTAGEM_DIAS', 400),
+      conversasDias: inteiro('RETENCAO_CONVERSAS_DIAS', 180),
+    },
   };
 }

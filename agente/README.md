@@ -36,6 +36,7 @@ ponta a ponta em transação abortada: `npm run teste:agente-fatia1`.
 | `ALARME_WAHA_SESSAO`, `ALARME_WAHA_DESTINO` | não | para onde vai o alarme de agente mudo |
 | `FILA_LOTE` (10), `FILA_INTERVALO_MS` (1000), `FILA_LEASE_MIN` (5) | não | o worker |
 | `TRACE_RETENCAO_DIAS` (30), `MUDO_MINUTOS` (10) | não | manutenção |
+| `RETENCAO_TEXTO_DIAS` (45), `RETENCAO_TURNOS_DIAS` (45), `RETENCAO_CONTAGEM_DIAS` (400), `RETENCAO_CONVERSAS_DIAS` (180) | não | a política de retenção (67; `docs/POLITICA-RETENCAO.md`), aplicada 1x/dia |
 | `N8N_JS_DIR` | não | pasta com `extrair-e-filtrar.js` e `filtro-texto.js` (a imagem já aponta) |
 | `VERSAO_CODIGO` | não | vai no trace e em `agente_prompts.versao_codigo`. A imagem já a preenche com o `SOURCE_COMMIT` que o Coolify passa no build; só defina para sobrescrever |
 
