@@ -39,6 +39,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { neutralizarCobrancasPagas } from './lib/cobrancas-pagas-61.mjs';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = path.join(RAIZ, 'supabase', 'migrations');
@@ -150,6 +151,23 @@ try {
 
   // =====================================================================
   console.log('-- 0. Pré-61 (o rollback roda tendo a 61 sido aplicada ou não) --\n');
+  // ARRANJO (16/09/2026): desde que o pagamento funcionou de verdade no sendbox, produção
+  // tem cobrança PAGA e tenant com `pagamento` contratada — os dois casos em que o
+  // rollback aborta de propósito. O teste arranja o estado pré-61 nesta transação em
+  // vez de ficar refém de produção (a família da 55). Primeiro a PROVA do helper sobre
+  // estado que o próprio teste cria, depois o arranjo de verdade.
+  if ((await um(`select to_regclass('public.pedido_cobrancas') r`)).r) {
+    await c.query('savepoint sp_prova_helper');
+    const tp = await um(`insert into public.tenants (slug, nome) values ('z-teste-pag-prova', 'Prova helper 61') returning id`);
+    await c.query(`insert into public.tenant_tools (tenant_id, tool_nome, ativo, contratado) values ($1, 'pagamento', true, true)`, [tp.id]);
+    const pp = await um(`insert into public.pedidos (tenant_id, conversation_id, numero, status) values ($1, 999, 9999, 'pago') returning id`, [tp.id]);
+    await c.query(`insert into public.pedido_cobrancas (tenant_id, pedido_id, conversation_id, provedor, ambiente, valor_centavos, expira_em, pago_em) values ($1, $2, 999, 'asaas', 'sandbox', 500, now(), now())`, [tp.id, pp.id]);
+    const prova = await neutralizarCobrancasPagas(c);
+    chk('helper de arranjo: viu a cobrança paga e a contratação plantadas, e as neutralizou (não é vácuo)',
+      prova.antes.pagas >= 1 && prova.antes.contratadas >= 1 && prova.depois.pagas === 0 && prova.depois.contratadas === 0, JSON.stringify(prova));
+    await c.query('rollback to savepoint sp_prova_helper');
+  }
+  await neutralizarCobrancasPagas(c);
   await c.query(semTx(R61));
   const aclEstadoAntes = await aclDe('api_n8n_estado_pedido');
   const contratadasAntes = (await um(
