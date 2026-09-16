@@ -40,11 +40,13 @@ de tirar o texto dela sumiria com o consumo do mês corrente.
 
 ## O que a primeira passada vai fazer
 
-Em 16/09/2026 o banco tinha 12.493 linhas em `mensagens_log` (21 MB) desde
-maio, nunca apagadas. A primeira execução da retenção tira o texto de tudo
-com mais de 45 dias (a maior parte) e apaga o que tem mais de 400 (o começo do
-Acqua). É irreversível por desenho — não há backup "de antes" fora do que o
-Supabase guarda no plano.
+Medido em 16/09/2026, na aplicação da 67: das 12.493 linhas de `mensagens_log`,
+só **7** têm mais de 45 dias (o log começou de verdade em 17/08, com o emporio;
+antes disso são restos de teste de julho) e nenhuma tem mais de 400. Nenhuma
+conversa está parada há 180 dias. A primeira passada é pequena; a política
+pesa daqui a 45 dias, quando o emporio (11.626 linhas) começar a cair na
+janela — ~250 linhas por dia perdendo o texto, continuamente. É irreversível
+por desenho; não há backup "de antes" fora do que o plano do Supabase guarda.
 
 ## Verificação
 
