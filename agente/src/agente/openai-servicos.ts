@@ -27,7 +27,7 @@ export function criarTranscritorOpenAI(apiKey: string): Transcritor {
         model: 'whisper-1',
         response_format: 'verbose_json',
         language: 'pt',
-      });
+      }, { timeout: 60_000, maxRetries: 1 });   // whisper pendurado não segura o turno
       return r as unknown as Record<string, unknown>;
     },
   };

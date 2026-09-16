@@ -108,7 +108,7 @@ const modelo = {
 };
 const embeddings = { async gerar() { return Array(1536).fill(0.01); } };
 let transcricaoFalsa = { text: 'quero saber o horário', duration: 1.78, usage: { type: 'duration', seconds: 2 } };
-const transcritor = { async transcrever() { return transcricaoFalsa; } };
+const transcritor = { async transcrever() { if (!transcricaoFalsa) throw new Error('whisper caiu'); return transcricaoFalsa; } };
 const fetchFalso = async (u) => {
   if (String(u).includes('anexo-audio')) return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
   throw new Error(`fetch inesperado no teste: ${u}`);
@@ -315,6 +315,18 @@ try {
     await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 203, content: '', attachments: [{ file_type: 'audio', data_url: 'https://chatwoot.teste/anexo-audio.oga', file_size: 5000 }] }));
     await vencer(); await umCiclo(depsWorker);
     chk('injection falada -> msg_fora_escopo SEM chamar o modelo', chamadasChatwoot.at(-1).content === 'Fora do escopo.' && vistoPeloModelo.length === antesModelo);
+    transcricaoFalsa = { text: 'quero saber o horário', duration: 1.78, usage: { type: 'duration', seconds: 2 } };
+    // 5e2. transcritor que ESTOURA: aviso msg_audio_falhou ao cliente, sem modelo, e o trace
+    // guarda o erro (em 16/09 um áudio real falhou em 65 s e o passo só dizia `falhou`).
+    transcricaoFalsa = null;
+    const antesModelo2 = vistoPeloModelo.length;
+    const r5e2 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 204, content: '', attachments: [{ file_type: 'audio', data_url: 'https://chatwoot.teste/anexo-audio.oga', file_size: 5000 }] }));
+    await vencer(); await umCiclo(depsWorker);
+    const t5e2 = await turnoDaFila(r5e2.filaId);
+    const p5e2 = (await passosDe(t5e2.id)).find((p) => p.nome === 'transcrever');
+    chk('transcritor estourou -> aviso ao cliente sem modelo, turno ok, e o passo `transcrever` traz status falhou E o erro',
+      vistoPeloModelo.length === antesModelo2 && t5e2.status === 'ok' && p5e2?.saida?.status === 'falhou' && /whisper caiu/.test(p5e2?.saida?.erro ?? ''),
+      JSON.stringify({ chamou_modelo: vistoPeloModelo.length !== antesModelo2, status: t5e2.status, passo: p5e2?.saida }));
     transcricaoFalsa = { text: 'quero saber o horário', duration: 1.78, usage: { type: 'duration', seconds: 2 } };
 
     // 5f. C (sem transcrição contratada): áudio -> aviso msg_midia_nao_suportada, sem modelo; perfil basico (3 tools)

@@ -109,7 +109,11 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       if (m.acao === 'midia' && m.anexo) {
         const t = await turno.medir('tool', 'transcrever', { file_type: m.anexo.file_type, file_size: m.anexo.file_size },
           () => transcreverAnexo({ db, n8nJsDir: deps.n8nJsDir, tenantId: tenant.tenant_id, conversationId, anexo: m.anexo!, transcritor: deps.transcritor, fetchFn: deps.fetchFn, msgMidiaNaoSuportada: tenant.msg_midia_nao_suportada }),
-          (r) => ({ status: r.status, ...(r.status === 'ok' ? { chars: r.mensagem.length, audio_segundos: r.audioSegundos } : {}) }));
+          // O trace guarda POR QUE não transcreveu: em 16/09 um áudio real levou 65 s e
+          // saiu só `{ status: 'falhou' }` — sem o erro, não havia como saber se foi o
+          // download, o whisper ou o filtro.
+          (r) => ({ status: r.status, ...(r.status === 'ok' ? { chars: r.mensagem.length, audio_segundos: r.audioSegundos } : {}),
+            ...('erro' in r && r.erro ? { erro: r.erro } : {}), ...('motivo' in r && r.motivo ? { motivo: r.motivo } : {}) }));
         if (t.status === 'ok') { textos.push(t.mensagem); audioSegundos += t.audioSegundos ?? 0; }
         else if (t.status === 'bloqueado') bloqueado = true;
         else if (t.status === 'vazio') avisos.push(tenant.msg_midia_nao_suportada ?? AVISO_PADRAO_MIDIA);

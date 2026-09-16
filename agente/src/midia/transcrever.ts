@@ -33,7 +33,9 @@ export async function transcreverAnexo(p: { db: Db; n8nJsDir: string; tenantId: 
   if (cfg.limite_bytes !== null && p.anexo.file_size > Number(cfg.limite_bytes)) return { status: 'longo', avisoAoCliente: cfg.msg_audio_longo };
 
   try {
-    const r = await p.fetchFn(p.anexo.data_url, { headers: cfg.chatwoot_token ? { api_access_token: cfg.chatwoot_token } : {} });
+    // Timeout explícito: download pendurado não pode segurar o turno (e o lease da
+    // fila) por minutos — o cliente fica sem resposta e o alarme de mudo dispara.
+    const r = await p.fetchFn(p.anexo.data_url, { headers: cfg.chatwoot_token ? { api_access_token: cfg.chatwoot_token } : {}, signal: AbortSignal.timeout(30_000) });
     if (!r.ok) throw new Error(`baixar anexo -> HTTP ${r.status}`);
     const bytes = new Uint8Array(await r.arrayBuffer());
     // A extensão vem da URL (o campo `extension` veio nulo no payload real):
@@ -49,6 +51,6 @@ export async function transcreverAnexo(p: { db: Db; n8nJsDir: string; tenantId: 
     }
     return { status: saida.status === 'bloqueado' ? 'bloqueado' : 'vazio', motivo: String(saida.motivo ?? ''), audioSegundos };
   } catch (e) {
-    return { status: 'falhou', avisoAoCliente: cfg.msg_audio_falhou, erro: e instanceof Error ? e.message : String(e) };
+    return { status: 'falhou', avisoAoCliente: cfg.msg_audio_falhou, erro: e instanceof Error ? `${e.name}: ${e.message}` : String(e) };
   }
 }
