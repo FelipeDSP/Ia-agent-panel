@@ -14,6 +14,7 @@ import {
   Settings,
   Tags,
   X,
+  Activity,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -60,6 +61,7 @@ const MENU_ADMIN: ItemMenu[] = [
   { href: '/admin/tenants', rotulo: 'Clientes', Icone: Building2 },
   { href: '/admin/catalogo', rotulo: 'Catálogo', Icone: Boxes },
   { href: '/admin/consumo', rotulo: 'Consumo', Icone: BarChart3 },
+  { href: '/admin/agente', rotulo: 'Agente', Icone: Activity },
 ];
 
 export function Sidebar({
