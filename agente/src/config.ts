@@ -47,6 +47,13 @@ function inteiro(nome: string, padrao: number): number {
   return n;
 }
 
+function versaoDoCodigo(env: NodeJS.ProcessEnv): string {
+  const explicita = env.VERSAO_CODIGO?.trim();
+  if (explicita && explicita !== 'dev') return explicita;
+  const commit = env.SOURCE_COMMIT?.trim();
+  return commit ? commit.slice(0, 12) : 'dev';
+}
+
 export function lerConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const dbUrl = obrigatorio('AGENTE_DB_URL');
   // A conexão do agente é a do role restrito. Um `postgres@` aqui daria ao
@@ -71,6 +78,10 @@ export function lerConfig(env: NodeJS.ProcessEnv = process.env): Config {
     leaseMinutos: inteiro('FILA_LEASE_MIN', 5),
     retencaoDias: inteiro('TRACE_RETENCAO_DIAS', 30),
     mudoMinutos: inteiro('MUDO_MINUTOS', 10),
-    versaoCodigo: env.VERSAO_CODIGO?.trim() || 'dev',
+    // VERSAO_CODIGO explícita vence; 'dev' é o default da imagem (ARG SOURCE_COMMIT
+    // não passado no build) e conta como ausente — aí vale o SOURCE_COMMIT que o
+    // Coolify injeta no AMBIENTE do container (16/09: o build arg não chegou; /saude
+    // saiu 'dev'). Só então 'dev'.
+    versaoCodigo: versaoDoCodigo(env),
   };
 }
