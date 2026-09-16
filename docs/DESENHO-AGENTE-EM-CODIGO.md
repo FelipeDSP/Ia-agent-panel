@@ -349,8 +349,13 @@ portão em código, bruto em `mensagens_log.portao` e a memória do turno
 seguinte levando a substituta; tool executando no banco; tokens reais no log
 (`fonte_tokens = openai_usage`); teto → `TEXTO_TETO`.
 
-**Fatia 3 — pagamento em código (16/09/2026, escrita; aguardando a 64 ser
-aplicada e o deploy):** a 7ª tool `gerar_link_pagamento` (zero parâmetros,
+**Fatia 3 — pagamento em código, NO AR (16/09/2026, 64 aplicada 18:5x; ciclo
+real fechado no sandbox 18:56–19:10: pedido nº 4 → link R$ 69,90 → Pix → webhook
+`PAYMENT_RECEIVED` → `pago` → "Pagamento confirmado!" → "caiu?" confirmado →
+`resolver_conversa` encerrou). Dois consertos vieram do roteiro: o modelo
+recebe o pagamento confirmado como FATO DO SISTEMA (item `system` por turno, do
+banco — a mensagem na memória não bastou) e a exceção da regra 1 foi alargada
+("seu pedido está confirmado e pago").** a 7ª tool `gerar_link_pagamento` (zero parâmetros,
 valor do banco, chave do tenant, texto de `tool-pagamento-resposta.js`), o
 webhook `POST /asaas` (token por tenant no header; a função do banco é a única
 que escreve `pago`; 200 sempre; a mensagem "Pagamento confirmado!" vai ao
