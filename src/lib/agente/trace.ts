@@ -45,7 +45,7 @@ export interface PassoLinha {
 }
 
 /** Os filtros da lista, lidos da query string e SANEADOS — nunca vão crus ao banco. */
-export interface FiltrosTrace { tenantId: string | null; status: StatusTurno | null; horas: number }
+export interface FiltrosTrace { tenantId: string | null; status: StatusTurno | null; horas: number; conversa: number | null }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STATUS: StatusTurno[] = ['aberto', 'ok', 'falhou', 'descartado', 'manutencao'];
@@ -56,10 +56,13 @@ export function lerFiltros(q: Record<string, string | string[] | undefined>): Fi
   const tenant = um(q.tenant);
   const status = um(q.status) as StatusTurno;
   const horas = Number(um(q.horas));
+  const conversa = Number(um(q.conversa));
   return {
     tenantId: UUID.test(tenant) ? tenant : null,
     status: STATUS.includes(status) ? status : null,
     horas: (HORAS_PERMITIDAS as readonly number[]).includes(horas) ? horas : 24,
+    // conversa só faz sentido com tenant: `conversation_id` não é único entre tenants.
+    conversa: UUID.test(tenant) && Number.isInteger(conversa) && conversa > 0 ? conversa : null,
   };
 }
 

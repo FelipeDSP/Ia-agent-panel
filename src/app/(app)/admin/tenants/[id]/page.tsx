@@ -362,12 +362,19 @@ export default async function PaginaDetalheTenant({
             {conversas.map((c) => (
               <div
                 key={c.conversation_id}
-                className="grid grid-cols-[1fr_auto_auto] items-center gap-x-4 border-b border-border py-2 text-sm last:border-0"
+                className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 border-b border-border py-2 text-sm last:border-0"
               >
                 <span className="min-w-0 truncate">
                   <span className="font-medium">{c.contact_name ?? 'Sem nome'}</span>
                   {c.phone ? <span className="ml-2 text-muted-foreground">{c.phone}</span> : null}
                 </span>
+                {/* Os turnos do agente nesta conversa (só existem para tenant em código). */}
+                <Link
+                  href={`/admin/agente?tenant=${tenant.id}&conversa=${c.conversation_id}&horas=168`}
+                  className="text-xs text-primary underline-offset-4 hover:underline"
+                >
+                  turnos
+                </Link>
                 <Badge
                   variant={
                     c.status_efetivo === 'pausado'

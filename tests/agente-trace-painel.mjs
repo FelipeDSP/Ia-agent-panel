@@ -27,6 +27,10 @@ console.log('\n== 1. Filtros saneados ==\n');
   const g = lerFiltros({ tenant: '11111111-2222-3333-4444-555555555555', status: 'falhou', horas: '72' });
   chk('UUID, status válido e horas permitidas passam', g.tenantId === '11111111-2222-3333-4444-555555555555' && g.status === 'falhou' && g.horas === 72);
   chk('array na query (?horas=6&horas=1) usa o primeiro', lerFiltros({ horas: ['6', '1'] }).horas === 6);
+  chk('conversa só entra COM tenant válido e inteiro > 0 (conversation_id não é único entre tenants)',
+    lerFiltros({ tenant: '11111111-2222-3333-4444-555555555555', conversa: '51' }).conversa === 51
+    && lerFiltros({ conversa: '51' }).conversa === null && lerFiltros({ tenant: '11111111-2222-3333-4444-555555555555', conversa: '-1' }).conversa === null
+    && lerFiltros({ tenant: '11111111-2222-3333-4444-555555555555', conversa: 'abc' }).conversa === null);
   chk('HORAS_PERMITIDAS inclui 24 (o default) — contraprova de que o default é permitido', HORAS_PERMITIDAS.includes(24));
   const d = desde(24, new Date('2026-09-16T12:00:00Z'));
   chk('desde(24 h) = 24 h antes, ISO', d === '2026-09-15T12:00:00.000Z', d);

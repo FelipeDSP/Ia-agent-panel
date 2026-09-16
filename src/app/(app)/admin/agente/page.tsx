@@ -57,6 +57,7 @@ export default async function PaginaAgenteAdmin({
     .limit(200);
   if (filtros.tenantId) q = q.eq('tenant_id', filtros.tenantId);
   if (filtros.status) q = q.eq('status', filtros.status);
+  if (filtros.conversa !== null) q = q.eq('conversation_id', filtros.conversa);
 
   const [{ data: turnosRaw, error }, { data: tenantsRaw }] = await Promise.all([
     q,
@@ -77,13 +78,15 @@ export default async function PaginaAgenteAdmin({
   }
 
   const r = resumo(turnos);
-  const link = (mud: Partial<{ tenant: string | null; status: string | null; horas: number }>) => {
+  const link = (mud: Partial<{ tenant: string | null; status: string | null; horas: number; conversa: number | null }>) => {
     const p = new URLSearchParams();
     const tenant = mud.tenant === undefined ? filtros.tenantId : mud.tenant;
     const status = mud.status === undefined ? filtros.status : mud.status;
     const horas = mud.horas ?? filtros.horas;
+    const conversa = mud.conversa === undefined ? filtros.conversa : mud.conversa;
     if (tenant) p.set('tenant', tenant);
     if (status) p.set('status', status);
+    if (tenant && conversa) p.set('conversa', String(conversa));
     p.set('horas', String(horas));
     return `/admin/agente?${p.toString()}`;
   };
@@ -123,6 +126,12 @@ export default async function PaginaAgenteAdmin({
         </div>
       </div>
 
+      {filtros.conversa !== null ? (
+        <p className="text-sm">
+          Só a conversa <span className="font-medium tabular-nums">{filtros.conversa}</span>.{' '}
+          <Link href={link({ conversa: null })} className="text-primary underline-offset-4 hover:underline">ver todas</Link>
+        </p>
+      ) : null}
       {error ? <Alert variant="destructive">Não foi possível carregar os turnos: {error.message}</Alert> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -174,7 +183,11 @@ export default async function PaginaAgenteAdmin({
                     </Link>
                   </TableCell>
                   <TableCell>{nomeDoTenant.get(t.tenant_id) ?? t.tenant_id.slice(0, 8)}</TableCell>
-                  <TableCell className="tabular-nums">{String(t.conversation_id)}</TableCell>
+                  <TableCell className="tabular-nums">
+                    <Link href={link({ tenant: t.tenant_id, conversa: Number(t.conversation_id) })} className="underline-offset-4 hover:underline" title="só esta conversa">
+                      {String(t.conversation_id)}
+                    </Link>
+                  </TableCell>
                   <TableCell>{t.acao ?? '—'}</TableCell>
                   <TableCell><Badge variant={corDoStatus(t.status)}>{t.status}</Badge></TableCell>
                   <TableCell>{t.portao_veredito ? <Badge variant={corDoVeredito(t.portao_veredito)}>{t.portao_veredito}</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
