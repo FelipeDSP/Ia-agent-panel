@@ -383,7 +383,9 @@ try {
 
     // 5k. TRANSFERÊNCIA: a tool pausa a conversa (e o trace diz que pausou), avisa pelo WAHA,
     // e a PRÓXIMA mensagem do cliente é descartada sem resposta — o roteiro §5.3 passos 8-9.
-    await c.query(`update public.tenant_tools set config = '{"notificacao":{"canal":"waha","sessao":"sess-teste","destino":"5500@c.us"}}'::jsonb where tenant_id=$1 and tool_nome='transferir_humano'`, [T.a]);
+    // Horário ARRANJADO (24x7): sem isto o cenário afirmava o relógio de parede — ficou vermelho
+    // às 18:01 de Brasília em 16/09 porque o default é 8–18 em dias úteis.
+    await c.query(`update public.tenant_tools set config = '{"horario":{"dias_semana":[0,1,2,3,4,5,6],"hora_inicio":0,"hora_fim":24},"notificacao":{"canal":"waha","sessao":"sess-teste","destino":"5500@c.us"}}'::jsonb where tenant_id=$1 and tool_nome='transferir_humano'`, [T.a]);
     roteiro.push({ tool: 'transferir_humano', args: { resumo: 'Cliente quer falar com humano.' } }, { texto: 'Já te transferi, aguarde um instante.' });
     const wahaAntes = chamadasWaha.length;
     const fk = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 207, content: 'quero falar com uma pessoa' }));
