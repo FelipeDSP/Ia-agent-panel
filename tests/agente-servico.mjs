@@ -60,6 +60,8 @@ const M65 = leia('20260916210000_65_conversa_resolvida_reabre.sql');
 const R65 = leia('20260916210000_65_conversa_resolvida_reabre_rollback.sql');
 const M66 = leia('20260916220000_66_config_agente_por_tenant.sql');
 const R66 = leia('20260916220000_66_config_agente_por_tenant_rollback.sql');
+const M68 = leia('20260916235000_68_tokens_em_cache.sql');
+const R68 = leia('20260916235000_68_tokens_em_cache_rollback.sql');
 const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -92,14 +94,14 @@ const chamadasWaha = [];
 const waha = { async enviarTexto(s, d, t) { chamadasWaha.push({ s, d, t }); } };
 const roteiro = [];
 const vistoPeloModelo = [];
-const USO = { entrada: 100, saida: 20 };
+const USO = { entrada: 100, saida: 20, entradaCache: 60 };   // 60 dos 100 de entrada vêm do cache (68)
 const modelo = {
   async responder(p) {
     vistoPeloModelo.push({ historico: p.historico, systemMessage: p.systemMessage, mensagem: p.mensagemDoCliente, ferramentas: p.ferramentas.map((f) => f.nome), modelo: p.modelo, estado: p.estadoDoSistema ?? null });
     const uso = { entrada: 0, saida: 0 }; const chamadas = []; const tools = [];
     for (let i = 1; i <= MAX_ITERACOES; i++) {
       const passo = roteiro.shift() ?? { texto: 'Resposta padrão do modelo falso.' };
-      uso.entrada += USO.entrada; uso.saida += USO.saida;
+      uso.entrada += USO.entrada; uso.saida += USO.saida; uso.entradaCache = (uso.entradaCache ?? 0) + USO.entradaCache;
       const c1 = { iteracao: i, uso: { ...USO }, toolCalls: passo.tool ? 1 : 0, latenciaMs: 1, texto: passo.texto ?? null };
       chamadas.push(c1); if (p.aoChamarModelo) await p.aoChamarModelo(c1);
       if (!passo.tool) return { texto: passo.texto, uso, chamadas, tools, estourouTeto: false };
@@ -145,7 +147,7 @@ const PAR = { a: [990001, 9901], b: [990002, 9902], c: [990003, 9903] };
 // Dentro da transação todo `iniciado_em` é o mesmo now(): "último turno" se acha pela fila, não pela data.
 const turnoDaFila = async (filaId) => um(`select t.* from public.agente_fila f join public.agente_turnos t on t.id = f.turno_id where f.id=$1`, [filaId]);
 const passosDe = async (turnoId) => (await tudo(`select tipo, nome, entrada, saida, erro from public.agente_passos where turno_id=$1 order by ordem`, [turnoId]));
-const logDe = async (t, conv) => tudo(`select direcao, conteudo, tokens_entrada, tokens_saida, fonte_tokens, chamadas, audio_segundos, portao, saida_cortes, execucao_id from public.mensagens_log where tenant_id=$1 and conversation_id=$2 order by criado_em, direcao`, [t, conv]);
+const logDe = async (t, conv) => tudo(`select direcao, conteudo, tokens_entrada, tokens_saida, tokens_entrada_cache, fonte_tokens, chamadas, audio_segundos, portao, saida_cortes, execucao_id from public.mensagens_log where tenant_id=$1 and conversation_id=$2 order by criado_em, direcao`, [t, conv]);
 
 try {
   // ARRANJO: rollback-first, 62, tenants.
@@ -155,6 +157,7 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R68));
   await c.query(semTx(R66));
   await c.query(semTx(R65));
   await c.query(semTx(R64));
@@ -165,6 +168,7 @@ try {
   await c.query(semTx(M64));
   await c.query(semTx(M65));
   await c.query(semTx(M66));
+  await c.query(semTx(M68));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -273,6 +277,7 @@ try {
     chk('agente_prompts tem UM hash, e o CABEÇALHO do turno aponta para ele com o perfil (63) — não só o passo',
       hashes1.length === 1 && t1.prompt_hash === hashes1[0].hash && /^sha256:[0-9a-f]{64}$/.test(t1.prompt_hash) && t1.perfil === 'vendas', JSON.stringify({ ph: t1.prompt_hash, perfil: t1.perfil, hashes: hashes1 }));
     const l1 = await logDe(T.a, 200);
+    chk('mensagens_log: a saída gravou tokens_entrada_cache = 60 (68) — o que a aba de consumo cobra pela metade', l1[1]?.tokens_entrada_cache === 60, String(l1[1]?.tokens_entrada_cache));
     chk('mensagens_log: saída com tokens reais, fonte openai_usage, chamadas 1, portao.veredito passou, execucao_id = turno',
       l1.length === 2 && l1[1].tokens_entrada === 100 && l1[1].tokens_saida === 20 && l1[1].fonte_tokens === 'openai_usage' && l1[1].chamadas === 1 && l1[1].portao?.veredito === 'passou' && l1.every((x) => x.execucao_id === t1.id), JSON.stringify(l1.map((x) => ({ d: x.direcao, te: x.tokens_entrada, f: x.fonte_tokens, v: x.portao?.veredito }))));
     const p1 = (await passosDe(t1.id)).map((p) => `${p.tipo}:${p.nome}`);

@@ -231,6 +231,8 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       memoria: rateio(chars.memoria), mensagens: rateio(chars.mensagens),
       round_trip: Math.max(0, r.uso.entrada - primeiraChamada),
       chamadas: r.chamadas.length, fonte: 'openai_usage', real_total: r.uso.entrada + r.uso.saida,
+      // 68: vai para `mensagens_log.tokens_entrada_cache` via `api_n8n_registrar_mensagem`.
+      entrada_cache: r.uso.entradaCache ?? 0,
       tools: r.tools.map((t) => t.nome), estourou_teto: r.estourouTeto, prompt_hash: prompt.hash,
       ...(limpa.cortes.length ? { saida_cortes: limpa.cortes } : {}),
     };

@@ -181,7 +181,28 @@ function CardCliente({ card, mesAnterior }: { card: CardConsumo; mesAnterior: st
           <dt>embedding</dt>
           <dd className="tabular-nums text-foreground">{num.format(card.embedding)}</dd>
         </div>
+        {card.entradaCache > 0 ? (
+          <div className="flex gap-1" title="tokens de entrada servidos do cache da OpenAI — cobrados pela metade">
+            <dt>em cache</dt>
+            <dd className="tabular-nums text-foreground">{pct.format((card.entradaCache / Math.max(card.entrada, 1)) * 100)}%</dd>
+          </div>
+        ) : null}
       </dl>
+      {/*
+        DE ONDE VEM O NÚMERO. Enquanto n8n e código coexistem, um cliente tem
+        tokens reais (usage da OpenAI) e outro tem estimativa (fórmula do nó),
+        e o card mostra os dois com a mesma cara. A estimativa superestima
+        23–29% (diff:custo, 16/09) — quem olha precisa saber qual é qual.
+      */}
+      {card.mensagensReais + card.mensagensEstimadas > 0 ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {card.mensagensEstimadas === 0
+            ? `${num.format(card.mensagensReais)} respostas, tokens reais`
+            : card.mensagensReais === 0
+              ? `${num.format(card.mensagensEstimadas)} respostas, tokens estimados (n8n)`
+              : `${num.format(card.mensagensReais)} respostas reais · ${num.format(card.mensagensEstimadas)} estimadas (n8n)`}
+        </p>
+      ) : null}
 
       <div className="mt-3 border-t border-border pt-2">
         <LinhaVariacao card={card} mesAnterior={mesAnterior} />

@@ -32,6 +32,10 @@ export type LinhaConsumo = {
   tokens_saida: number | string;
   tokens_embedding: number | string;
   custo_usd: number | string;
+  /** 68 — podem faltar numa RPC antiga; tratados como 0. */
+  tokens_entrada_cache?: number | string | null;
+  mensagens_reais?: number | string | null;
+  mensagens_estimadas?: number | string | null;
 };
 
 /** Cliente conhecido pelo painel, com ou sem consumo. */
@@ -252,6 +256,10 @@ export type CardConsumo = {
   saida: number;
   embedding: number;
   custo: number;
+  /** 68: quanto da entrada veio do cache (metade do preço) e de onde vêm os números. */
+  entradaCache: number;
+  mensagensReais: number;
+  mensagensEstimadas: number;
   /** Soma dos três — é o que decide "usou", em vez do custo arredondado. */
   tokens: number;
   /** Nenhum token no mês: vai para o fim da lista, apagado. */
@@ -272,6 +280,9 @@ function somar(linha: LinhaConsumo) {
     saida: Number(linha.tokens_saida),
     embedding: Number(linha.tokens_embedding),
     custo: Number(linha.custo_usd),
+    entradaCache: Number(linha.tokens_entrada_cache ?? 0),
+    mensagensReais: Number(linha.mensagens_reais ?? 0),
+    mensagensEstimadas: Number(linha.mensagens_estimadas ?? 0),
   };
 }
 
@@ -334,7 +345,7 @@ export function montarVisaoMensal({
 
   const cards: CardConsumo[] = aExibir.map((t) => {
     const linha = porTenant.get(t.id);
-    const v = linha ? somar(linha) : { entrada: 0, saida: 0, embedding: 0, custo: 0 };
+    const v = linha ? somar(linha) : { entrada: 0, saida: 0, embedding: 0, custo: 0, entradaCache: 0, mensagensReais: 0, mensagensEstimadas: 0 };
     const tokens = v.entrada + v.saida + v.embedding;
     const anteriores = antes.get(t.id) ?? { custo: 0, tokens: 0 };
 

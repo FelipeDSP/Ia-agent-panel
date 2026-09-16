@@ -35,7 +35,8 @@ export interface FerramentaDoModelo {
 
 export interface ResultadoTool { texto: string; diagnostico?: unknown }
 
-export interface Uso { entrada: number; saida: number }
+/** `entradaCache`: dos tokens de entrada, quantos vieram do cache da OpenAI (metade do preco) — 68. */
+export interface Uso { entrada: number; saida: number; entradaCache?: number }
 
 export interface ChamadaModelo { iteracao: number; uso: Uso; toolCalls: number; latenciaMs: number; texto: string | null }
 export interface ChamadaTool { nome: string; args: Record<string, unknown>; resultado: string; latenciaMs: number; erro: string | null; diagnostico?: unknown }
@@ -106,9 +107,10 @@ export function criarModeloOpenAI(apiKey: string): Modelo {
         });
         uso.entrada += resp.usage?.input_tokens ?? 0;
         uso.saida += resp.usage?.output_tokens ?? 0;
+        uso.entradaCache = (uso.entradaCache ?? 0) + (resp.usage?.input_tokens_details?.cached_tokens ?? 0);
         const calls = resp.output.filter((o): o is OpenAI.Responses.ResponseFunctionToolCall => o.type === 'function_call');
         const texto = resp.output_text?.trim() || null;
-        const c: ChamadaModelo = { iteracao, uso: { entrada: resp.usage?.input_tokens ?? 0, saida: resp.usage?.output_tokens ?? 0 }, toolCalls: calls.length, latenciaMs: Date.now() - t0, texto };
+        const c: ChamadaModelo = { iteracao, uso: { entrada: resp.usage?.input_tokens ?? 0, saida: resp.usage?.output_tokens ?? 0, entradaCache: resp.usage?.input_tokens_details?.cached_tokens ?? 0 }, toolCalls: calls.length, latenciaMs: Date.now() - t0, texto };
         chamadas.push(c);
         if (p.aoChamarModelo) await p.aoChamarModelo(c);
 
