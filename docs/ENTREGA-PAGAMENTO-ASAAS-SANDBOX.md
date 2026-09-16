@@ -989,6 +989,20 @@ vermelho de propósito sem ficar sem medição.
 
 ## 11. As duas peças no n8n: gerar o link, e o webhook que confirma
 
+> **ATUALIZAÇÃO 16/09/2026 — o n8n congelou (15/09) e as duas peças foram
+> para o CÓDIGO** (`agente/src/tools/gerar-link-pagamento.ts`,
+> `agente/src/pagamento/webhook.ts`), com os mesmos arquivos-fonte:
+> `tool-pagamento-resposta.js` escreve o texto, `webhook-pagamento-extrai.js`
+> extrai o evento, `tool-pagamento-fonte.mjs` dá descrição e seção do prompt.
+> Os JSONs gerados (`n8n:tool-pagamento`, `n8n:webhook-pagamento`) ficam como
+> descrição do desenho; nunca serão importados. Duas mudanças de texto na
+> fonte, decididas pelo Felipe em 16/09: o agente **pode** confirmar pagamento
+> quando a mensagem automática "Pagamento confirmado!" já estiver no histórico
+> (ela entra em `mensagens_log`, então a memória a carrega), e o portão ganhou a
+> exceção correspondente na regra 1 (`aplica-portao.js`, `teste:portao-pagamento`
+> §5b). O que segue é o desenho original, válido para o que ele decide.
+
+
 **Escritas em 11/09. NÃO importadas, e não podem ser enquanto o experimento da
 fusão não fechar** — as 10 conversas medem 6 ferramentas; uma sétima muda o que o
 modelo vê e a medição deixa de medir. Importar é depois, na ordem da §11.6.
@@ -1163,7 +1177,7 @@ normal, não a exceção.
 
 ---
 
-## 12. O encerramento — desenho, NÃO implementado
+## 12. O encerramento — desenho (IMPLEMENTADO em 16/09: migração 64 + `encerrarLinksVencidos` no serviço)
 
 O que `expirou_aceita` + a sonda D obrigam, escrito antes de construir. Nada
 abaixo existe em banco nem em workflow; a pendência com gatilho é

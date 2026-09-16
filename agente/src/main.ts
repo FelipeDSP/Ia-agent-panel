@@ -14,7 +14,9 @@ import { criarWaha } from './waha/notificar.ts';
 import { criarModeloOpenAI } from './agente/modelo.ts';
 import { criarEmbeddingsOpenAI, criarTranscritorOpenAI } from './agente/openai-servicos.ts';
 import { umCiclo } from './fila/worker.ts';
-import { alarmeAgenteMudo, varrerRetencao } from './manutencao.ts';
+import { alarmeAgenteMudo, varrerRetencao, encerrarLinksVencidos } from './manutencao.ts';
+import { criarAsaas } from './pagamento/asaas.ts';
+import { ENCERRAMENTO } from '../../n8n/tool-pagamento-fonte.mjs';
 import { log, erroTexto } from './log.ts';
 
 const cfg = lerConfig();
@@ -24,6 +26,8 @@ const waha = cfg.waha ? criarWaha(cfg.waha.url, cfg.waha.apiKey) : null;
 const modelo = criarModeloOpenAI(cfg.openaiApiKey);
 const embeddings = criarEmbeddingsOpenAI(cfg.openaiApiKey);
 const transcritor = criarTranscritorOpenAI(cfg.openaiApiKey);
+// Sem chave global: a chave de cada chamada vem da linha do banco do tenant.
+const asaas = criarAsaas(fetch);
 const alarme = process.env.ALARME_WAHA_SESSAO && process.env.ALARME_WAHA_DESTINO
   ? { sessao: process.env.ALARME_WAHA_SESSAO, destino: process.env.ALARME_WAHA_DESTINO } : null;
 
@@ -36,7 +40,7 @@ let parando = false;
 
 const servidor = criarServidor({
   db: pool, waha, n8nJsDir: cfg.n8nJsDir,
-  webhookToken: cfg.webhookToken, limpezaSecret: cfg.limpezaSecret, versaoCodigo: cfg.versaoCodigo,
+  webhookToken: cfg.webhookToken, limpezaSecret: cfg.limpezaSecret, versaoCodigo: cfg.versaoCodigo, chatwoot,
   filaViva: () => Date.now() - ultimoCiclo < Math.max(cfg.intervaloFilaMs * 5, 15_000),
 });
 servidor.listen(cfg.porta, () => log('info', 'http.ouvindo', { porta: cfg.porta, worker: cfg.workerId, versao: cfg.versaoCodigo }));
@@ -46,7 +50,7 @@ async function lacoDaFila(): Promise<void> {
     try {
       const r = await umCiclo({
         db: pool, chatwoot, waha, modelo, embeddings, transcritor, n8nJsDir: cfg.n8nJsDir, versaoCodigo: cfg.versaoCodigo,
-        fotoSecret: cfg.fotoSecret, fetchFn: fetch, workerId: cfg.workerId, lote: cfg.loteFila, leaseMinutos: cfg.leaseMinutos,
+        fotoSecret: cfg.fotoSecret, fetchFn: fetch, asaas, workerId: cfg.workerId, lote: cfg.loteFila, leaseMinutos: cfg.leaseMinutos,
       });
       if (r.reivindicadas > 0) log('info', 'fila.ciclo', { ...r });
     } catch (e) {
@@ -59,9 +63,17 @@ async function lacoDaFila(): Promise<void> {
 
 async function lacoDeManutencao(): Promise<void> {
   let ultimaVarredura = 0;
+  let ultimoEncerramento = 0;
+  const intervaloEncerramentoMs = Number(ENCERRAMENTO.intervalo_minutos ?? 5) * 60_000;
   while (!parando) {
     try {
       await alarmeAgenteMudo({ db: pool, waha, retencaoDias: cfg.retencaoDias, mudoMinutos: cfg.mudoMinutos, alarme });
+      // Encerramento dos links de pagamento vencidos (64 / §12), a cada 5 min.
+      if (ENCERRAMENTO.obrigatorio === true && Date.now() - ultimoEncerramento >= intervaloEncerramentoMs) {
+        const r = await encerrarLinksVencidos({ db: pool, waha, retencaoDias: cfg.retencaoDias, mudoMinutos: cfg.mudoMinutos, alarme, asaas });
+        if (r.vencidas > 0) log('info', 'encerramento.varredura', { ...r });
+        ultimoEncerramento = Date.now();
+      }
       // Retenção 1x por dia, às 04:00 de Brasília (UTC-3 => 07:00Z).
       const agora = new Date();
       if (agora.getUTCHours() === 7 && Date.now() - ultimaVarredura > 20 * 60 * 60 * 1000) {

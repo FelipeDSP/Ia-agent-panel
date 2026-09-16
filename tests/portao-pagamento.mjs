@@ -223,6 +223,24 @@ console.log('\n== 5. As outras duas regras continuam inteiras ==\n');
 }
 
 // ============================================================================
+console.log('\n== 5b. Regra 1 x regra 3: "o pagamento do PEDIDO foi confirmado" com o pedido pago ==\n');
+// ============================================================================
+// Medido em 16/09/2026 (teste:agente-servico 7d): a frase carrega `confirmado` +
+// `pedido`, entao a regra 1 a pegava ANTES de a regra 3 olhar o banco — e ela e
+// verdadeira (o webhook escreveu `pago`). Sem escrita NESTE turno a regra 1
+// barrava; com `pagamento_confirmado` a frase de pagamento sai da regra 1. As
+// demais afirmacoes consumadas da mesma resposta continuam contando.
+const AFIRMA_PAGAMENTO_DO_PEDIDO = 'Sim! O pagamento do pedido nº 7001 foi confirmado. Obrigado!';
+{
+  const r = rodar(FONTE, { texto: AFIRMA_PAGAMENTO_DO_PEDIDO, estado: pago({ escreveu_neste_turno: false }) });
+  chk('pedido PAGO, sem escrita neste turno: "o pagamento do pedido foi confirmado" -> passou (nao cai na regra 1)', r._portao.veredito === 'passou', r._portao.veredito);
+  const r2 = rodar(FONTE, { texto: AFIRMA_PAGAMENTO_DO_PEDIDO, estado: fechado({ escreveu_neste_turno: false }) });
+  chk('contraprova: o MESMO texto com o pedido NAO pago -> barrado (regra 1 ou 3 — nao passa)', r2._portao.veredito !== 'passou', r2._portao.veredito);
+  const r3 = rodar(FONTE, { texto: 'Anotei mais 2 itens no pedido. O pagamento do pedido foi confirmado.', estado: pago({ escreveu_neste_turno: false }) });
+  chk('outra afirmacao consumada na MESMA resposta ("anotei") continua caindo na regra 1', r3._portao.veredito === 'barrado_regra_1', r3._portao.veredito);
+}
+
+// ============================================================================
 console.log('\n== 6. SABOTAGEM ==\n');
 // ============================================================================
 function sabotar(de, para, rotulo) {
@@ -234,6 +252,15 @@ function sabotar(de, para, rotulo) {
   // comprimento identico e o log diria "nao entrou" no caso em que entrou.
   console.log(`     [mutou "${rotulo}": md5 ${md5(FONTE)} -> ${md5(mut)}]`);
   return mut;
+}
+
+// S0 — tirar a excecao da regra 1: a confirmacao verdadeira volta a ser barrada.
+{
+  const s = sabotar('&& !(pagamentoConfirmado && RE_PAGAMENTO_RECEBIDO.test(f)));', '&& true);', 'regra 1 sem a excecao do pagamento');
+  if (s) {
+    const r = rodar(s, { texto: AFIRMA_PAGAMENTO_DO_PEDIDO, estado: pago({ escreveu_neste_turno: false }) });
+    chk('S0: sem a excecao, a confirmacao VERDADEIRA e barrada pela regra 1 (a §5b pega)', r._portao.veredito === 'barrado_regra_1', r._portao.veredito);
+  }
 }
 
 // S1 — a regra 3 passa a barrar SEMPRE que o texto afirmar pagamento, sem olhar

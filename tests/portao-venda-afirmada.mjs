@@ -282,7 +282,7 @@ function sabotar(de, para, rotulo) {
 }
 
 // (a) Regra 1 desligada: os tres turnos de 08/09 tem de deixar de barrar.
-const semR1 = sabotar('const regra1Barra = afirmou && !escreveuNesteTurno;',
+const semR1 = sabotar('const regra1Barra = afirmouForaDoPagamento && !escreveuNesteTurno;',
   'const regra1Barra = false;', 'regra 1 desligada');
 if (semR1) {
   const r = rodar(semR1, { texto: 'Anotei 10 pães de queijo tradicionais para você.', estado: semPedido });

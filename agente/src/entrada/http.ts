@@ -3,6 +3,8 @@
  *
  *   GET  /saude                                  healthcheck do Coolify (200 + fila viva)
  *   POST /chatwoot/<token>/<inbox>               o webhook do Agent Bot; 200 em < 1 s, só enfileira
+ *   POST /asaas                                  o webhook do Asaas (header asaas-access-token,
+ *                                                validado no banco por tenant; 200 SEMPRE)
  *   POST /limpar-memoria                         o botão do painel (header x-limpeza-secret,
  *                                                body { tenant_id, escopo, conversation_ids? })
  *
@@ -18,12 +20,15 @@ import http from 'node:http';
 import { receber, type Deps as DepsReceber } from './receber.ts';
 import { fnValor } from '../db.ts';
 import { log, erroTexto } from '../log.ts';
+import { receberWebhookAsaas } from '../pagamento/webhook.ts';
 
 export interface DepsHttp extends DepsReceber {
   webhookToken: string;
   limpezaSecret: string;
   /** Diz se o worker está vivo (última passada há menos de N s). */
   filaViva: () => boolean;
+  /** O Chatwoot, para o webhook do Asaas avisar o cliente. */
+  chatwoot: import('../chatwoot/enviar.ts').Chatwoot;
   /** A versão do código (SHA do commit) — para saber QUAL deploy respondeu ao healthcheck. */
   versaoCodigo?: string;
 }
@@ -69,6 +74,22 @@ export function criarServidor(deps: DepsHttp): http.Server {
       } catch (e) {
         log('erro', 'webhook.falhou', { inbox, erro: erroTexto(e) });
         return responder(res, 200, { ok: false, motivo: 'erro_interno' });
+      }
+    }
+
+    // O webhook do Asaas: sem segredo na URL — o token vem no header
+    // `asaas-access-token` e quem o valida é `api_n8n_pagamento_webhook`, por
+    // tenant. Token errado = `reconhecido=false`, sem efeito, e AINDA 200:
+    // 401 ao Asaas de verdade por token mal configurado derrubaria a fila dele.
+    if (req.method === 'POST' && partes[0] === 'asaas' && partes.length === 1) {
+      let body: unknown;
+      try { body = JSON.parse(await lerCorpo(req)); } catch { return responder(res, 200, { reconhecido: false, motivo: 'corpo_invalido' }); }
+      try {
+        const { estado } = await receberWebhookAsaas({ db: deps.db, chatwoot: deps.chatwoot, n8nJsDir: deps.n8nJsDir }, req.headers, body);
+        return responder(res, 200, estado);
+      } catch (e) {
+        log('erro', 'asaas.webhook.falhou', { erro: erroTexto(e) });
+        return responder(res, 200, { reconhecido: false, motivo: 'erro_interno' });
       }
     }
 

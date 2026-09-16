@@ -17,6 +17,7 @@
  */
 import crypto from 'node:crypto';
 import { secaoPrompt as secaoGerenciarPedido } from '../../../n8n/tool-pedido-acoes.mjs';
+import { secaoPrompt as secaoGerarLinkPagamento } from '../../../n8n/tool-pagamento-fonte.mjs';
 
 export type Perfil = 'basico' | 'vendas';
 
@@ -39,6 +40,9 @@ export const SECOES: Record<string, string> = {
     + 'Use para descobrir o que o cliente pode comprar, com preço e unidade. SEMPRE consulte antes de falar preço — nunca invente valor nem calcule desconto. Cada item vem com um id; guarde o id para usar em gerenciar_pedido.\n'
     + 'O retorno diz QUANTOS existem e quantos vieram na amostra. Nunca liste mais de 5 itens numa resposta: havendo mais, diga o total e faça UMA pergunta que estreite (tipo, ocasião, faixa de preço). "0 encontrados" com catálogo não-vazio significa que o termo falhou, não que falta produto — ofereça buscar de outro jeito.\n\n',
   gerenciar_pedido: secaoGerenciarPedido() as string,
+  // Só entra como seção EXTRA (tenant com `pagamento` contratada): a fonte é a
+  // mesma do sub-workflow que o n8n nunca importou.
+  gerar_link_pagamento: secaoGerarLinkPagamento() as string,
   enviar_foto_produto:
     '## Ferramenta: enviar_foto_produto\n'
     + 'Envia a foto de UM item ao cliente, com legenda, numa mensagem so. Use SOMENTE quando\n'

@@ -111,7 +111,8 @@
     "teste:estimativa-n8n": "node tests/estimativa-n8n.mjs",
     "diff:custo": "node --env-file=.env.local scripts/diff-custo.mjs",
     "teste:agente-baixar-anexo": "node tests/agente-baixar-anexo.mjs",
-    "teste:migracao-encerramento": "node --env-file=.env.local tests/migracao-encerramento-link.mjs"
+    "teste:migracao-encerramento": "node --env-file=.env.local tests/migracao-encerramento-link.mjs",
+    "pagamento:sendbox-arranjo": "node --env-file=.env.local scripts/pagamento-sendbox-arranjo.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

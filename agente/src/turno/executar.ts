@@ -30,7 +30,8 @@ import { Turno } from '../trace.ts';
 import { resolverPerfil } from '../perfil.ts';
 import { montarSystemMessage, versaoDasPartes } from '../agente/prompt.ts';
 import type { Modelo, MensagemHistorico } from '../agente/modelo.ts';
-import { ferramentasDoPerfil } from '../tools/index.ts';
+import { ferramentasDoPerfil, temPagamento } from '../tools/index.ts';
+import type { Asaas } from '../pagamento/asaas.ts';
 import type { Embeddings } from '../tools/contexto.ts';
 import { transcreverAnexo, type Anexo, type Transcritor } from '../midia/transcrever.ts';
 import { saidaLimpa } from './saida.ts';
@@ -52,6 +53,8 @@ export interface Deps {
   db: Db; chatwoot: Chatwoot; waha: Waha | null; modelo: Modelo;
   embeddings: Embeddings | null; transcritor: Transcritor | null;
   n8nJsDir: string; versaoCodigo: string; fotoSecret: string | null; fetchFn: typeof fetch;
+  /** Pagamento por link; `null` = a tool não entra mesmo contratada. */
+  asaas: Asaas | null;
 }
 
 export interface ResultadoTurno {
@@ -138,7 +141,8 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
 
     // ---- perfil, prompt, memória ----
     const { perfil, toolsAtivas } = await turno.medir('registro', 'api_n8n_tools_ativas', {}, () => resolverPerfil(db, tenant.tenant_id));
-    const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt });
+    const secoesExtras = perfil === 'vendas' && temPagamento(toolsAtivas) && deps.asaas ? ['gerar_link_pagamento'] : [];
+    const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt, secoesExtras });
     await fnValor(db, 'api_agente_prompt_registrar', [tenant.tenant_id, prompt.hash, prompt.texto, `${deps.versaoCodigo}/partes:${versaoDasPartes()}`]);
     await turno.prompt(perfil, prompt.hash);
     const memoria = await turno.medir('memoria', 'api_agente_memoria', { conversationId },
@@ -147,8 +151,8 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     await turno.passo('entrada', 'prompt', { entrada: { perfil, tools_ativas: toolsAtivas, prompt_hash: prompt.hash, memoria: memoria.length, texto: textoEntrada } });
 
     // ---- o modelo ----
-    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn };
-    const ferramentas = ferramentasDoPerfil(ctx, perfil);
+    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas };
+    const ferramentas = ferramentasDoPerfil(ctx, perfil, toolsAtivas);
     const r = await deps.modelo.responder({
       modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto,
       historico: memoria.map((m) => ({ papel: m.papel, texto: m.texto })), mensagemDoCliente: textoEntrada, ferramentas,

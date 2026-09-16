@@ -148,7 +148,10 @@ export const POLITICA_EXPIRACAO = 'expirou_aceita'; // 'expirou_recusa' | 'expir
  * `fora_do_prazo` da 61 continua obrigatório para a corrida (pagamento entre a
  * janela fechar e o encerramento rodar) e para o encerramento falhar.
  *
- * NADA DISTO ESTÁ IMPLEMENTADO. É desenho: a migração (colunas + funções de
+ * ATUALIZAÇÃO 16/09: o encerramento entrou na migração 64 e na varredura do
+ * serviço `agente/` (n8n congelado; este arquivo é FONTE só para o código).
+ *
+ * NADA DISTO ESTAVA IMPLEMENTADO até 16/09. Era desenho: a migração (colunas + funções de
  * varredura) e o workflow agendado são a próxima entrega, e a pendência com
  * gatilho está em docs/PENDENCIA-ENCERRAMENTO-LINK.md.
  */
@@ -193,8 +196,10 @@ export function descricaoFerramenta() {
     + 'encurtar e sem transformar em texto clicavel. '
     + 'Se a resposta disser que o pedido esta ABAIXO DO MINIMO, sugira completar o pedido com o '
     + 'valor que falta; so transfira para um atendente se o cliente nao quiser. '
-    + 'ESTA FERRAMENTA NAO CONFIRMA PAGAMENTO e nenhuma outra confirma: o sistema avisa quando o '
-    + 'pagamento cair. Nunca diga que o pagamento foi feito, recebido ou confirmado.'
+    + 'ESTA FERRAMENTA NAO CONFIRMA PAGAMENTO e nenhuma outra confirma: quando o pagamento cair, o '
+    + 'sistema manda sozinho a mensagem "Pagamento confirmado!" nesta conversa. Nunca diga que o '
+    + 'pagamento foi feito, recebido ou confirmado com base na palavra do cliente — so se essa '
+    + 'mensagem automatica ja estiver no historico.'
   );
 }
 
@@ -206,8 +211,9 @@ export function secaoPrompt() {
     + 'devolve a URL; mande a URL exatamente como veio, sozinha numa linha, sem encurtar e sem '
     + 'texto clicável. Se ela disser que o pedido está abaixo do mínimo, sugira completar com o '
     + 'valor que falta; só transfira para um atendente se o cliente não quiser.\n'
-    + 'VOCÊ NUNCA CONFIRMA PAGAMENTO. Nenhuma ferramenta confirma. Quando o pagamento cair, o sistema '
-    + 'avisa o cliente sozinho. Se o cliente perguntar "caiu?", diga que ainda não apareceu a '
-    + 'confirmação do seu lado e que ele será avisado — nunca diga que caiu.\n'
+    + 'VOCÊ NUNCA CONFIRMA PAGAMENTO PELA PALAVRA DO CLIENTE. Nenhuma ferramenta confirma. Quando o '
+    + 'pagamento cair, o sistema manda sozinho a mensagem "Pagamento confirmado!" nesta conversa. Se o '
+    + 'cliente perguntar "caiu?": se essa mensagem automática já estiver no histórico, confirme; se '
+    + 'não, diga que ainda não apareceu a confirmação do seu lado e que ele será avisado.\n'
   );
 }

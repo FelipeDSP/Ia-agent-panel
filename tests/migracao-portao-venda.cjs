@@ -9,6 +9,11 @@ const url = env.split(/\r?\n/).find((l) => l.startsWith('SUPABASE_DB_URL='))
 
 const MIG = fs.readFileSync(RAIZ + '/supabase/migrations/20260909180000_56_portao_venda_afirmada.sql', 'utf8');
 const RBK = fs.readFileSync(RAIZ + '/supabase/migrations/20260909180000_56_portao_venda_afirmada_rollback.sql', 'utf8');
+// A CADEIA que producao viu, nao um elo: a 61 redefiniu `api_n8n_estado_pedido`
+// (ganhou `pagamento_confirmado`) e o no `Estado do Pedido` foi re-injetado em
+// 16/09 lendo essa coluna. Replayar so a 56 daria 42703 num banco que a 61 ja
+// tem — vermelho sem defeito (o setimo caso do CLAUDE.md).
+const MIG61 = fs.readFileSync(RAIZ + '/supabase/migrations/20260910230000_61_pagamento_asaas_sandbox.sql', 'utf8');
 // as migracoes trazem begin/commit proprios; dentro da transacao de teste eles atrapalham
 const semTx = (s) => s.replace(/^\s*begin;\s*$/mi, '').replace(/^\s*commit;\s*$/mi, '');
 
@@ -31,8 +36,9 @@ const chk = (nome, cond, detalhe) => {
     chk('depois do rollback a funcao NAO existe', semFn.rows[0].n === 0);
 
     // ------------------------------------------------------------------
-    console.log('\n-- 2. A migracao aplica --');
+    console.log('\n-- 2. A migracao aplica (56, depois a 61 que a redefine) --');
     await c.query(semTx(MIG));
+    await c.query(semTx(MIG61));
     const comFn = await c.query(`select count(*)::int n from pg_proc p join pg_namespace ns on ns.oid=p.pronamespace
                                   where ns.nspname='public' and p.proname='api_n8n_estado_pedido'`);
     chk('a funcao existe', comFn.rows[0].n === 1);
@@ -278,9 +284,9 @@ const chk = (nome, cond, detalhe) => {
         let r;
         try {
           r = await c.query(sql, [tid, String(conv), 'vendas']);
-          chk('a query do no EXECUTA contra a funcao da migracao 56', true);
+          chk('a query do no EXECUTA contra a funcao da migracao 56->61', true);
         } catch (e) {
-          chk('a query do no EXECUTA contra a funcao da migracao 56', false,
+          chk('a query do no EXECUTA contra a funcao da migracao 56->61', false,
             `${e.code} ${e.message}`);
         }
 
@@ -349,6 +355,7 @@ const chk = (nome, cond, detalhe) => {
     chk('rollback e reexecutavel', true);
     await c.query(semTx(MIG));
     await c.query(semTx(MIG));
+    await c.query(semTx(MIG61));
     chk('migracao e reexecutavel', true);
   } catch (err) {
     fail++;

@@ -337,7 +337,18 @@ const candidata = ehCandidata(textoModelo);
 
 // REGRA 1 — afirmou efeito consumado sem escrita neste turno.
 const afirmou = candidata && afirmaEfeitoConsumado(textoModelo);
-const regra1Barra = afirmou && !escreveuNesteTurno;
+// Excecao MEDIDA em 16/09/2026 (teste:agente-servico 7d): com o pedido PAGO no
+// banco (`pagamento_confirmado`), a frase "o pagamento do pedido foi confirmado"
+// casa `confirmado` + `pedido` e caia na regra 1 — sem escrita neste turno,
+// porque quem escreveu foi o webhook do Asaas, em outro momento. A confirmacao
+// e VERDADEIRA (vem do banco, nao da palavra do cliente), e barra-la mandaria
+// "ainda nao consta" a quem acabou de pagar. Entao: frase que afirma PAGAMENTO
+// recebido, com o pagamento confirmado no banco, nao conta para a regra 1. As
+// demais afirmacoes consumadas da mesma resposta continuam contando.
+const afirmouForaDoPagamento = candidata && frases(textoModelo).some((f) =>
+  RE_CONSUMADO.test(f) && RE_CONTEXTO_PEDIDO.test(f) && !RE_NAO_CONSUMADO.test(f)
+  && !(pagamentoConfirmado && RE_PAGAMENTO_RECEBIDO.test(f)));
+const regra1Barra = afirmouForaDoPagamento && !escreveuNesteTurno;
 
 // REGRA 2 — total afirmado diverge do banco.
 // So avalia com rascunho e total maior que zero: sem isso nao ha com o que

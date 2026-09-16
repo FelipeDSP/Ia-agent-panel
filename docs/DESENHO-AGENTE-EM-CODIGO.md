@@ -349,6 +349,19 @@ portão em código, bruto em `mensagens_log.portao` e a memória do turno
 seguinte levando a substituta; tool executando no banco; tokens reais no log
 (`fonte_tokens = openai_usage`); teto → `TEXTO_TETO`.
 
+**Fatia 3 — pagamento em código (16/09/2026, escrita; aguardando a 64 ser
+aplicada e o deploy):** a 7ª tool `gerar_link_pagamento` (zero parâmetros,
+valor do banco, chave do tenant, texto de `tool-pagamento-resposta.js`), o
+webhook `POST /asaas` (token por tenant no header; a função do banco é a única
+que escreve `pago`; 200 sempre; a mensagem "Pagamento confirmado!" vai ao
+cliente E ao `mensagens_log`, então o agente passa a saber) e o encerramento
+dos links vencidos (migração 64; varredura de 5 min: PUT `active=false` → GET
+pendentes → DELETE cada uma). O portão ganhou a exceção da regra 1 para a
+confirmação verdadeira. `teste:agente-servico` §7 (link, reuso, webhook,
+reenvio, token forjado, "caiu?" passa, contraprova barrada, encerramento,
+Asaas fora), `teste:migracao-encerramento` 20/20, `teste:portao-pagamento` §5b.
+Arranjo do sendbox: `scripts/pagamento-sendbox-arranjo.mjs`.
+
 **Fatia 2 no ar — 16/09/2026 12:44.** Primeiro turno real com modelo no
 `sendbox` (`8aa3265b…`, conversa 51): 4,4 s, `gpt-4.1-mini`, 2 chamadas,
 `consultar_catalogo` executada, portão `passou`, Chatwoot `5268792`, tokens

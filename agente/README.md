@@ -45,6 +45,7 @@ ponta a ponta em transação abortada: `npm run teste:agente-fatia1`.
 |---|---|
 | `GET /saude` | 200 se o worker passou há menos de ~15 s; senão 503 (healthcheck do Coolify) |
 | `POST /chatwoot/<token>/<inbox>` | o webhook do Agent Bot da conta. Responde **200 sempre** que o token bate — descartes inclusive (o Chatwoot não reenvia) |
+| `POST /asaas` | o webhook do Asaas (`PAYMENT_RECEIVED` / `PAYMENT_CONFIRMED`). Sem segredo na URL: o token vem no header `asaas-access-token` e é validado **por tenant** no banco (`api_n8n_pagamento_webhook`, a única função que escreve `pago`). Responde **200 sempre** com só o estado; token errado = `reconhecido:false`, sem efeito. Quando aplica: mensagem "Pagamento confirmado!" ao cliente pelo bot + registro em `mensagens_log` (o agente passa a saber) |
 | `POST /limpar-memoria` | mesmo contrato do webhook do n8n: header `x-limpeza-secret`, body `{ tenant_id, escopo: 'conversa' \| 'todas', conversation_ids? }`. Nada é apagado: é o **corte** (`conversas.memoria_cortada_em`) |
 
 ## Apontar uma conta para cá (por conta, reversível)
@@ -90,5 +91,8 @@ src/n8n-js.ts           executor dos corpos JS do n8n que continuam sendo fonte
 src/perfil.ts           api_n8n_tools_ativas -> basico | vendas
 src/chatwoot/enviar.ts  POST messages com o token de Agent Bot
 src/waha/notificar.ts   POST /api/sendText
-src/manutencao.ts       retenção diária + alarme de agente mudo
+src/manutencao.ts       retenção diária + alarme de agente mudo + encerramento dos links vencidos (5 min)
+src/pagamento/asaas.ts  as 4 chamadas ao Asaas (chave por chamada, da linha do tenant)
+src/pagamento/webhook.ts o webhook (extrai pelo MESMO webhook-pagamento-extrai.js; a função do banco decide)
+src/tools/gerar-link-pagamento.ts  a 7ª tool, só para tenant com `pagamento` contratada; texto de n8n/tool-pagamento-resposta.js
 ```

@@ -54,6 +54,8 @@ const M62 = leia('20260914200000_62_agente_em_codigo_fatia1.sql');
 const R62 = leia('20260914200000_62_agente_em_codigo_fatia1_rollback.sql');
 const M63 = leia('20260916140000_63_agente_turno_prompt.sql');
 const R63 = leia('20260916140000_63_agente_turno_prompt_rollback.sql');
+const M64 = leia('20260916190000_64_encerramento_link_pagamento.sql');
+const R64 = leia('20260916190000_64_encerramento_link_pagamento_rollback.sql');
 const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -114,8 +116,17 @@ const fetchFalso = async (u) => {
   if (String(u).includes('anexo-audio')) return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
   throw new Error(`fetch inesperado no teste: ${u}`);
 };
-const deps = { db: c, waha, n8nJsDir: path.join(RAIZ, 'n8n') };
-const depsWorker = { db: c, chatwoot, waha, modelo, embeddings, transcritor, n8nJsDir: path.join(RAIZ, 'n8n'), versaoCodigo: 'teste', fotoSecret: null, fetchFn: fetchFalso, workerId: 'w-teste', lote: 10, leaseMinutos: 5 };
+// Asaas falso: registra cada chamada (SEM guardar a chave além de conferir que veio).
+const chamadasAsaas = [];
+let asaasFalha = false;
+const asaas = {
+  async criarLink(base, key, corpo) { chamadasAsaas.push({ op: 'criar', base, temChave: !!key, corpo }); if (asaasFalha) return { ok: false, status: 500, corpo: null, detalhe: 'HTTP 500: fora' }; return { ok: true, status: 200, corpo: { id: `pl_${chamadasAsaas.length}`, url: `https://sandbox.asaas.com/c/link${chamadasAsaas.length}` }, detalhe: 'HTTP 200' }; },
+  async desativarLink(base, key, id) { chamadasAsaas.push({ op: 'desativar', id, temChave: !!key }); return { ok: true, status: 200, corpo: { id, active: false }, detalhe: 'HTTP 200' }; },
+  async cobrancasPendentes(base, key, id) { chamadasAsaas.push({ op: 'pendentes', id }); return { ok: true, status: 200, ids: [`pay_${id}_a`, `pay_${id}_b`], detalhe: 'HTTP 200' }; },
+  async removerCobranca(base, key, id) { chamadasAsaas.push({ op: 'remover', id }); return { ok: true, status: 200, corpo: { deleted: true }, detalhe: 'HTTP 200' }; },
+};
+const deps = { db: c, waha, n8nJsDir: path.join(RAIZ, 'n8n'), chatwoot };
+const depsWorker = { db: c, chatwoot, waha, modelo, embeddings, transcritor, n8nJsDir: path.join(RAIZ, 'n8n'), versaoCodigo: 'teste', fotoSecret: null, fetchFn: fetchFalso, asaas, workerId: 'w-teste', lote: 10, leaseMinutos: 5 };
 
 const vencer = async () => c.query(`update public.agente_fila set executar_em = now() - interval '1 second' where estado = 'pendente' and tenant_id = any($1)`, [Object.values(T)]);
 const webhook = (p) => ({
@@ -139,10 +150,12 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R64));
   await c.query(semTx(R63));
   await c.query(semTx(R62));
   await c.query(semTx(M62));
   await c.query(semTx(M63));
+  await c.query(semTx(M64));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -402,7 +415,113 @@ try {
   }
 
   // =========================================================================
-  console.log('\n== 7. SABOTAGEM (nos módulos, com md5) ==\n');
+  console.log('\n== 7. PAGAMENTO: link, webhook, "caiu?", encerramento ==\n');
+  // =========================================================================
+  {
+    // esvazia a fila (a §6 deixou a 'oi' da conversa 300 enfileirada) para o roteiro não ir ao turno errado
+    await vencer(); await umCiclo(depsWorker); roteiro.length = 0;
+    const TOKEN_WH = 'tok-webhook-servico-teste-32-caracteres-ok';
+    await c.query(`update public.tenant_credenciais set asaas_ambiente='sandbox', asaas_api_key_sandbox='sk_sb_teste', asaas_webhook_token_sandbox=$2 where tenant_id=$1`, [T.a, TOKEN_WH]);
+    await c.query(`insert into public.tenant_tools (tenant_id, tool_nome, ativo, contratado) values ($1, 'pagamento', true, true)`, [T.a]);
+    const pedidoFechado = async (conv, centavos, numero) => {
+      const prod = await um(`insert into public.produtos (tenant_id, nome, preco_centavos, unidade, disponivel) values ($1, 'Curso teste', $2, 'un', true) returning id`, [T.a, centavos]);
+      const ped = await um(`insert into public.pedidos (tenant_id, conversation_id, numero, status) values ($1, $2, $3, 'aguardando_pagamento') returning id`, [T.a, conv, numero]);
+      await c.query(`insert into public.pedido_itens (tenant_id, pedido_id, produto_id, nome_snapshot, quantidade, preco_unit_centavos) values ($1, $2, $3, 'Curso teste', 1, $4)`, [T.a, ped.id, prod.id, centavos]);
+      return ped.id;
+    };
+    const pedA = await pedidoFechado(400, 5000, 7001);
+
+    // 7a. o modelo pede o link: a tool chama o Asaas com o valor DO BANCO e a chave do tenant; o texto traz a URL crua.
+    roteiro.push({ tool: 'gerar_link_pagamento', args: {} }, { texto: 'Prontinho! Aqui está o link para pagar:\nhttps://sandbox.asaas.com/c/link1' });
+    const f7 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 400, content: 'quero pagar por link' }));
+    await vencer(); const c7 = await umCiclo(depsWorker);
+    const v7 = vistoPeloModelo.at(-1);
+    chk('tenant com `pagamento`: o modelo vê 7 ferramentas (gerar_link_pagamento) e o system message tem a seção dela',
+      v7.ferramentas.length === 7 && v7.ferramentas.includes('gerar_link_pagamento') && /## Ferramenta: gerar_link_pagamento/.test(v7.systemMessage), JSON.stringify(v7.ferramentas));
+    const t7 = await turnoDaFila(f7.filaId);
+    const p7 = (await passosDe(t7.id)).find((p) => p.tipo === 'tool' && p.nome === 'gerar_link_pagamento');
+    const criar = chamadasAsaas.filter((x) => x.op === 'criar');
+    chk('o Asaas foi chamado UMA vez, com value 50.00 (do banco), PIX/DETACHED, endDate = data, chave presente',
+      criar.length === 1 && criar[0].corpo.value === 50 && criar[0].corpo.billingType === 'PIX' && criar[0].corpo.chargeType === 'DETACHED' && /^\d{4}-\d{2}-\d{2}$/.test(criar[0].corpo.endDate) && criar[0].temChave === true && criar[0].base === 'https://api-sandbox.asaas.com', JSON.stringify(criar[0]?.corpo));
+    chk('o texto ao modelo traz a URL crua e o "NAO afirme"; o trace traz link_id e NÃO traz a chave',
+      /https:\/\/sandbox\.asaas\.com\/c\/link1/.test(p7?.saida?.texto ?? '') && /NAO afirme/.test(p7?.saida?.texto ?? '') && p7?.saida?.diagnostico?.link_id === 'pl_1' && !JSON.stringify(p7?.saida).includes('sk_sb_teste'), JSON.stringify(p7?.saida).slice(0, 200));
+    const cob = await um(`select id, url, link_id, pago_em, expira_em from public.pedido_cobrancas where tenant_id=$1 and pedido_id=$2`, [T.a, pedA]);
+    chk('pedido_cobrancas: linha com url e link_id (registrar_cobranca ok)', cob?.url === 'https://sandbox.asaas.com/c/link1' && cob?.link_id === 'pl_1' && cob.pago_em === null);
+    chk('a resposta "Prontinho! aqui está o link" PASSOU no portão (gerar o link é escrita do turno)', c7.respondidas === 1 && t7.portao_veredito === 'passou' && chamadasChatwoot.at(-1).content.includes('link1'));
+
+    // 7b. de novo: reuso, sem segunda chamada ao Asaas.
+    roteiro.push({ tool: 'gerar_link_pagamento', args: {} }, { texto: 'É o mesmo link de antes: https://sandbox.asaas.com/c/link1' });
+    const f7b = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 400, content: 'manda o link de novo' }));
+    await vencer(); await umCiclo(depsWorker);
+    const p7b = (await passosDe((await turnoDaFila(f7b.filaId)).id)).find((p) => p.tipo === 'tool' && p.nome === 'gerar_link_pagamento');
+    chk('segunda chamada: ja_existia, mesma URL, e o Asaas NÃO foi chamado de novo', p7b?.saida?.diagnostico?.ja_existia === true && /link1/.test(p7b?.saida?.texto ?? '') && chamadasAsaas.filter((x) => x.op === 'criar').length === 1);
+
+    // 7c. o webhook do Asaas: aplica, avisa o cliente, entra no log; reenvio não repete; token forjado não faz nada.
+    const { receberWebhookAsaas } = await import('../agente/src/pagamento/webhook.ts');
+    const evento = (id, token = TOKEN_WH, extra = {}) => receberWebhookAsaas({ db: c, chatwoot, n8nJsDir: path.join(RAIZ, 'n8n') }, { 'asaas-access-token': token }, { id, event: 'PAYMENT_RECEIVED', payment: { id: 'pay_pl_1_a', paymentLink: 'pl_1', externalReference: cob.id, value: 50, ...extra } });
+    const cwAntes = chamadasChatwoot.length;
+    const w1 = await evento('evt_1'); await w1.pos;
+    chk('evento 1: reconhecido, aplicou; pedido PAGO; cliente recebeu "Pagamento confirmado!" pelo bot',
+      w1.estado.reconhecido && w1.estado.aplicou && (await um(`select status from public.pedidos where id=$1`, [pedA])).status === 'pago'
+      && chamadasChatwoot.length === cwAntes + 1 && /Pagamento confirmado!/.test(chamadasChatwoot.at(-1).content) && chamadasChatwoot.at(-1).privada !== true, JSON.stringify(w1.estado));
+    chk('a mensagem automática entrou em mensagens_log como saída (memória do agente) e a cobrança ficou notificada',
+      (await um(`select count(*)::int n from public.mensagens_log where tenant_id=$1 and conversation_id=400 and direcao='saida' and conteudo like 'Pagamento confirmado!%'`, [T.a])).n === 1
+      && (await um(`select notificado_em n from public.pedido_cobrancas where id=$1`, [cob.id])).n !== null);
+    const w2 = await evento('evt_1'); await w2.pos;
+    chk('o MESMO evento de novo: ja_processado, sem segunda mensagem', w2.estado.ja_processado === true && !w2.estado.aplicou && chamadasChatwoot.length === cwAntes + 1);
+    const w3 = await evento('evt_forjado', 'token-errado-de-um-forjador-qualquer-aqui'); await w3.pos;
+    chk('token forjado: reconhecido=false, nenhum efeito, nenhuma mensagem', w3.estado.reconhecido === false && chamadasChatwoot.length === cwAntes + 1);
+
+    // 7d. "caiu?": a memória leva a mensagem automática; o modelo confirma; o portão (regra 3) deixa passar porque pagamento_confirmado é true.
+    roteiro.push({ texto: 'Sim! O pagamento do pedido nº 7001 foi confirmado. Obrigado!' });
+    const f7d = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 400, content: 'caiu?' }));
+    await vencer(); await umCiclo(depsWorker);
+    const v7d = vistoPeloModelo.at(-1); const t7d = await turnoDaFila(f7d.filaId);
+    chk('"caiu?": o histórico que chega ao modelo contém "Pagamento confirmado!", e a confirmação PASSOU no portão',
+      v7d.historico.some((h) => h.papel === 'ai' && /Pagamento confirmado!/.test(h.texto)) && t7d.portao_veredito === 'passou', JSON.stringify({ h: v7d.historico.map((h) => h.texto.slice(0, 30)), v: t7d.portao_veredito }));
+
+    // 7e. contraprova da regra 3: em conversa SEM pagamento, o mesmo texto é BARRADO.
+    const pedB = await pedidoFechado(401, 7000, 7002);
+    roteiro.push({ texto: 'Sim! O pagamento do pedido nº 7002 foi confirmado. Obrigado!' });
+    const f7e = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 401, content: 'caiu?' }));
+    await vencer(); await umCiclo(depsWorker);
+    const t7e = await turnoDaFila(f7e.filaId);
+    chk('mesmo texto sem pagamento confirmado -> barrado_regra_3 (o cliente NÃO recebe "confirmado")', t7e.portao_veredito === 'barrado_regra_3' && !/confirmado/i.test(chamadasChatwoot.at(-1).content), JSON.stringify({ v: t7e.portao_veredito, c: chamadasChatwoot.at(-1).content.slice(0, 80) }));
+
+    // 7f. encerramento: link vencido do pedido B -> PUT active=false, GET pendentes, DELETE cada uma; a paga (A) intocada.
+    roteiro.push({ tool: 'gerar_link_pagamento', args: {} }, { texto: 'Link: https://sandbox.asaas.com/c/link2' });
+    const f7f = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 401, content: 'me manda o link' }));
+    await vencer(); await umCiclo(depsWorker);
+    const cobB = await um(`select id, link_id from public.pedido_cobrancas where tenant_id=$1 and pedido_id=$2`, [T.a, pedB]);
+    await c.query(`update public.pedido_cobrancas set expira_em = now() - interval '1 minute' where id=$1`, [cobB.id]);
+    const { encerrarLinksVencidos } = await import('../agente/src/manutencao.ts');
+    const antesOps = chamadasAsaas.length;
+    const enc = await encerrarLinksVencidos({ db: c, waha, retencaoDias: 30, mudoMinutos: 10, alarme: null, asaas });
+    const ops = chamadasAsaas.slice(antesOps).map((x) => x.op);
+    chk('varredura: 1 vencida, 1 encerrada; PUT -> GET -> DELETE x2, nessa ordem', enc.vencidas === 1 && enc.encerradas === 1 && ops.join(',') === 'desativar,pendentes,remover,remover', JSON.stringify({ enc, ops }));
+    chk('cobrança B encerrada (encerrada_em + detalhe); a paga (A) NÃO foi tocada; pedidos.status de B continua aguardando_pagamento',
+      (await um(`select encerrada_em e, encerramento_detalhe d from public.pedido_cobrancas where id=$1`, [cobB.id])).e !== null
+      && (await um(`select encerrada_em e from public.pedido_cobrancas where id=$1`, [cob.id])).e === null
+      && (await um(`select status from public.pedidos where id=$1`, [pedB])).status === 'aguardando_pagamento');
+    const enc2 = await encerrarLinksVencidos({ db: c, waha, retencaoDias: 30, mudoMinutos: 10, alarme: null, asaas });
+    chk('segunda varredura: nada a encerrar', enc2.vencidas === 0);
+
+    // 7g. Asaas fora: registra falhou_em, o modelo recebe "NAO invente um link".
+    const pedC = await pedidoFechado(402, 6000, 7003);
+    asaasFalha = true;
+    roteiro.push({ tool: 'gerar_link_pagamento', args: {} }, { texto: 'Não consegui gerar o link agora, vou te passar para um atendente.' });
+    const f7g = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 402, content: 'link por favor' }));
+    await vencer(); await umCiclo(depsWorker); asaasFalha = false;
+    const p7g = (await passosDe((await turnoDaFila(f7g.filaId)).id)).find((p) => p.tipo === 'tool' && p.nome === 'gerar_link_pagamento');
+    chk('Asaas 500: texto "NAO invente um link", sem URL; falhou_em gravado', /NAO invente um link/.test(p7g?.saida?.texto ?? '') && !/https?:\/\//.test(p7g?.saida?.texto ?? '')
+      && (await um(`select falhou_em f from public.pedido_cobrancas where tenant_id=$1 and pedido_id=$2`, [T.a, pedC])).f !== null, p7g?.saida?.texto);
+
+    // 7h. tenant SEM pagamento (C, basico) e um com vendas sem pagamento não veem a tool.
+    chk('tenant sem `pagamento` não vê a tool nem a seção (o de C tinha 3 ferramentas)', vistoPeloModelo.some((v) => v.ferramentas.length === 3) && !vistoPeloModelo.some((v) => v.ferramentas.length === 3 && v.ferramentas.includes('gerar_link_pagamento')));
+  }
+
+  // =========================================================================
+  console.log('\n== 8. SABOTAGEM (nos módulos, com md5) ==\n');
   // =========================================================================
   {
     const sabotar = async (rel, alvo, mut, nome, prova) => {

@@ -7,6 +7,7 @@ import type { Db } from '../db.ts';
 import type { Chatwoot } from '../chatwoot/enviar.ts';
 import type { Waha } from '../waha/notificar.ts';
 import type { Tenant } from '../tenant/resolver.ts';
+import type { Asaas } from '../pagamento/asaas.ts';
 
 export interface Embeddings {
   /** text-embedding-3-small, 1536 dimensões, fixo (CLAUDE.md). */
@@ -26,6 +27,8 @@ export interface ContextoTool {
   fotoSecret: string | null;
   /** `fetch` injetável (testes). */
   fetchFn: typeof fetch;
+  /** O Asaas (pagamento por link); `null` desliga a tool mesmo que contratada. */
+  asaas: Asaas | null;
 }
 
 /** `api_n8n_config_tool(tenant, tool)` — a primeira coisa de toda tool, como no n8n. */

@@ -4,6 +4,11 @@
  *   retenção   1x por dia: `api_agente_varrer_passos(dias)`, e o total
  *              removido vai para um turno sintético `manutencao` — a limpeza
  *              é visível, não silenciosa;
+ *   encerramento a cada `ENCERRAMENTO.intervalo_minutos` (5): links de pagamento
+ *              vencidos são desativados no Asaas e as cobranças PENDING deles
+ *              removidas (migração 64; docs/ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md
+ *              §12). O Asaas NUNCA fecha o link sozinho — sem isto o cliente
+ *              que nunca volta paga um pedido morto;
  *   agente mudo  a cada ciclo: tenant em 'codigo' com ENTRADA em
  *              `mensagens_log` e nenhuma SAÍDA depois dela por mais de N
  *              minutos -> aviso por WAHA (uma vez por tenant por hora, para
@@ -15,8 +20,60 @@
 import { fnTodas, fnValor, type Db } from './db.ts';
 import type { Waha } from './waha/notificar.ts';
 import { log, erroTexto } from './log.ts';
+import type { Asaas } from './pagamento/asaas.ts';
 
-export interface DepsManutencao { db: Db; waha: Waha | null; retencaoDias: number; mudoMinutos: number; alarme: { sessao: string; destino: string } | null }
+export interface DepsManutencao { db: Db; waha: Waha | null; retencaoDias: number; mudoMinutos: number; alarme: { sessao: string; destino: string } | null; asaas?: Asaas | null }
+
+interface CobrancaVencida { tenant_id: string; cobranca_id: string; link_id: string; ambiente: string; base_url: string; api_key: string; expira_em: Date; tentativas_detalhe: string | null }
+
+export interface ResultadoEncerramento { vencidas: number; encerradas: number; falhas: number }
+
+/**
+ * Os DOIS passos por cobrança vencida, na ordem que a sonda D obriga:
+ * desativar o link primeiro (para não nascer cobrança nova no meio) e remover
+ * as PENDING depois. `confirmar_encerramento(ok=true)` só com os dois 2xx;
+ * senão grava o detalhe e a próxima varredura tenta de novo. A chave é a do
+ * tenant da cobrança e não sai daqui.
+ */
+export async function encerrarLinksVencidos(deps: DepsManutencao): Promise<ResultadoEncerramento> {
+  const r: ResultadoEncerramento = { vencidas: 0, encerradas: 0, falhas: 0 };
+  if (!deps.asaas) return r;
+  const vencidas = await fnTodas<CobrancaVencida>(deps.db, 'api_n8n_cobrancas_a_encerrar', [50]);
+  r.vencidas = vencidas.length;
+  for (const c of vencidas) {
+    const passos: string[] = [];
+    let ok = false;
+    try {
+      const d = await deps.asaas.desativarLink(c.base_url, c.api_key, c.link_id);
+      passos.push(`PUT ${d.status}`);
+      if (d.ok) {
+        const p = await deps.asaas.cobrancasPendentes(c.base_url, c.api_key, c.link_id);
+        passos.push(`GET ${p.status} pendentes=${p.ids.length}`);
+        if (p.ok) {
+          let removidas = 0;
+          for (const id of p.ids) {
+            const x = await deps.asaas.removerCobranca(c.base_url, c.api_key, id);
+            passos.push(`DELETE ${id} ${x.status}`);
+            // 404 = já removida (varredura anterior parcial): conta como feito.
+            if (x.ok || x.status === 404) removidas++;
+          }
+          ok = removidas === p.ids.length;
+        }
+      }
+    } catch (e) {
+      passos.push(erroTexto(e));
+    }
+    const detalhe = passos.join('; ').slice(0, 500);
+    try {
+      await fnValor(deps.db, 'api_n8n_confirmar_encerramento', [c.tenant_id, c.cobranca_id, ok, detalhe]);
+    } catch (e) {
+      log('erro', 'encerramento.confirmar_falhou', { cobranca: c.cobranca_id, erro: erroTexto(e) });
+    }
+    if (ok) r.encerradas++; else r.falhas++;
+    log(ok ? 'info' : 'aviso', 'encerramento.link', { tenant: c.tenant_id, cobranca: c.cobranca_id, link: c.link_id, ok, detalhe });
+  }
+  return r;
+}
 
 export async function varrerRetencao(deps: DepsManutencao): Promise<number> {
   const n = Number(await fnValor<number>(deps.db, 'api_agente_varrer_passos', [deps.retencaoDias]) ?? 0);
