@@ -65,6 +65,19 @@ export interface ResultadoTurno {
   veredito?: string;
 }
 
+/**
+ * O que o sistema sabe e o modelo tem de tratar como fato (não como fala do
+ * cliente). Hoje: o pagamento confirmado pelo webhook. Devolve `null` quando não
+ * há nada a narrar — o item não vai ao modelo e o turno fica igual ao de antes.
+ */
+export async function narrarEstadoDoSistema(db: Db, tenantId: string, conversationId: number, perfil: string): Promise<string | null> {
+  if (perfil !== 'vendas') return null;
+  const e = await fnUma<{ pagamento_confirmado: boolean | null; pedido_numero: number | null; pedido_status: string | null }>(db, 'api_n8n_estado_pedido', [tenantId, conversationId, perfil]);
+  if (e?.pagamento_confirmado !== true) return null;
+  return 'FATO DO SISTEMA (do banco, não do cliente): o pagamento do pedido desta conversa está CONFIRMADO — '
+    + 'o sistema já recebeu e já avisou o cliente com "Pagamento confirmado!". Se o cliente perguntar se caiu, confirme que sim.';
+}
+
 /** Sem texto nenhum utilizável (só avisos de mídia): o que dizer. */
 const AVISO_PADRAO_MIDIA = 'Ainda não consigo ouvir áudio por aqui. Pode escrever?';
 
@@ -150,11 +163,21 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       (r) => ({ mensagens: r.length }));
     await turno.passo('entrada', 'prompt', { entrada: { perfil, tools_ativas: toolsAtivas, prompt_hash: prompt.hash, memoria: memoria.length, texto: textoEntrada } });
 
+    // ---- o estado do sistema que o modelo precisa saber como FATO ----
+    // Medido em 16/09 (sendbox, 19:03): com "Pagamento confirmado!" na memória, o
+    // modelo ainda respondeu "ainda não apareceu" — a instrução de nunca confirmar
+    // pela palavra do cliente pesou mais que uma mensagem antiga do próprio
+    // assistente. O banco sabe (`pagamento_confirmado`, o mesmo que o portão lê);
+    // então o código NARRA, como item de sistema deste turno. O que o código
+    // narra o modelo não precisa deduzir.
+    const estadoDoSistema = await narrarEstadoDoSistema(db, tenant.tenant_id, conversationId, perfil);
+    if (estadoDoSistema) await turno.passo('registro', 'estado_do_sistema', { saida: { texto: estadoDoSistema } });
+
     // ---- o modelo ----
     const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas };
     const ferramentas = ferramentasDoPerfil(ctx, perfil, toolsAtivas);
     const r = await deps.modelo.responder({
-      modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto,
+      modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto, estadoDoSistema,
       historico: memoria.map((m) => ({ papel: m.papel, texto: m.texto })), mensagemDoCliente: textoEntrada, ferramentas,
       aoChamarModelo: (c) => turno.passo('modelo', `openai#${c.iteracao}`, { saida: { texto: c.texto, tool_calls: c.toolCalls, usage: c.uso }, duracaoMs: c.latenciaMs }),
       aoChamarTool: (c) => turno.passo('tool', c.nome, { entrada: c.args, saida: { texto: c.resultado, ...(c.diagnostico === undefined ? {} : { diagnostico: c.diagnostico }) }, erro: c.erro, duracaoMs: c.latenciaMs }),

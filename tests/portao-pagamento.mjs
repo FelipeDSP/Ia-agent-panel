@@ -236,6 +236,10 @@ const AFIRMA_PAGAMENTO_DO_PEDIDO = 'Sim! O pagamento do pedido nº 7001 foi conf
   chk('pedido PAGO, sem escrita neste turno: "o pagamento do pedido foi confirmado" -> passou (nao cai na regra 1)', r._portao.veredito === 'passou', r._portao.veredito);
   const r2 = rodar(FONTE, { texto: AFIRMA_PAGAMENTO_DO_PEDIDO, estado: fechado({ escreveu_neste_turno: false }) });
   chk('contraprova: o MESMO texto com o pedido NAO pago -> barrado (regra 1 ou 3 — nao passa)', r2._portao.veredito !== 'passou', r2._portao.veredito);
+  const r4 = rodar(FONTE, { texto: 'Seu pedido está confirmado e pago. Se precisar de mais alguma coisa, é só chamar. Até mais!', estado: pago({ escreveu_neste_turno: false }) });
+  chk('o caso REAL das 19:04 ("Seu pedido está confirmado e pago", sem a palavra pagamento) -> passou', r4._portao.veredito === 'passou', r4._portao.veredito);
+  const r5 = rodar(FONTE, { texto: 'Seu pedido está confirmado e pago. Já anotei mais um item no pedido.', estado: pago({ escreveu_neste_turno: false }) });
+  chk('mas "anotei" na frase seguinte continua barrado (regra 1)', r5._portao.veredito === 'barrado_regra_1', r5._portao.veredito);
   const r3 = rodar(FONTE, { texto: 'Anotei mais 2 itens no pedido. O pagamento do pedido foi confirmado.', estado: pago({ escreveu_neste_turno: false }) });
   chk('outra afirmacao consumada na MESMA resposta ("anotei") continua caindo na regra 1', r3._portao.veredito === 'barrado_regra_1', r3._portao.veredito);
 }
@@ -256,7 +260,7 @@ function sabotar(de, para, rotulo) {
 
 // S0 — tirar a excecao da regra 1: a confirmacao verdadeira volta a ser barrada.
 {
-  const s = sabotar('&& !(pagamentoConfirmado && RE_PAGAMENTO_RECEBIDO.test(f)));', '&& true);', 'regra 1 sem a excecao do pagamento');
+  const s = sabotar('&& !(pagamentoConfirmado && (RE_PAGAMENTO_RECEBIDO.test(f) || RE_FALA_DE_PAGAMENTO.test(f)) && !RE_OUTRA_ACAO_NO_PEDIDO.test(f)));', '&& true);', 'regra 1 sem a excecao do pagamento');
   if (s) {
     const r = rodar(s, { texto: AFIRMA_PAGAMENTO_DO_PEDIDO, estado: pago({ escreveu_neste_turno: false }) });
     chk('S0: sem a excecao, a confirmacao VERDADEIRA e barrada pela regra 1 (a §5b pega)', r._portao.veredito === 'barrado_regra_1', r._portao.veredito);

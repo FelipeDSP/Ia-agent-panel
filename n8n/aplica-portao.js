@@ -345,9 +345,18 @@ const afirmou = candidata && afirmaEfeitoConsumado(textoModelo);
 // "ainda nao consta" a quem acabou de pagar. Entao: frase que afirma PAGAMENTO
 // recebido, com o pagamento confirmado no banco, nao conta para a regra 1. As
 // demais afirmacoes consumadas da mesma resposta continuam contando.
+// Alargada em 16/09 (sendbox, 19:04): "Seu pedido esta confirmado e pago" nao
+// diz "pagamento" e caia. Com o pagamento confirmado no banco, frase que FALA de
+// pagamento (pago/paga/pagamento/pix) e nao afirma OUTRA acao no pedido (anotei,
+// fechei, cancelei...) e verdadeira e nao conta para a regra 1.
+const RE_FALA_DE_PAGAMENTO = /(pagamento|\bpag[oa]s?\b|\bpix\b)/i;
+const RE_OUTRA_ACAO_NO_PEDIDO = new RegExp(
+  '(anotei|anotad[oa]|adicionei|acrescentei|inclu[ií]|coloquei|registrei|registrad[oa]'
+  + '|reservei|reservad[oa]|separei|separad[oa]|removi|tirei|cancelei|cancelad[oa]'
+  + '|fech(ei|ado|ada))', 'i');
 const afirmouForaDoPagamento = candidata && frases(textoModelo).some((f) =>
   RE_CONSUMADO.test(f) && RE_CONTEXTO_PEDIDO.test(f) && !RE_NAO_CONSUMADO.test(f)
-  && !(pagamentoConfirmado && RE_PAGAMENTO_RECEBIDO.test(f)));
+  && !(pagamentoConfirmado && (RE_PAGAMENTO_RECEBIDO.test(f) || RE_FALA_DE_PAGAMENTO.test(f)) && !RE_OUTRA_ACAO_NO_PEDIDO.test(f)));
 const regra1Barra = afirmouForaDoPagamento && !escreveuNesteTurno;
 
 // REGRA 2 — total afirmado diverge do banco.

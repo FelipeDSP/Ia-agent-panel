@@ -53,6 +53,13 @@ export interface PedidoAoModelo {
   modelo: string;
   temperatura: number | null;
   systemMessage: string;
+  /**
+   * Fatos do SISTEMA para este turno (ex.: "o pagamento está confirmado"), vindos
+   * do banco — vão como item `system` DEPOIS do histórico, para o modelo não os
+   * confundir com fala do cliente nem com memória antiga. Fora do hash do prompt:
+   * mudam por turno, o prompt não.
+   */
+  estadoDoSistema?: string | null;
   historico: MensagemHistorico[];
   mensagemDoCliente: string;
   ferramentas: FerramentaDoModelo[];
@@ -80,6 +87,7 @@ export function criarModeloOpenAI(apiKey: string): Modelo {
       // O histórico: pares human/ai da memória (mensagens_log, pós-portão), depois a mensagem do turno.
       const input: OpenAI.Responses.ResponseInputItem[] = [
         ...p.historico.map((m) => ({ role: m.papel === 'human' ? 'user' as const : 'assistant' as const, content: m.texto })),
+        ...(p.estadoDoSistema ? [{ role: 'system' as const, content: p.estadoDoSistema }] : []),
         { role: 'user', content: p.mensagemDoCliente },
       ];
       const uso: Uso = { entrada: 0, saida: 0 };

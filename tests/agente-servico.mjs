@@ -91,7 +91,7 @@ const vistoPeloModelo = [];
 const USO = { entrada: 100, saida: 20 };
 const modelo = {
   async responder(p) {
-    vistoPeloModelo.push({ historico: p.historico, systemMessage: p.systemMessage, mensagem: p.mensagemDoCliente, ferramentas: p.ferramentas.map((f) => f.nome), modelo: p.modelo });
+    vistoPeloModelo.push({ historico: p.historico, systemMessage: p.systemMessage, mensagem: p.mensagemDoCliente, ferramentas: p.ferramentas.map((f) => f.nome), modelo: p.modelo, estado: p.estadoDoSistema ?? null });
     const uso = { entrada: 0, saida: 0 }; const chamadas = []; const tools = [];
     for (let i = 1; i <= MAX_ITERACOES; i++) {
       const passo = roteiro.shift() ?? { texto: 'Resposta padrão do modelo falso.' };
@@ -479,6 +479,8 @@ try {
     const v7d = vistoPeloModelo.at(-1); const t7d = await turnoDaFila(f7d.filaId);
     chk('"caiu?": o histórico que chega ao modelo contém "Pagamento confirmado!", e a confirmação PASSOU no portão',
       v7d.historico.some((h) => h.papel === 'ai' && /Pagamento confirmado!/.test(h.texto)) && t7d.portao_veredito === 'passou', JSON.stringify({ h: v7d.historico.map((h) => h.texto.slice(0, 30)), v: t7d.portao_veredito }));
+    chk('e o modelo recebeu o FATO DO SISTEMA (pagamento confirmado) como item próprio, gravado no trace',
+      /CONFIRMADO/.test(v7d.estado ?? '') && (await passosDe(t7d.id)).some((p) => p.nome === 'estado_do_sistema' && /CONFIRMADO/.test(p.saida?.texto ?? '')), String(v7d.estado));
 
     // 7e. contraprova da regra 3: em conversa SEM pagamento, o mesmo texto é BARRADO.
     const pedB = await pedidoFechado(401, 7000, 7002);
@@ -487,6 +489,7 @@ try {
     await vencer(); await umCiclo(depsWorker);
     const t7e = await turnoDaFila(f7e.filaId);
     chk('mesmo texto sem pagamento confirmado -> barrado_regra_3 (o cliente NÃO recebe "confirmado")', t7e.portao_veredito === 'barrado_regra_3' && !/confirmado/i.test(chamadasChatwoot.at(-1).content), JSON.stringify({ v: t7e.portao_veredito, c: chamadasChatwoot.at(-1).content.slice(0, 80) }));
+    chk('e sem pagamento o modelo NÃO recebe fato de sistema nenhum (contraprova)', (vistoPeloModelo.at(-1).estado ?? null) === null, String(vistoPeloModelo.at(-1).estado));
 
     // 7f. encerramento: link vencido do pedido B -> PUT active=false, GET pendentes, DELETE cada uma; a paga (A) intocada.
     roteiro.push({ tool: 'gerar_link_pagamento', args: {} }, { texto: 'Link: https://sandbox.asaas.com/c/link2' });
