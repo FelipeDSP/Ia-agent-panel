@@ -109,7 +109,8 @@
     "agente:start": "npm --prefix agente start",
     "teste:limpeza-destino": "node tests/limpeza-destino.mjs",
     "teste:estimativa-n8n": "node tests/estimativa-n8n.mjs",
-    "diff:custo": "node --env-file=.env.local scripts/diff-custo.mjs"
+    "diff:custo": "node --env-file=.env.local scripts/diff-custo.mjs",
+    "teste:agente-baixar-anexo": "node tests/agente-baixar-anexo.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
