@@ -253,8 +253,8 @@ try {
     chk('mensagens_log: saída com tokens reais, fonte openai_usage, chamadas 1, portao.veredito passou, execucao_id = turno',
       l1.length === 2 && l1[1].tokens_entrada === 100 && l1[1].tokens_saida === 20 && l1[1].fonte_tokens === 'openai_usage' && l1[1].chamadas === 1 && l1[1].portao?.veredito === 'passou' && l1.every((x) => x.execucao_id === t1.id), JSON.stringify(l1.map((x) => ({ d: x.direcao, te: x.tokens_entrada, f: x.fonte_tokens, v: x.portao?.veredito }))));
     const p1 = (await passosDe(t1.id)).map((p) => `${p.tipo}:${p.nome}`);
-    chk('trace: entrada, sync, portão de entrada, tools ativas, memória, prompt, openai#1, aplica-portao, envio, registro',
-      p1.join(' > ') === 'entrada:mensagens > registro:api_n8n_conversa_sync > portao:api_n8n_portao_mensagem > registro:api_n8n_tools_ativas > memoria:api_agente_memoria > entrada:prompt > modelo:openai#1 > portao:aplica-portao.js > envio:chatwoot.messages > registro:api_n8n_registrar_mensagem', p1.join(' > '));
+    chk('trace: entrada, sync, portão de entrada, tools ativas, memória, prompt, openai#1, estimativa_n8n, aplica-portao, envio, registro',
+      p1.join(' > ') === 'entrada:mensagens > registro:api_n8n_conversa_sync > portao:api_n8n_portao_mensagem > registro:api_n8n_tools_ativas > memoria:api_agente_memoria > entrada:prompt > modelo:openai#1 > registro:estimativa_n8n > portao:aplica-portao.js > envio:chatwoot.messages > registro:api_n8n_registrar_mensagem', p1.join(' > '));
 
     // 5b. segundo turno na mesma conversa: a MEMÓRIA chega ao modelo, e uma tool executa no banco.
     roteiro.push({ tool: 'consultar_catalogo', args: { termo: 'bolo' } }, { texto: 'Bolo de cenoura, R$ 40,00. Anoto um?' });

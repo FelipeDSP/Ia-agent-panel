@@ -92,12 +92,29 @@ export async function limparMemoriaConversas(
   alvo: number[] | 'todas',
 ): Promise<EstadoConversa> {
   const usuario = await exigirTenantAdmin();
+  const supabase = await criarClienteServidor();
+
+  // Quem atende este tenant decide para ONDE vai o pedido (n8n ou o serviço
+  // em código — `src/lib/limpeza-memoria-destino.ts`). Lido do banco, escopado
+  // pelo tenant do JWT; a coluna é agência-only para escrita, mas o tenant lê
+  // a própria linha. Falha na leitura FECHA: sem runtime, nenhum lado é acionado.
+  const rt = await supabase
+    .from('tenants')
+    .select('agente_runtime')
+    .eq('id', usuario.tenantId)
+    .maybeSingle();
+  if (rt.error || !rt.data) {
+    return { erro: `Não foi possível saber qual agente atende esta conta: ${rt.error?.message ?? 'tenant não encontrado'}` };
+  }
+  const runtime = rt.data.agente_runtime as unknown;
 
   // 'todas': o n8n varre tenant_<uuid>_* — pega até buffers de conversas que já
-  // saíram da tabela. Não precisa enumerar ids; o tenant_id já escopa.
+  // saíram da tabela; o serviço corta todas as conversas do tenant. Não precisa
+  // enumerar ids; o tenant_id já escopa.
   if (alvo === 'todas') {
     const r = await invocarLimparMemoria({
       tenantId: usuario.tenantId,
+      runtime,
       escopo: 'todas',
       conversationIds: [],
     });
@@ -112,7 +129,6 @@ export async function limparMemoriaConversas(
   const pedidos = alvo.filter((n) => Number.isInteger(n));
   if (pedidos.length === 0) return { erro: 'Nenhuma conversa selecionada.' };
 
-  const supabase = await criarClienteServidor();
   const { data, error } = await supabase
     .from('conversas')
     .select('conversation_id')
@@ -126,6 +142,7 @@ export async function limparMemoriaConversas(
 
   const r = await invocarLimparMemoria({
     tenantId: usuario.tenantId,
+    runtime,
     escopo: 'conversas',
     conversationIds: ids,
   });

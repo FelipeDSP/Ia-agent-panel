@@ -106,7 +106,10 @@
     "teste:migracao-agente": "node --env-file=.env.local tests/migracao-agente-fatia1.mjs",
     "teste:agente-servico": "node --env-file=.env.local tests/agente-servico.mjs",
     "teste:agente-tipos": "node tests/agente-tipos.mjs",
-    "agente:start": "npm --prefix agente start"
+    "agente:start": "npm --prefix agente start",
+    "teste:limpeza-destino": "node tests/limpeza-destino.mjs",
+    "teste:estimativa-n8n": "node tests/estimativa-n8n.mjs",
+    "diff:custo": "node --env-file=.env.local scripts/diff-custo.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

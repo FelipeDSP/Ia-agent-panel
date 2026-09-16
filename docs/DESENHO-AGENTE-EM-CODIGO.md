@@ -404,6 +404,34 @@ Escrito antes. "Está pronto" é esta lista, não opinião.
 **Decisão:** o `emporio` só muda com os oito. Nenhum é opcional, e o 4 tem
 prazo em dias, não em "quando parecer estável".
 
+**Estado dos oito, em 16/09/2026:**
+
+| # | estado |
+|---|---|
+| 1 | suíte verde; `teste:grants-n8n` varre `api_agente_*` |
+| 2 | **REDEFINIDO** — ver abaixo |
+| 3 | pendente: as dez conversas, com o Felipe no WhatsApp |
+| 4 | relógio correndo desde 16/09 12:44; termina 23/09 |
+| 5 | pendente: parar o container de propósito |
+| 6 | **código pronto** (`src/lib/limpeza-memoria-destino.ts`: destino por `agente_runtime`; `teste:limpeza-destino`); falta `AGENTE_LIMPEZA_URL`/`AGENTE_LIMPEZA_SECRET` no Coolify do painel e o clique |
+| 7 | pendente: reapontar o bot do Hércules ao n8n e voltar (só URL e coluna; nenhum workflow muda) |
+| 8 | **instrumentado**: cada turno grava a estimativa do `Estima Tokens` como passo `registro:estimativa_n8n` ao lado do real (`agente/src/turno/estimativa.ts`, constantes lidas do nó pelo `teste:estimativa-n8n`); `npm run diff:custo` agrega. Primeiro ponto, à mão, no turno `8aa3265b`: estimado 12.659 × real 10.258 = **+23,4%** (superestima) |
+
+**O 2 não pode ser feito como está escrito, e o motivo é bom.** O replay
+"até antes do modelo" precisa dos WEBHOOKS crus (o `mensagens_log` guarda o
+texto já sanitizado e fundido pelo debounce), e eles só existem em dois lugares:
+nos dados de execução do n8n (API pública, sem chave no `.env.local`; e o n8n
+está congelado) e no Chatwoot — cujo token de Agent Bot **não lê mensagens**
+(`401 Access to this endpoint is not authorized for bots`, medido em 16/09).
+E a etapa que o replay mais mediria, `extrair-e-filtrar.js`, é o **mesmo
+arquivo** executado pelos dois lados (`agente/src/entrada/extrair.ts`):
+replayar seria comparar um arquivo com ele mesmo. O que de fato diverge
+(debounce pela fila em vez do Redis; memória de `mensagens_log`) já tem
+modelo executável e `divergencia_esperada` nomeada (`tests/lib/*-modelo.mjs`),
+e é medido ao vivo pelo critério 4. Se um dia houver um token de usuário do
+Chatwoot para leitura, o replay volta a valer para a etapa `classificar` —
+a única portada à mão.
+
 ---
 
 ## 6. O trace nasce na fatia 1

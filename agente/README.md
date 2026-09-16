@@ -27,7 +27,7 @@ ponta a ponta em transação abortada: `npm run teste:agente-fatia1`.
 |---|---|---|
 | `AGENTE_DB_URL` | sim | conexão do role **`n8n_agent`** (a credencial "Agent ia Supabase" do n8n). O processo **recusa** subir com `postgres@` |
 | `WEBHOOK_TOKEN` | sim | segredo na URL do webhook: `POST /chatwoot/<token>/<inbox>`. Token errado → 404 |
-| `LIMPEZA_SECRET` | sim | o `x-limpeza-secret` que o painel manda em `POST /limpar-memoria` (o mesmo `N8N_LIMPEZA_SECRET` do painel, apontando `N8N_LIMPEZA_URL` para cá quando o tenant estiver em código) |
+| `LIMPEZA_SECRET` | sim | o `x-limpeza-secret` que o painel manda em `POST /limpar-memoria`. No Coolify do **painel**: `AGENTE_LIMPEZA_URL=https://<domínio>/limpar-memoria` e `AGENTE_LIMPEZA_SECRET=<este valor>`; o painel escolhe entre n8n e aqui por `tenants.agente_runtime` (`src/lib/limpeza-memoria-destino.ts`) |
 | `OPENAI_API_KEY` | sim | o modelo (Responses API), os embeddings da base (`text-embedding-3-small`) e a transcrição (`whisper-1`) |
 | `FOTO_SECRET` | não | o `x-foto-secret` da Edge Function `foto-produto`; sem ele a tool de foto responde ao modelo que não pôde enviar |
 | `PORT` | não (3100) | porta HTTP |

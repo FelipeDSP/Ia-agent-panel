@@ -34,6 +34,7 @@ import { ferramentasDoPerfil } from '../tools/index.ts';
 import type { Embeddings } from '../tools/contexto.ts';
 import { transcreverAnexo, type Anexo, type Transcritor } from '../midia/transcrever.ts';
 import { saidaLimpa } from './saida.ts';
+import { estimarComoN8n, desvioPct } from './estimativa.ts';
 import { aplicarPortao } from './portao.ts';
 
 export interface MensagemDaFila {
@@ -88,8 +89,8 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
   };
 
   try {
-    await turno.medir('registro', 'api_n8n_conversa_sync', { conversationId },
-      () => fnUma(db, 'api_n8n_conversa_sync', [tenant.tenant_id, conversationId, primeira.contact_name, primeira.phone]));
+    const sync = await turno.medir('registro', 'api_n8n_conversa_sync', { conversationId },
+      () => fnUma<{ historico_chars?: number | string | null }>(db, 'api_n8n_conversa_sync', [tenant.tenant_id, conversationId, primeira.contact_name, primeira.phone]));
 
     const portaoIn = await turno.medir('portao', 'api_n8n_portao_mensagem', { conversationId },
       () => portaoEntrada(db, deps.waha, tenant.tenant_id, conversationId), (r) => r.portao);
@@ -150,6 +151,16 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       aoChamarModelo: (c) => turno.passo('modelo', `openai#${c.iteracao}`, { saida: { texto: c.texto, tool_calls: c.toolCalls, usage: c.uso }, duracaoMs: c.latenciaMs }),
       aoChamarTool: (c) => turno.passo('tool', c.nome, { entrada: c.args, saida: { texto: c.resultado }, erro: c.erro, duracaoMs: c.latenciaMs }),
     });
+
+    // ---- a estimativa do n8n ao lado do real (§5.8) — vai para o trace, não para o log ----
+    const estimativa = estimarComoN8n({
+      perfil, chamadas: r.chamadas.length, wrapper: prompt.texto.slice(0, prompt.texto.length - (tenant.system_prompt ?? '').length),
+      systemPrompt: tenant.system_prompt ?? '', mensagens: textoEntrada, historicoChars: Number(sync?.historico_chars) || 0, textoSaida: r.texto,
+    });
+    await turno.passo('registro', 'estimativa_n8n', { saida: {
+      estimado: estimativa, real: { entrada: r.uso.entrada, saida: r.uso.saida, chamadas: r.chamadas.length },
+      desvio_entrada_pct: desvioPct(estimativa.entrada, r.uso.entrada), desvio_saida_pct: desvioPct(estimativa.saida, r.uso.saida),
+    } });
 
     // ---- filtro de saída + componentes (rateio proporcional do total REAL) ----
     const limpa = saidaLimpa(r.texto);
