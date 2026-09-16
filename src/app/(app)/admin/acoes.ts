@@ -9,6 +9,7 @@ import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarConfigTenantSuper, validarCriacaoTenant } from '@/lib/tenants/schema';
 import { baseUrlDoAmbiente, corpoDoWebhookAsaas, gerarTokenWebhook, urlDoWebhookNoAgente, validarAsaasTenant, type AmbienteAsaas } from '@/lib/pagamento/asaas-tenant';
+import { ROTULO_RUNTIME, normalizarRuntime, podeTrocar } from '@/lib/agente/runtime';
 import { criarUsuario, ehEmailDuplicado } from '@/lib/supabase/admin-usuarios';
 import { TOOLS_BASELINE } from '@/lib/tools/registro';
 import {
@@ -1094,4 +1095,33 @@ export async function registrarWebhookAsaas(_estado: EstadoAcao, fd: FormData): 
   } catch (e) {
     return { erro: `Não foi possível falar com o Asaas: ${e instanceof Error ? e.message : String(e)}` };
   }
+}
+
+// --- Quem atende (agente_runtime) --------------------------------------------
+
+/**
+ * Vira `tenants.agente_runtime` (62). Só super_admin — a coluna é agência-only
+ * pelo guard, e a policy de update deixa o super passar. A ORDEM da troca
+ * (bot antes / coluna antes) é do humano: a ação exige a confirmação e não
+ * consegue conferir o Chatwoot (`src/lib/agente/runtime.ts`).
+ */
+export async function definirRuntimeTenant(_estado: EstadoAcao, fd: FormData): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  if (!tenantId) return { erro: 'Tenant não informado.' };
+  const para = normalizarRuntime(String(fd.get('runtime') ?? ''));
+  const confirmou = fd.get('confirmou') === 'on' || fd.get('confirmou') === 'true';
+
+  const supabase = await criarClienteServidor();
+  const { data: atual, error: erroLeitura } = await supabase.from('tenants').select('agente_runtime').eq('id', tenantId).maybeSingle();
+  if (erroLeitura || !atual) return { erro: `Não foi possível ler o cliente: ${erroLeitura?.message ?? 'não encontrado'}` };
+  const de = normalizarRuntime(atual.agente_runtime);
+  const regra = podeTrocar(de, para, confirmou);
+  if (!regra.ok) return { erro: regra.motivo };
+
+  const { error } = await supabase.from('tenants').update({ agente_runtime: para }).eq('id', tenantId);
+  if (error) return { erro: `Não foi possível trocar: ${error.message}` };
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  revalidatePath('/admin/tenants');
+  return { sucesso: `Agora este cliente é atendido pelo ${ROTULO_RUNTIME[para]}.` };
 }

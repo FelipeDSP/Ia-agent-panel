@@ -60,6 +60,13 @@ estar contratado em Módulos para a tool existir.
 
 ## Apontar uma conta para cá (por conta, reversível)
 
+**Pelo painel (desde 16/09):** *Clientes → cliente → Quem atende*. O card mostra
+a URL do bot para cada runtime e troca a coluna na ordem certa, exigindo a
+confirmação de quem apontou o bot. O painel precisa de `AGENTE_URL` (ou deriva de
+`AGENTE_LIMPEZA_URL`), `AGENTE_WEBHOOK_TOKEN` (= o `WEBHOOK_TOKEN` daqui; sem ele a
+URL sai com `<WEBHOOK_TOKEN>` para completar à mão) e `N8N_WEBHOOK_BASE` (ou deriva
+de `N8N_LIMPEZA_URL`). À mão, o roteiro é o de sempre:
+
 1. migrações 62 e 63 aplicadas; `tenants.agente_runtime = 'codigo'` para o tenant
    (como super_admin — `tenant_admin` leva 42501);
 2. no Chatwoot, o Agent Bot da conta → `outgoing_url =

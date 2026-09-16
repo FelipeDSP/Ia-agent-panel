@@ -13,6 +13,7 @@ import {
 import { exigirSuperAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { urlDoWebhookNoAgente } from '@/lib/pagamento/asaas-tenant';
+import { normalizarRuntime, roteiroDaTroca, urlsDoBot } from '@/lib/agente/runtime';
 import { definicaoTool, grupoTool } from '@/lib/tools/registro';
 import { TOOL_TRANSFERIR, type ConfigTransferir } from '@/lib/tools/transferir-humano';
 
@@ -22,6 +23,7 @@ import {
   FormChatwoot,
   FormConfigSuper,
   FormConvite,
+  FormRuntime,
   FormTransferirHumano,
   GerenciarAdmins,
   GestaoModulos,
@@ -42,7 +44,7 @@ export default async function PaginaDetalheTenant({
   const { data: tenant } = await supabase
     .from('tenants')
     .select(
-      'id, nome, slug, ativo, agente_ativo, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, system_prompt, modelo, temperatura, debounce_segundos, memoria_silencio_minutos, pagamento_formas',
+      'id, nome, slug, ativo, agente_ativo, agente_runtime, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, system_prompt, modelo, temperatura, debounce_segundos, memoria_silencio_minutos, pagamento_formas',
     )
     .eq('id', id)
     .is('deletado_em', null)
@@ -231,6 +233,32 @@ export default async function PaginaDetalheTenant({
               inboxId={tenant.chatwoot_inbox_id}
               url={tenant.chatwoot_url}
             />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Quem atende</CardTitle>
+            <CardDescription>
+              {normalizarRuntime(tenant.agente_runtime) === 'codigo'
+                ? 'O serviço em código (agente/) responde esta conta.'
+                : 'O n8n responde esta conta.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const urls = urlsDoBot(process.env, tenant.chatwoot_inbox_id);
+              const atual = normalizarRuntime(tenant.agente_runtime);
+              return (
+                <FormRuntime
+                  tenantId={tenant.id}
+                  atual={atual}
+                  urls={urls}
+                  roteiroParaCodigo={roteiroDaTroca('n8n', 'codigo', urls)}
+                  roteiroParaN8n={roteiroDaTroca('codigo', 'n8n', urls)}
+                />
+              );
+            })()}
           </CardContent>
         </Card>
 

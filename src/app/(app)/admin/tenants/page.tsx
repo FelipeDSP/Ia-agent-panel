@@ -22,6 +22,7 @@ type LinhaTenant = {
   nome: string;
   ativo: boolean;
   agente_ativo: boolean;
+  agente_runtime: string | null;
   chatwoot_account_id: number | null;
   chatwoot_inbox_id: number | null;
   criado_em: string;
@@ -40,7 +41,7 @@ export default async function PaginaTenants() {
    */
   const { data: tenants, error } = await supabase
     .from('tenants')
-    .select('id, slug, nome, ativo, agente_ativo, chatwoot_account_id, chatwoot_inbox_id, criado_em')
+    .select('id, slug, nome, ativo, agente_ativo, agente_runtime, chatwoot_account_id, chatwoot_inbox_id, criado_em')
     .is('deletado_em', null)
     .order('nome');
 
@@ -110,6 +111,7 @@ export default async function PaginaTenants() {
               <TableRow>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Chatwoot</TableHead>
+                <TableHead>Agente</TableHead>
                 <TableHead className="text-right">Documentos</TableHead>
                 <TableHead className="text-right">Conversas</TableHead>
                 <TableHead>Situação</TableHead>
@@ -119,7 +121,7 @@ export default async function PaginaTenants() {
             <TableBody>
               {lista.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                     Nenhum cliente cadastrado.
                   </TableCell>
                 </TableRow>
@@ -155,6 +157,12 @@ export default async function PaginaTenants() {
                         ) : (
                           <span className="text-xs">não conectado</span>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        {/* Quem atende: a coluna que decide tudo na transição (62). */}
+                        <Badge variant={tenant.agente_runtime === 'codigo' ? 'success' : 'secondary'}>
+                          {tenant.agente_runtime === 'codigo' ? 'código' : 'n8n'}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {m?.documentos ?? 0}

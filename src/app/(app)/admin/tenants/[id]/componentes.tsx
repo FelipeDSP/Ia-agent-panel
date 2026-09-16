@@ -9,6 +9,7 @@ import {
   definirContratacao,
   desconectarChatwoot,
   editarNomeAdmin,
+  definirRuntimeTenant,
   editarTenantSuper,
   registrarWebhookAsaas,
   salvarAsaasTenant,
@@ -887,5 +888,71 @@ export function FormAsaas({
         </div>
       </form>
     </div>
+  );
+}
+
+// --- Quem atende (agente_runtime) --------------------------------------------
+
+/**
+ * Trocar quem atende o cliente: n8n ou o serviço em código. A ordem dos
+ * passos vem de `src/lib/agente/runtime.ts`; a URL do bot vem do ambiente do
+ * painel. A confirmação é obrigatória porque o painel não consegue conferir
+ * a URL do bot no Chatwoot.
+ */
+export function FormRuntime({
+  tenantId,
+  atual,
+  urls,
+  roteiroParaCodigo,
+  roteiroParaN8n,
+}: {
+  tenantId: string;
+  atual: 'n8n' | 'codigo';
+  urls: { codigo: string | null; n8n: string | null };
+  roteiroParaCodigo: string[];
+  roteiroParaN8n: string[];
+}) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(definirRuntimeTenant, {});
+  const para = atual === 'codigo' ? 'n8n' : 'codigo';
+  const roteiro = para === 'codigo' ? roteiroParaCodigo : roteiroParaN8n;
+
+  return (
+    <form action={acao} className="flex flex-col gap-4">
+      <input type="hidden" name="tenant_id" value={tenantId} />
+      <input type="hidden" name="runtime" value={para} />
+      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+      {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
+
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-muted-foreground">Hoje:</span>
+        <Badge variant={atual === 'codigo' ? 'success' : 'secondary'}>{atual === 'codigo' ? 'código (agente/)' : 'n8n'}</Badge>
+      </div>
+
+      <div className="rounded-md border bg-muted/40 p-3 text-sm">
+        <p className="font-medium">URLs do Agent Bot desta conta</p>
+        <dl className="mt-2 grid gap-1 text-xs">
+          <div className="flex flex-wrap gap-2"><dt className="w-14 text-muted-foreground">código</dt><dd className="break-all font-mono">{urls.codigo ?? 'defina AGENTE_URL (e AGENTE_WEBHOOK_TOKEN) no painel'}</dd></div>
+          <div className="flex flex-wrap gap-2"><dt className="w-14 text-muted-foreground">n8n</dt><dd className="break-all font-mono">{urls.n8n ?? 'defina N8N_WEBHOOK_BASE no painel'}</dd></div>
+        </dl>
+      </div>
+
+      <div className="text-sm">
+        <p className="font-medium">Para passar para {para === 'codigo' ? 'o código' : 'o n8n'}:</p>
+        <ol className="mt-1 list-decimal space-y-1 pl-5 text-muted-foreground">
+          {roteiro.map((passo, i) => <li key={i}>{passo}</li>)}
+        </ol>
+      </div>
+
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" name="confirmou" className="mt-1 h-4 w-4" />
+        <span>{para === 'codigo' ? 'Já apontei o bot para a URL do serviço.' : 'Vou apontar o bot para o n8n logo depois de confirmar.'}</span>
+      </label>
+
+      <div>
+        <SubmitButton variant={para === 'n8n' ? 'outline' : undefined}>
+          Passar para {para === 'codigo' ? 'o código' : 'o n8n'}
+        </SubmitButton>
+      </div>
+    </form>
   );
 }
