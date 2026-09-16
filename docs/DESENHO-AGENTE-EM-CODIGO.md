@@ -408,12 +408,12 @@ prazo em dias, não em "quando parecer estável".
 
 | # | estado |
 |---|---|
-| 1 | suíte verde; `teste:grants-n8n` varre `api_agente_*` |
+| 1 | suíte verde; `teste:grants-n8n` varre `api_agente_*`; **63 aplicada 16/09** (cabeçalho do turno com `perfil` e `prompt_hash`, visto nos turnos das 13:41 em diante) |
 | 2 | **REDEFINIDO** — ver abaixo |
 | 3 | pendente: as dez conversas, com o Felipe no WhatsApp |
 | 4 | relógio correndo desde 16/09 12:44; termina 23/09 |
 | 5 | pendente: parar o container de propósito |
-| 6 | **código pronto** (`src/lib/limpeza-memoria-destino.ts`: destino por `agente_runtime`; `teste:limpeza-destino`); falta `AGENTE_LIMPEZA_URL`/`AGENTE_LIMPEZA_SECRET` no Coolify do painel e o clique |
+| 6 | **VERDE em 16/09 14:09** — o botão do painel cortou a memória da conversa 51 (`memoria_cortada_em = 14:09:37`) e o turno seguinte, 12 s depois e 28 min após a última mensagem (dentro dos 40 de silêncio), chegou ao modelo com **0** de memória: foi o corte, não o esquecimento. Antes do painel novo o clique dizia "limpa" e ia ao n8n (200, nada limpo); com o segredo errado deu o 401 nomeando a variável — os dois modos de falha previstos, vistos ao vivo |
 | 7 | pendente: reapontar o bot do Hércules ao n8n e voltar (só URL e coluna; nenhum workflow muda) |
 | 8 | **instrumentado**: cada turno grava a estimativa do `Estima Tokens` como passo `registro:estimativa_n8n` ao lado do real (`agente/src/turno/estimativa.ts`, constantes lidas do nó pelo `teste:estimativa-n8n`); `npm run diff:custo` agrega. Primeiro ponto, à mão, no turno `8aa3265b`: estimado 12.659 × real 10.258 = **+23,4%** (superestima) |
 
