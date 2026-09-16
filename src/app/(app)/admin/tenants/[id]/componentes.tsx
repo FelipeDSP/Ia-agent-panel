@@ -10,6 +10,8 @@ import {
   desconectarChatwoot,
   editarNomeAdmin,
   editarTenantSuper,
+  registrarWebhookAsaas,
+  salvarAsaasTenant,
   excluirTenant,
   removerAdmin,
   reenviarAcessoAdmin,
@@ -785,5 +787,105 @@ function ModuloRow({ tenantId, modulo }: { tenantId: string; modulo: ModuloAdmin
       {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
     </form>
+  );
+}
+
+// --- Pagamento (Asaas) -------------------------------------------------------
+
+/**
+ * Credencial Asaas do cliente — só a agência. A chave é write-only: o campo
+ * nunca vem preenchido, e em branco mantém a gravada. O ambiente escolhe qual
+ * chave vale (as duas convivem no banco). "Registrar webhook" usa a chave de
+ * verdade contra o Asaas: é a validação dela.
+ */
+export function FormAsaas({
+  tenantId,
+  ambiente,
+  temChaveSandbox,
+  temChaveProducao,
+  temTokenSandbox,
+  temTokenProducao,
+  urlWebhook,
+  contratado,
+}: {
+  tenantId: string;
+  ambiente: 'sandbox' | 'producao';
+  temChaveSandbox: boolean;
+  temChaveProducao: boolean;
+  temTokenSandbox: boolean;
+  temTokenProducao: boolean;
+  urlWebhook: string | null;
+  contratado: boolean;
+}) {
+  const [estado, salvar] = useActionState<EstadoAcao, FormData>(salvarAsaasTenant, {});
+  const [estadoWh, registrar] = useActionState<EstadoAcao, FormData>(registrarWebhookAsaas, {});
+  const [amb, setAmb] = useState<'sandbox' | 'producao'>(ambiente);
+  const temChave = amb === 'producao' ? temChaveProducao : temChaveSandbox;
+  const temToken = amb === 'producao' ? temTokenProducao : temTokenSandbox;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {!contratado ? (
+        <Alert variant="warning">
+          O módulo <strong>pagamento</strong> não está contratado para este cliente — a credencial pode ser salva, mas o agente só gera link depois de contratar (em Módulos).
+        </Alert>
+      ) : null}
+
+      <form action={salvar} className="flex flex-col gap-4">
+        <input type="hidden" name="tenant_id" value={tenantId} />
+        {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+        {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="asaas_ambiente">Ambiente</Label>
+            <Select id="asaas_ambiente" name="asaas_ambiente" value={amb} onChange={(e) => setAmb(e.target.value as 'sandbox' | 'producao')}>
+              <option value="sandbox">sandbox (testes)</option>
+              <option value="producao">produção (dinheiro de verdade)</option>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              A URL da API é derivada do ambiente; a chave tem de ser do mesmo ambiente.
+            </p>
+            <ErroCampo msg={estado.errosCampo?.['asaas_ambiente']} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="asaas_api_key">Chave de API ({amb})</Label>
+            <Input
+              id="asaas_api_key"
+              name="asaas_api_key"
+              type="password"
+              autoComplete="off"
+              placeholder={temChave ? 'configurada — deixe em branco para manter' : 'cole a chave $aact_…'}
+            />
+            <p className="text-xs text-muted-foreground">
+              {temChave ? 'Chave configurada (não é exibida).' : 'Nenhuma chave gravada para este ambiente.'}
+              {' '}Sandbox começa com <code>$aact_hmlg_</code>.
+            </p>
+            <ErroCampo msg={estado.errosCampo?.['asaas_api_key']} />
+          </div>
+        </div>
+
+        <div>
+          <SubmitButton>Salvar credencial</SubmitButton>
+        </div>
+      </form>
+
+      <form action={registrar} className="flex flex-col gap-3 border-t pt-4">
+        <input type="hidden" name="tenant_id" value={tenantId} />
+        {estadoWh.erro ? <Alert variant="destructive">{estadoWh.erro}</Alert> : null}
+        {estadoWh.sucesso ? <Alert variant="success">{estadoWh.sucesso}</Alert> : null}
+        <p className="text-sm">
+          <span className="font-medium">Webhook de pagamento</span>
+          <span className="text-muted-foreground">
+            {' '}— o Asaas avisa o agente quando o cliente paga.{' '}
+            {urlWebhook ? <>Destino: <code>{urlWebhook}</code>.</> : 'O painel não sabe a URL do agente (AGENTE_URL).'}
+            {temToken ? ' Token do tenant: gerado.' : ' Token do tenant: será gerado ao salvar a credencial.'}
+          </span>
+        </p>
+        <div>
+          <SubmitButton disabled={!urlWebhook || !temChave}>Registrar webhook no Asaas ({amb})</SubmitButton>
+        </div>
+      </form>
+    </div>
   );
 }

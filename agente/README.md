@@ -39,6 +39,16 @@ ponta a ponta em transação abortada: `npm run teste:agente-fatia1`.
 | `N8N_JS_DIR` | não | pasta com `extrair-e-filtrar.js` e `filtro-texto.js` (a imagem já aponta) |
 | `VERSAO_CODIGO` | não | vai no trace e em `agente_prompts.versao_codigo`. A imagem já a preenche com o `SOURCE_COMMIT` que o Coolify passa no build; só defina para sobrescrever |
 
+## Pagamento (Asaas) por tenant
+
+A credencial é por tenant (`tenant_credenciais`: ambiente, chave do ambiente, token
+do webhook) e a agência a cadastra em *Clientes → cliente → Pagamento (Asaas)*: salva
+a chave (write-only; sandbox começa com `$aact_hmlg_` e o validador recusa chave
+trocada de ambiente) e clica **Registrar webhook** — o painel registra no Asaas
+`<AGENTE_URL>/asaas` com o token do tenant. O painel descobre a URL do agente por
+`AGENTE_URL` (ou deriva de `AGENTE_LIMPEZA_URL`). O módulo `pagamento` ainda precisa
+estar contratado em Módulos para a tool existir.
+
 ## Rotas
 
 | | |

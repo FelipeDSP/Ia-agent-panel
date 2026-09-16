@@ -8,6 +8,7 @@ import { validarCredencialChatwoot } from '@/lib/chatwoot';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarConfigTenantSuper, validarCriacaoTenant } from '@/lib/tenants/schema';
+import { baseUrlDoAmbiente, corpoDoWebhookAsaas, gerarTokenWebhook, urlDoWebhookNoAgente, validarAsaasTenant, type AmbienteAsaas } from '@/lib/pagamento/asaas-tenant';
 import { criarUsuario, ehEmailDuplicado } from '@/lib/supabase/admin-usuarios';
 import { TOOLS_BASELINE } from '@/lib/tools/registro';
 import {
@@ -1010,4 +1011,87 @@ export async function editarToolCatalogo(
 
   revalidatePath('/admin/catalogo');
   return { sucesso: 'Tool atualizada.' };
+}
+
+// --- Pagamento (Asaas) por tenant ------------------------------------------
+
+/**
+ * A agência grava a credencial Asaas do cliente (docs/ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md
+ * §3): `asaas_ambiente` (enum) e a chave DO ambiente escolhido. A chave é
+ * write-only — em branco mantém a gravada; o validador recusa chave de sandbox
+ * como produção e vice-versa. O token do webhook nasce aqui, gerado, uma vez
+ * por ambiente. Nada disto valida contra o Asaas: quem prova a chave é o
+ * "Registrar webhook" logo abaixo, que a usa de verdade.
+ */
+export async function salvarAsaasTenant(_estado: EstadoAcao, fd: FormData): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  if (!tenantId) return { erro: 'Tenant não informado.' };
+  const v = validarAsaasTenant(fd);
+  if (!v.ok) return { errosCampo: v.erros };
+
+  const supabase = await criarClienteServidor();
+  const { data: atual } = await supabase
+    .from('tenant_credenciais')
+    .select('asaas_api_key_sandbox, asaas_api_key_producao, asaas_webhook_token_sandbox, asaas_webhook_token_producao')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+
+  const colChave = v.valor.ambiente === 'producao' ? 'asaas_api_key_producao' : 'asaas_api_key_sandbox';
+  const colToken = v.valor.ambiente === 'producao' ? 'asaas_webhook_token_producao' : 'asaas_webhook_token_sandbox';
+  const chaveFinal = v.valor.chave ?? (atual?.[colChave] as string | null) ?? null;
+  if (!chaveFinal) return { errosCampo: { asaas_api_key: 'Informe a chave de API deste ambiente (ainda não há uma gravada).' } };
+  const tokenFinal = (atual?.[colToken] as string | null) ?? gerarTokenWebhook(crypto.getRandomValues(new Uint8Array(24)));
+
+  const { error } = await supabase
+    .from('tenant_credenciais')
+    .upsert({ tenant_id: tenantId, asaas_ambiente: v.valor.ambiente, [colChave]: chaveFinal, [colToken]: tokenFinal }, { onConflict: 'tenant_id' });
+  if (error) return { erro: `Não foi possível salvar: ${error.message}` };
+
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  return { sucesso: `Credencial Asaas (${v.valor.ambiente}) salva. Agora registre o webhook.` };
+}
+
+/**
+ * Registra (ou atualiza) no Asaas o webhook que confirma pagamento, apontando
+ * para `<AGENTE_URL>/asaas`, com o token do tenant como `authToken` — o mesmo
+ * que `scripts/pagamento-sendbox-arranjo.mjs` faz. Usa a chave do ambiente
+ * ATIVO; se o Asaas recusar, é a chave que está errada (é a validação dela).
+ */
+export async function registrarWebhookAsaas(_estado: EstadoAcao, fd: FormData): Promise<EstadoAcao> {
+  const usuario = await exigirSuperAdmin();
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  if (!tenantId) return { erro: 'Tenant não informado.' };
+  const url = urlDoWebhookNoAgente(process.env);
+  if (!url) return { erro: 'O painel não sabe a URL do agente: defina AGENTE_URL (ou AGENTE_LIMPEZA_URL) no ambiente.' };
+
+  const supabase = await criarClienteServidor();
+  const { data: cred } = await supabase
+    .from('tenant_credenciais')
+    .select('asaas_ambiente, asaas_api_key_sandbox, asaas_api_key_producao, asaas_webhook_token_sandbox, asaas_webhook_token_producao')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  const ambiente = (cred?.asaas_ambiente as AmbienteAsaas | null) ?? 'sandbox';
+  const chave = (ambiente === 'producao' ? cred?.asaas_api_key_producao : cred?.asaas_api_key_sandbox) as string | null;
+  const token = (ambiente === 'producao' ? cred?.asaas_webhook_token_producao : cred?.asaas_webhook_token_sandbox) as string | null;
+  if (!chave || !token) return { erro: `Salve a credencial de ${ambiente} primeiro.` };
+
+  const base = baseUrlDoAmbiente(ambiente);
+  const cabecalho = { access_token: chave, 'Content-Type': 'application/json' };
+  try {
+    const lista = await fetch(`${base}/v3/webhooks`, { headers: cabecalho, signal: AbortSignal.timeout(15_000), cache: 'no-store' });
+    if (lista.status === 401) return { erro: 'O Asaas recusou a chave (401). Confira a chave e o ambiente.' };
+    const existentes = ((await lista.json().catch(() => ({}))) as { data?: Array<{ id: string; url: string }> }).data ?? [];
+    const existente = existentes.find((w) => w.url === url);
+    const corpo = corpoDoWebhookAsaas(url, token, usuario.email ?? 'edicao@estudyou.com');
+    const r = await fetch(existente ? `${base}/v3/webhooks/${existente.id}` : `${base}/v3/webhooks`, {
+      method: existente ? 'PUT' : 'POST', headers: cabecalho, body: JSON.stringify(corpo), signal: AbortSignal.timeout(15_000), cache: 'no-store',
+    });
+    const j = (await r.json().catch(() => ({}))) as { id?: string; errors?: Array<{ description?: string }> };
+    if (!r.ok) return { erro: `O Asaas recusou o webhook (${r.status}): ${j.errors?.map((e) => e.description).join('; ') ?? ''}` };
+    revalidatePath(`/admin/tenants/${tenantId}`);
+    return { sucesso: `Webhook ${existente ? 'atualizado' : 'criado'} no Asaas (${ambiente}) → ${url}` };
+  } catch (e) {
+    return { erro: `Não foi possível falar com o Asaas: ${e instanceof Error ? e.message : String(e)}` };
+  }
 }

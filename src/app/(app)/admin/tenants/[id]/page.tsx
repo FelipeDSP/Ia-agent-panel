@@ -12,11 +12,13 @@ import {
 } from '@/components/ui/card';
 import { exigirSuperAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
+import { urlDoWebhookNoAgente } from '@/lib/pagamento/asaas-tenant';
 import { definicaoTool, grupoTool } from '@/lib/tools/registro';
 import { TOOL_TRANSFERIR, type ConfigTransferir } from '@/lib/tools/transferir-humano';
 
 import {
   BotaoSuspensao,
+  FormAsaas,
   FormChatwoot,
   FormConfigSuper,
   FormConvite,
@@ -57,6 +59,7 @@ export default async function PaginaDetalheTenant({
     { data: toolTransferir },
     { data: catalogo },
     { data: toolsTenant },
+    { data: credAsaas },
   ] = await Promise.all([
     supabase
       .from('prompt_versoes')
@@ -84,6 +87,12 @@ export default async function PaginaDetalheTenant({
       .eq('ativo', true)
       .order('tool_nome'),
     supabase.from('tenant_tools').select('tool_nome, contratado, ativo').eq('tenant_id', id),
+    // Só a PRESENÇA de cada chave chega à tela; o valor nunca sai daqui.
+    supabase
+      .from('tenant_credenciais')
+      .select('asaas_ambiente, asaas_api_key_sandbox, asaas_api_key_producao, asaas_webhook_token_sandbox, asaas_webhook_token_producao')
+      .eq('tenant_id', id)
+      .maybeSingle(),
   ]);
 
   const configTransferir = (toolTransferir?.config ?? {}) as Partial<ConfigTransferir>;
@@ -221,6 +230,29 @@ export default async function PaginaDetalheTenant({
               accountId={tenant.chatwoot_account_id}
               inboxId={tenant.chatwoot_inbox_id}
               url={tenant.chatwoot_url}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Pagamento (Asaas)</CardTitle>
+            <CardDescription>
+              {credAsaas?.asaas_ambiente
+                ? `Ambiente ${credAsaas.asaas_ambiente}; chave ${(credAsaas.asaas_ambiente === 'producao' ? credAsaas.asaas_api_key_producao : credAsaas.asaas_api_key_sandbox) ? 'configurada' : 'não configurada'}.`
+                : 'Nenhuma credencial Asaas ainda.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FormAsaas
+              tenantId={tenant.id}
+              ambiente={(credAsaas?.asaas_ambiente as 'sandbox' | 'producao' | null) ?? 'sandbox'}
+              temChaveSandbox={Boolean(credAsaas?.asaas_api_key_sandbox)}
+              temChaveProducao={Boolean(credAsaas?.asaas_api_key_producao)}
+              temTokenSandbox={Boolean(credAsaas?.asaas_webhook_token_sandbox)}
+              temTokenProducao={Boolean(credAsaas?.asaas_webhook_token_producao)}
+              urlWebhook={urlDoWebhookNoAgente(process.env)}
+              contratado={estadoPorTool.get('pagamento')?.contratado === true}
             />
           </CardContent>
         </Card>
