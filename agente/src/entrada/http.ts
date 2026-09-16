@@ -24,6 +24,8 @@ export interface DepsHttp extends DepsReceber {
   limpezaSecret: string;
   /** Diz se o worker está vivo (última passada há menos de N s). */
   filaViva: () => boolean;
+  /** A versão do código (SHA do commit) — para saber QUAL deploy respondeu ao healthcheck. */
+  versaoCodigo?: string;
 }
 
 const LIMITE_CORPO = 1_000_000;
@@ -51,7 +53,7 @@ export function criarServidor(deps: DepsHttp): http.Server {
 
     if (req.method === 'GET' && partes[0] === 'saude') {
       const viva = deps.filaViva();
-      return responder(res, viva ? 200 : 503, { ok: viva, fila: viva ? 'viva' : 'parada' });
+      return responder(res, viva ? 200 : 503, { ok: viva, fila: viva ? 'viva' : 'parada', versao: deps.versaoCodigo ?? 'dev' });
     }
 
     if (req.method === 'POST' && partes[0] === 'chatwoot') {

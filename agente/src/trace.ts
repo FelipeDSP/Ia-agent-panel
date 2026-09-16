@@ -44,6 +44,20 @@ export class Turno {
     }
   }
 
+  /**
+   * O prompt existe no MEIO do turno (depois do sync/portão/mídia): grava
+   * perfil e hash no cabeçalho assim que são conhecidos (migração 63), para
+   * o turno ficar atribuível à versão do prompt mesmo se falhar depois.
+   * Nunca lança, como `passo`.
+   */
+  async prompt(perfil: string, promptHash: string): Promise<void> {
+    try {
+      await fnValor(this.db, 'api_agente_turno_prompt', [this.tenantId, this.id, perfil, promptHash]);
+    } catch (e) {
+      log('erro', 'trace.prompt_falhou', { turno: this.id, erro: erroTexto(e) });
+    }
+  }
+
   /** Mede a duração de `fn` e grava o passo com o resultado ou o erro. Relança o erro. */
   async medir<T>(tipo: TipoPasso, nome: string, entrada: unknown, fn: () => Promise<T>, resumo?: (r: T) => unknown): Promise<T> {
     const t0 = Date.now();

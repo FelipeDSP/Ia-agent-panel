@@ -36,7 +36,7 @@ let parando = false;
 
 const servidor = criarServidor({
   db: pool, waha, n8nJsDir: cfg.n8nJsDir,
-  webhookToken: cfg.webhookToken, limpezaSecret: cfg.limpezaSecret,
+  webhookToken: cfg.webhookToken, limpezaSecret: cfg.limpezaSecret, versaoCodigo: cfg.versaoCodigo,
   filaViva: () => Date.now() - ultimoCiclo < Math.max(cfg.intervaloFilaMs * 5, 15_000),
 });
 servidor.listen(cfg.porta, () => log('info', 'http.ouvindo', { porta: cfg.porta, worker: cfg.workerId, versao: cfg.versaoCodigo }));

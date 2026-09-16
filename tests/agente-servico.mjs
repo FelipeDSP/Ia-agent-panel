@@ -52,6 +52,8 @@ const leia = (n) => fs.readFileSync(path.join(DIR, n), 'utf8').replace(/\r\n/g, 
 const semTx = (s) => s.replace(/^\s*(begin|commit)\s*;\s*$/gim, '');
 const M62 = leia('20260914200000_62_agente_em_codigo_fatia1.sql');
 const R62 = leia('20260914200000_62_agente_em_codigo_fatia1_rollback.sql');
+const M63 = leia('20260916140000_63_agente_turno_prompt.sql');
+const R63 = leia('20260916140000_63_agente_turno_prompt_rollback.sql');
 const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -136,8 +138,10 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R63));
   await c.query(semTx(R62));
   await c.query(semTx(M62));
+  await c.query(semTx(M63));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -240,9 +244,11 @@ try {
       v1.mensagem === 'oi\ntem bolo?' && v1.historico.length === 0 && v1.ferramentas.length === 6 && v1.modelo === 'gpt-teste' && v1.systemMessage.endsWith(' Você é o atendente do tenant a.'), JSON.stringify({ m: v1.mensagem, h: v1.historico.length, f: v1.ferramentas }));
     chk('a resposta do modelo foi ao Chatwoot (portão: passou)', chamadasChatwoot.at(-1).content === 'Temos bolo de cenoura por R$ 40,00. Quer que eu anote?');
     const t1 = await turnoDaFila(f1.filaId);
-    chk('agente_turnos: ok, usage REAL (100/20), 1 chamada, 0 tools, veredito passou, prompt_hash gravado',
+    chk('agente_turnos: ok, usage REAL (100/20), 1 chamada, 0 tools, veredito passou',
       t1.status === 'ok' && t1.usage_entrada === 100 && t1.usage_saida === 20 && t1.chamadas_modelo === 1 && t1.tools_chamadas === 0 && t1.portao_veredito === 'passou', JSON.stringify(t1));
-    chk('agente_prompts tem o hash do prompt montado', (await um(`select count(*)::int n from public.agente_prompts where tenant_id=$1`, [T.a])).n === 1);
+    const hashes1 = await tudo(`select hash from public.agente_prompts where tenant_id=$1`, [T.a]);
+    chk('agente_prompts tem UM hash, e o CABEÇALHO do turno aponta para ele com o perfil (63) — não só o passo',
+      hashes1.length === 1 && t1.prompt_hash === hashes1[0].hash && /^sha256:[0-9a-f]{64}$/.test(t1.prompt_hash) && t1.perfil === 'vendas', JSON.stringify({ ph: t1.prompt_hash, perfil: t1.perfil, hashes: hashes1 }));
     const l1 = await logDe(T.a, 200);
     chk('mensagens_log: saída com tokens reais, fonte openai_usage, chamadas 1, portao.veredito passou, execucao_id = turno',
       l1.length === 2 && l1[1].tokens_entrada === 100 && l1[1].tokens_saida === 20 && l1[1].fonte_tokens === 'openai_usage' && l1[1].chamadas === 1 && l1[1].portao?.veredito === 'passou' && l1.every((x) => x.execucao_id === t1.id), JSON.stringify(l1.map((x) => ({ d: x.direcao, te: x.tokens_entrada, f: x.fonte_tokens, v: x.portao?.veredito }))));

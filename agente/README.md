@@ -37,7 +37,7 @@ ponta a ponta em transação abortada: `npm run teste:agente-fatia1`.
 | `FILA_LOTE` (10), `FILA_INTERVALO_MS` (1000), `FILA_LEASE_MIN` (5) | não | o worker |
 | `TRACE_RETENCAO_DIAS` (30), `MUDO_MINUTOS` (10) | não | manutenção |
 | `N8N_JS_DIR` | não | pasta com `extrair-e-filtrar.js` e `filtro-texto.js` (a imagem já aponta) |
-| `VERSAO_CODIGO` | não | vai no trace e no `componentes_json` (use o SHA do commit) |
+| `VERSAO_CODIGO` | não | vai no trace e em `agente_prompts.versao_codigo`. A imagem já a preenche com o `SOURCE_COMMIT` que o Coolify passa no build; só defina para sobrescrever |
 
 ## Rotas
 
@@ -49,7 +49,7 @@ ponta a ponta em transação abortada: `npm run teste:agente-fatia1`.
 
 ## Apontar uma conta para cá (por conta, reversível)
 
-1. migração 62 aplicada; `tenants.agente_runtime = 'codigo'` para o tenant
+1. migrações 62 e 63 aplicadas; `tenants.agente_runtime = 'codigo'` para o tenant
    (como super_admin — `tenant_admin` leva 42501);
 2. no Chatwoot, o Agent Bot da conta → `outgoing_url =
    https://<domínio>/chatwoot/<WEBHOOK_TOKEN>/<inbox>`;

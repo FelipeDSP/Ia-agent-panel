@@ -333,8 +333,7 @@ próprio, role `agente_codigo` membro de `n8n_agent`); `estudyou-sendbox` em
 os webhooks de volta da própria resposta descartados sem pausar. `emporio` e
 `ceejaar` seguem no n8n, intocados.
 
-**Fatia 2 — ESCRITA em 16/09/2026 (`agente/`, aguardando `OPENAI_API_KEY` no
-Coolify para o deploy):** o agente de verdade. `agente/modelo.ts` (SDK da
+**Fatia 2 — ESCRITA em 16/09/2026 (`agente/`):** o agente de verdade. `agente/modelo.ts` (SDK da
 OpenAI, Responses API, loop de tools nosso, teto de 10, `usage` real por
 chamada); `agente/prompt.ts` (system message por partes — provado **byte a
 byte igual** ao wrapper do n8n nos dois perfis, com as duas regras que só o
@@ -349,6 +348,17 @@ inclusive: fabricação ("Pedido fechado! Total R$ 80,00") **barrada** pelo
 portão em código, bruto em `mensagens_log.portao` e a memória do turno
 seguinte levando a substituta; tool executando no banco; tokens reais no log
 (`fonte_tokens = openai_usage`); teto → `TEXTO_TETO`.
+
+**Fatia 2 no ar — 16/09/2026 12:44.** Primeiro turno real com modelo no
+`sendbox` (`8aa3265b…`, conversa 51): 4,4 s, `gpt-4.1-mini`, 2 chamadas,
+`consultar_catalogo` executada, portão `passou`, Chatwoot `5268792`, tokens
+reais **10.258 / 133** no log. A resposta respeitou o teto de 5 itens e fechou
+com pergunta que estreita. O trace revelou o cabeçalho do turno sem `perfil` e
+`prompt_hash` (o turno é aberto antes de o perfil existir; `turno_fechar` não
+os recebe) — **migração 63** (`api_agente_turno_prompt`, chamada no instante
+em que o prompt é montado, função nova para não mexer na assinatura da 62) e
+`versao_codigo` vindo do `SOURCE_COMMIT` do Coolify em vez de `dev`. O relógio
+dos 7 dias da §5.4 começou aí; termina 23/09.
 
 Divergências declaradas da fatia 2: áudio é transcrito no turno (não na
 chegada); avisos de mídia entram em `mensagens_log` como saída sem modelo; o

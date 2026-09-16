@@ -44,6 +44,8 @@ const DIR = path.join(RAIZ, 'supabase', 'migrations');
 const leia = (n) => fs.readFileSync(path.join(DIR, n), 'utf8').replace(/\r\n/g, '\n');
 const M62 = leia('20260914200000_62_agente_em_codigo_fatia1.sql');
 const R62 = leia('20260914200000_62_agente_em_codigo_fatia1_rollback.sql');
+const M63 = leia('20260916140000_63_agente_turno_prompt.sql');
+const R63 = leia('20260916140000_63_agente_turno_prompt_rollback.sql');
 const semTx = (s) => s.replace(/^\s*(begin|commit)\s*;\s*$/gim, '');
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -74,12 +76,12 @@ const aclFn = async (nome) => (await um(
 
 const FUNCOES = ['api_agente_runtime', 'api_agente_par_chatwoot', 'api_agente_enfileirar', 'api_agente_reivindicar', 'api_agente_turno_da_conversa',
   'api_agente_concluir', 'api_agente_descartar_pendentes', 'api_agente_prompt_registrar', 'api_agente_turno_abrir', 'api_agente_passo',
-  'api_agente_turno_fechar', 'api_agente_memoria', 'api_agente_memoria_cortar', 'api_agente_memoria_cortar_tenant', 'api_agente_varrer_passos', 'api_agente_mudos', 'agente_texto_entrada'];
+  'api_agente_turno_fechar', 'api_agente_turno_prompt', 'api_agente_memoria', 'api_agente_memoria_cortar', 'api_agente_memoria_cortar_tenant', 'api_agente_varrer_passos', 'api_agente_mudos', 'agente_texto_entrada'];
 const TABELAS = ['agente_fila', 'agente_prompts', 'agente_turnos', 'agente_passos'];
 
 try {
   // =========================================================================
-  console.log('\n== 0. Rollback primeiro, depois a 62 duas vezes ==\n');
+  console.log('\n== 0. Rollback primeiro (63, depois 62), depois a cadeia 62 -> 63, cada uma duas vezes ==\n');
   // =========================================================================
   // ARRANJO do estado pré-rollback: nenhum tenant em 'codigo' e nenhum turno,
   // porque o rollback aborta de propósito com qualquer um dos dois. Só faz
@@ -94,16 +96,21 @@ try {
     await c.query(`select set_config('request.jwt.claims', '', true)`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  // a CADEIA, na ordem inversa da que produção viu (nota do sétimo defeito).
+  await c.query(semTx(R63));
   await c.query(semTx(R62));
-  chk('rollback replayado: coluna, tabelas e funções ausentes',
+  chk('rollback replayado: coluna, tabelas e funções ausentes (inclusive a da 63)',
     !(await um(`select to_regclass('public.agente_fila') r`)).r
     && (await um(`select count(*)::int n from information_schema.columns where table_name='tenants' and column_name='agente_runtime'`)).n === 0
-    && (await aclFn('api_agente_memoria')) === '(AUSENTE)');
+    && (await aclFn('api_agente_memoria')) === '(AUSENTE)'
+    && (await aclFn('api_agente_turno_prompt')) === '(AUSENTE)');
 
   const emCodigoAntes = 0;   // pós-rollback a coluna não existe: ninguém está em código
   await c.query(semTx(M62));
   await c.query(semTx(M62));
-  chk('a 62 aplica DUAS vezes sem erro (reexecutável)', true);
+  await c.query(semTx(M63));
+  await c.query(semTx(M63));
+  chk('a 62 e a 63 aplicam DUAS vezes sem erro (reexecutáveis)', true);
   chk('aplicar NÃO liga ninguém: tenants em \'codigo\' = 0, todos em \'n8n\'',
     (await um(`select count(*)::int n from public.tenants where agente_runtime = 'codigo'`)).n === emCodigoAntes
     && (await um(`select count(*)::int n from public.tenants where agente_runtime <> 'n8n'`)).n === 0);
@@ -255,9 +262,23 @@ try {
     const err2 = await esperaErro(() => c.query(`select public.api_agente_passo($1,$2,3,'tool','x')`, [T.b, turnoId]));
     chk('tenant B escrevendo passo no turno de A -> 22023', err2?.code === '22023', err2?.code);
   }
+  // 63: perfil e hash entram no cabeçalho do turno no MEIO dele.
+  {
+    chk('turno_prompt: aberto -> true, e perfil/prompt_hash gravados no cabeçalho',
+      (await um(`select public.api_agente_turno_prompt($1,$2,'vendas','sha256:abc') r`, [T.a, turnoId])).r === true
+      && JSON.stringify(await um(`select perfil, prompt_hash from public.agente_turnos where id=$1`, [turnoId])) === JSON.stringify({ perfil: 'vendas', prompt_hash: 'sha256:abc' }));
+    const e1 = await esperaErro(() => c.query(`select public.api_agente_turno_prompt($1,$2,'vendas','')`, [T.a, turnoId]));
+    chk('turno_prompt: hash vazio -> 22023', e1?.code === '22023', e1?.code);
+    const e2 = await esperaErro(() => c.query(`select public.api_agente_turno_prompt($1,$2,'vendas','sha256:b')`, [T.b, turnoId]));
+    chk('turno_prompt: tenant B no turno de A -> 22023 (e o cabeçalho de A não muda)', e2?.code === '22023'
+      && (await um(`select prompt_hash from public.agente_turnos where id=$1`, [turnoId])).prompt_hash === 'sha256:abc', e2?.code);
+  }
   chk('turno_fechar: true na primeira, false na segunda (já fechado)',
     (await um(`select public.api_agente_turno_fechar($1,$2,'ok',100,20,1,1,'passou') r`, [T.a, turnoId])).r === true
     && (await um(`select public.api_agente_turno_fechar($1,$2,'ok') r`, [T.a, turnoId])).r === false);
+  chk('turno_prompt em turno FECHADO -> false, sem tocar no hash',
+    (await um(`select public.api_agente_turno_prompt($1,$2,'basico','sha256:depois') r`, [T.a, turnoId])).r === false
+    && (await um(`select prompt_hash from public.agente_turnos where id=$1`, [turnoId])).prompt_hash === 'sha256:abc');
 
   // =========================================================================
   console.log('\n== 6. A memória: a função == o modelo JS, no mesmo log ==\n');

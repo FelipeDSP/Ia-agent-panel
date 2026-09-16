@@ -20,6 +20,11 @@ RUN npm ci --omit=dev
 FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production
+# O Coolify injeta o SHA do commit como build arg SOURCE_COMMIT; vira a
+# `versao_codigo` do trace e de `agente_prompts` (config.ts lê VERSAO_CODIGO).
+# Variável VERSAO_CODIGO no ambiente do container, se existir, vence esta.
+ARG SOURCE_COMMIT=dev
+ENV VERSAO_CODIGO=${SOURCE_COMMIT}
 RUN addgroup -S agente && adduser -S agente -G agente
 COPY --from=deps /app/agente/node_modules ./agente/node_modules
 COPY agente/package.json ./agente/

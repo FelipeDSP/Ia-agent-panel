@@ -135,6 +135,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     const { perfil, toolsAtivas } = await turno.medir('registro', 'api_n8n_tools_ativas', {}, () => resolverPerfil(db, tenant.tenant_id));
     const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt });
     await fnValor(db, 'api_agente_prompt_registrar', [tenant.tenant_id, prompt.hash, prompt.texto, `${deps.versaoCodigo}/partes:${versaoDasPartes()}`]);
+    await turno.prompt(perfil, prompt.hash);
     const memoria = await turno.medir('memoria', 'api_agente_memoria', { conversationId },
       () => fnTodas<MensagemHistorico & { criado_em: Date }>(db, 'api_agente_memoria', [tenant.tenant_id, conversationId, 40, 20]),
       (r) => ({ mensagens: r.length }));
