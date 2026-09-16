@@ -61,6 +61,8 @@ const ESPERADO = {
   vendas: { grupo: 'contratavel', podeDesligar: true },
   transcricao_audio: { grupo: 'contratavel', podeDesligar: true },
   foto_produto: { grupo: 'contratavel', podeDesligar: true },
+  // 16/09: entrou no registry junto com a tela derivada do código (61 já tinha a linha no banco).
+  pagamento: { grupo: 'contratavel', podeDesligar: true },
 };
 
 for (const [nome, { grupo }] of Object.entries(ESPERADO)) {
