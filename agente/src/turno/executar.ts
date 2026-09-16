@@ -1,35 +1,45 @@
 /**
  * UM TURNO — o que o worker faz depois de `api_agente_turno_da_conversa`
- * dizer 'responder'. Fatia 1: SEM modelo, resposta fixa. A forma é a do n8n
- * do `Sync Conversa` em diante, e cada passo vai para o trace:
+ * dizer 'responder'. É o caminho do n8n do `Sync Conversa` ao `Registra
+ * Mensagem`, com cada passo no trace:
  *
- *   sync conversa -> (portão de entrada de novo: a pausa pode ter chegado
- *   durante o debounce) -> resposta -> envia ao Chatwoot -> registra no log
+ *   sync -> portão de entrada (a pausa pode ter chegado durante o debounce)
+ *   -> mídia (transcrição; avisos por tenant quando não dá)
+ *   -> bloqueado? (msg_fora_escopo, sem modelo)
+ *   -> perfil -> prompt (hash) -> memória (mensagens_log, pós-portão)
+ *   -> MODELO com as tools (loop nosso, usage real)
+ *   -> filtro de saída -> componentes -> PORTÃO (aplica-portao.js)
+ *   -> envia ao Chatwoot -> nota privada do portão, se houver
+ *   -> Registra Mensagem (entrada + saída, execucao_id = turno)
  *
- * O que muda de comportamento na fatia 1, e está declarado:
- *   - `midia` (áudio) NÃO é transcrita: responde `msg_midia_nao_suportada` do
- *     tenant. A transcrição entra na fatia 2 (`midia/`);
- *   - `bloqueado` responde `msg_fora_escopo`, como o n8n;
- *   - `processar` responde um texto FIXO que diz que é a fatia 1. É o que
- *     prova o caminho inteiro sem gastar um token.
- *
- * `Registra Mensagem` grava entrada e saída como o n8n (mesma função, mesma
- * assinatura), com `execucao_id = turno_id` — é a ponte entre `mensagens_log`
- * e o trace. Tokens 0 porque não houve modelo; `portao` fica nulo porque não
- * houve portão — o critério do experimento trata nulo como `sem_veredito`,
- * de propósito.
+ * O que muda de comportamento em relação ao n8n, e está declarado:
+ *   - várias mensagens no debounce viram UM texto (uma por linha), como lá;
+ *     mas um áudio no meio é transcrito AQUI, no turno, e não na chegada;
+ *   - os avisos de mídia (não suportada/longo/falhou) passam a ser registrados
+ *     em `mensagens_log` como saída sem modelo — no n8n só saem no Chatwoot;
+ *   - tokens: `usage` REAL da OpenAI; o rateio por componente é PROPORCIONAL
+ *     aos caracteres de cada parte (system fixo, prompt do tenant, tools,
+ *     memória, mensagens), escalado para o total real. `fonte = 'openai_usage'`.
  */
-import { fnUma, fnValor, type Db } from '../db.ts';
+import { fnUma, fnTodas, fnValor, type Db } from '../db.ts';
 import type { Chatwoot } from '../chatwoot/enviar.ts';
 import type { Waha } from '../waha/notificar.ts';
 import type { Tenant } from '../tenant/resolver.ts';
 import { portaoEntrada } from '../pausa/portao-entrada.ts';
 import { Turno } from '../trace.ts';
+import { resolverPerfil } from '../perfil.ts';
+import { montarSystemMessage, versaoDasPartes } from '../agente/prompt.ts';
+import type { Modelo, MensagemHistorico } from '../agente/modelo.ts';
+import { ferramentasDoPerfil } from '../tools/index.ts';
+import type { Embeddings } from '../tools/contexto.ts';
+import { transcreverAnexo, type Anexo, type Transcritor } from '../midia/transcrever.ts';
+import { saidaLimpa } from './saida.ts';
+import { aplicarPortao } from './portao.ts';
 
 export interface MensagemDaFila {
   acao: 'processar' | 'midia' | 'bloqueado';
   mensagem: string | null;
-  anexo: { file_type: string | null; data_url: string | null; file_size: number; extensao: string } | null;
+  anexo: Anexo | null;
   contact_name: string;
   phone: string | null;
   chatwoot_account_id: number | null;
@@ -37,73 +47,151 @@ export interface MensagemDaFila {
   message_id: number | null;
 }
 
-export interface Deps { db: Db; chatwoot: Chatwoot; waha: Waha | null; versaoCodigo: string }
+export interface Deps {
+  db: Db; chatwoot: Chatwoot; waha: Waha | null; modelo: Modelo;
+  embeddings: Embeddings | null; transcritor: Transcritor | null;
+  n8nJsDir: string; versaoCodigo: string; fotoSecret: string | null; fetchFn: typeof fetch;
+}
 
 export interface ResultadoTurno {
   status: 'ok' | 'descartado' | 'falhou';
   turnoId: string;
   motivo?: string;
   resposta?: string;
+  veredito?: string;
 }
 
-export const TEXTO_FATIA_1 = (n: number) =>
-  `[agente em código — fatia 1] Recebi ${n === 1 ? 'sua mensagem' : `suas ${n} mensagens`}. `
-  + 'Ainda não estou respondendo de verdade por aqui: este é o caminho novo sendo testado.';
+/** Sem texto nenhum utilizável (só avisos de mídia): o que dizer. */
+const AVISO_PADRAO_MIDIA = 'Ainda não consigo ouvir áudio por aqui. Pode escrever?';
 
 export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversationId: number; filaIds: string[]; mensagens: MensagemDaFila[] }): Promise<ResultadoTurno> {
-  const { db } = deps;
-  const { tenant, conversationId, mensagens } = p;
+  const { db, tenant } = { db: deps.db, tenant: p.tenant };
+  const { conversationId, mensagens } = p;
   const primeira = mensagens[0];
   if (!primeira) throw new Error('turno sem mensagens');
-  const acao = mensagens.some((m) => m.acao === 'bloqueado') ? 'bloqueado'
-    : mensagens.every((m) => m.acao === 'midia') ? 'midia' : 'processar';
+  const accountId = primeira.chatwoot_account_id;
 
   const turno = await Turno.abrir(db, {
     tenantId: tenant.tenant_id, conversationId, filaId: p.filaIds[0] ?? null,
-    acao, perfil: null, modelo: null, promptHash: null,
+    acao: mensagens.some((m) => m.acao === 'bloqueado') ? 'bloqueado' : mensagens.every((m) => m.acao === 'midia') ? 'midia' : 'processar',
+    perfil: null, modelo: tenant.modelo, promptHash: null,
   });
   await turno.passo('entrada', 'mensagens', { entrada: { quantidade: mensagens.length, acoes: mensagens.map((m) => m.acao), fila_ids: p.filaIds } });
 
+  const registrar = async (textoEntrada: string, resposta: string, tokens: { entrada: number; saida: number }, audio: number | null, componentes: Record<string, unknown> | null) => {
+    const entradaId = await fnValor<string>(db, 'api_n8n_registrar_mensagem',
+      [tenant.tenant_id, conversationId, 'entrada', textoEntrada, 0, 0, tenant.modelo, audio, turno.id, null]);
+    const saidaId = await fnValor<string>(db, 'api_n8n_registrar_mensagem',
+      [tenant.tenant_id, conversationId, 'saida', resposta, tokens.entrada, tokens.saida, tenant.modelo, null, turno.id,
+        componentes ? JSON.stringify(componentes) : null]);
+    return { entradaId, saidaId };
+  };
+
   try {
-    // Sync Conversa — cria/atualiza a conversa com nome e telefone, como o n8n.
     await turno.medir('registro', 'api_n8n_conversa_sync', { conversationId },
       () => fnUma(db, 'api_n8n_conversa_sync', [tenant.tenant_id, conversationId, primeira.contact_name, primeira.phone]));
 
-    // A pausa pode ter chegado DURANTE o debounce (humano assumiu): o n8n morre
-    // em "corrida"; aqui o turno é descartado em silêncio, e fica no trace.
-    const portao = await turno.medir('portao', 'api_n8n_portao_mensagem', { conversationId },
+    const portaoIn = await turno.medir('portao', 'api_n8n_portao_mensagem', { conversationId },
       () => portaoEntrada(db, deps.waha, tenant.tenant_id, conversationId), (r) => r.portao);
-    if (!portao.segue) {
-      await turno.fechar({ status: 'descartado', erro: `pausada: ${portao.portao.motivo ?? ''}` });
+    if (!portaoIn.segue) {
+      await turno.fechar({ status: 'descartado', erro: `pausada: ${portaoIn.portao.motivo ?? ''}` });
       return { status: 'descartado', turnoId: turno.id, motivo: 'pausada_no_turno' };
     }
 
-    // A resposta da fatia 1.
-    const textoEntrada = mensagens.map((m) => m.mensagem ?? (m.acao === 'midia' ? '[mídia]' : '')).filter(Boolean).join('\n');
-    const resposta = acao === 'bloqueado' ? (tenant.msg_fora_escopo ?? 'Não posso ajudar com isso.')
-      : acao === 'midia' ? (tenant.msg_midia_nao_suportada ?? 'Ainda não consigo ouvir áudio por aqui. Pode escrever?')
-        : TEXTO_FATIA_1(mensagens.length);
-    await turno.passo('modelo', 'fatia-1-sem-modelo', { entrada: { acao, texto: textoEntrada }, saida: { texto: resposta } });
+    // ---- mídia: transcreve o que for áudio; junta os avisos do que não deu ----
+    const textos: string[] = [];
+    const avisos: string[] = [];
+    let audioSegundos = 0;
+    let bloqueado = mensagens.some((m) => m.acao === 'bloqueado');
+    for (const m of mensagens) {
+      if (m.acao === 'processar' && m.mensagem) textos.push(m.mensagem);
+      if (m.acao === 'midia' && m.anexo) {
+        const t = await turno.medir('tool', 'transcrever', { file_type: m.anexo.file_type, file_size: m.anexo.file_size },
+          () => transcreverAnexo({ db, n8nJsDir: deps.n8nJsDir, tenantId: tenant.tenant_id, conversationId, anexo: m.anexo!, transcritor: deps.transcritor, fetchFn: deps.fetchFn, msgMidiaNaoSuportada: tenant.msg_midia_nao_suportada }),
+          (r) => ({ status: r.status, ...(r.status === 'ok' ? { chars: r.mensagem.length, audio_segundos: r.audioSegundos } : {}) }));
+        if (t.status === 'ok') { textos.push(t.mensagem); audioSegundos += t.audioSegundos ?? 0; }
+        else if (t.status === 'bloqueado') bloqueado = true;
+        else if (t.status === 'vazio') avisos.push(tenant.msg_midia_nao_suportada ?? AVISO_PADRAO_MIDIA);
+        else if (t.status === 'nao_contratado' || t.status === 'longo' || t.status === 'falhou') avisos.push(t.avisoAoCliente ?? tenant.msg_midia_nao_suportada ?? AVISO_PADRAO_MIDIA);
+      }
+    }
 
-    // Envia ao Chatwoot — antes de registrar, como o n8n (Envia -> Registra).
-    const envio = await turno.medir('envio', 'chatwoot.messages', { conversationId, chars: resposta.length },
-      () => deps.chatwoot.enviar({ tenantId: tenant.tenant_id, conversationId, content: resposta }));
+    // ---- sem modelo: bloqueio ou só avisos ----
+    if (bloqueado || textos.length === 0) {
+      const resposta = bloqueado ? (tenant.msg_fora_escopo ?? 'Não posso ajudar com isso.') : (avisos[0] ?? AVISO_PADRAO_MIDIA);
+      await turno.passo('modelo', bloqueado ? 'sem-modelo:bloqueado' : 'sem-modelo:aviso-midia', { saida: { texto: resposta } });
+      await turno.medir('envio', 'chatwoot.messages', { conversationId, chars: resposta.length },
+        () => deps.chatwoot.enviar({ tenantId: tenant.tenant_id, conversationId, content: resposta }));
+      const textoEntrada = mensagens.map((m) => m.mensagem ?? (m.acao === 'midia' ? '[áudio]' : '')).filter(Boolean).join('\n');
+      const ids = await turno.medir('registro', 'api_n8n_registrar_mensagem', { conversationId },
+        () => registrar(textoEntrada, resposta, { entrada: 0, saida: 0 }, audioSegundos || null, { fonte: bloqueado ? 'bloqueado' : 'aviso_midia', chamadas: 0 }));
+      await turno.fechar({ status: 'ok', usageEntrada: 0, usageSaida: 0, chamadasModelo: 0, toolsChamadas: 0, mensagensLogSaidaId: ids.saidaId });
+      return { status: 'ok', turnoId: turno.id, resposta };
+    }
 
-    // Registra Mensagem: entrada e saída, mesma função do n8n. Este NÃO é
-    // `continue`: falhar aqui é falhar o turno (a regra do README sobre log).
-    // Sem transcrição na fatia 1, não há segundos cobrados a ratear.
-    const audio: number | null = null;
-    const ids = await turno.medir('registro', 'api_n8n_registrar_mensagem', { conversationId }, async () => {
-      const entradaId = await fnValor<string>(db, 'api_n8n_registrar_mensagem',
-        [tenant.tenant_id, conversationId, 'entrada', textoEntrada, 0, 0, tenant.modelo, audio, turno.id, null]);
-      const saidaId = await fnValor<string>(db, 'api_n8n_registrar_mensagem',
-        [tenant.tenant_id, conversationId, 'saida', resposta, 0, 0, tenant.modelo, null, turno.id,
-          JSON.stringify({ fatia: 1, versao_codigo: deps.versaoCodigo, chatwoot_message_id: envio.mensagemId })]);
-      return { entradaId, saidaId };
+    const textoEntrada = textos.join('\n');
+
+    // ---- perfil, prompt, memória ----
+    const { perfil, toolsAtivas } = await turno.medir('registro', 'api_n8n_tools_ativas', {}, () => resolverPerfil(db, tenant.tenant_id));
+    const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt });
+    await fnValor(db, 'api_agente_prompt_registrar', [tenant.tenant_id, prompt.hash, prompt.texto, `${deps.versaoCodigo}/partes:${versaoDasPartes()}`]);
+    const memoria = await turno.medir('memoria', 'api_agente_memoria', { conversationId },
+      () => fnTodas<MensagemHistorico & { criado_em: Date }>(db, 'api_agente_memoria', [tenant.tenant_id, conversationId, 40, 20]),
+      (r) => ({ mensagens: r.length }));
+    await turno.passo('entrada', 'prompt', { entrada: { perfil, tools_ativas: toolsAtivas, prompt_hash: prompt.hash, memoria: memoria.length, texto: textoEntrada } });
+
+    // ---- o modelo ----
+    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn };
+    const ferramentas = ferramentasDoPerfil(ctx, perfil);
+    const r = await deps.modelo.responder({
+      modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto,
+      historico: memoria.map((m) => ({ papel: m.papel, texto: m.texto })), mensagemDoCliente: textoEntrada, ferramentas,
+      aoChamarModelo: (c) => turno.passo('modelo', `openai#${c.iteracao}`, { saida: { texto: c.texto, tool_calls: c.toolCalls, usage: c.uso }, duracaoMs: c.latenciaMs }),
+      aoChamarTool: (c) => turno.passo('tool', c.nome, { entrada: c.args, saida: { texto: c.resultado }, erro: c.erro, duracaoMs: c.latenciaMs }),
     });
 
-    await turno.fechar({ status: 'ok', usageEntrada: 0, usageSaida: 0, chamadasModelo: 0, toolsChamadas: 0, mensagensLogSaidaId: ids.saidaId });
-    return { status: 'ok', turnoId: turno.id, resposta };
+    // ---- filtro de saída + componentes (rateio proporcional do total REAL) ----
+    const limpa = saidaLimpa(r.texto);
+    const chars = {
+      wrapper: prompt.texto.length - (tenant.system_prompt ?? '').length,
+      system_prompt: (tenant.system_prompt ?? '').length,
+      schema_tools: JSON.stringify(ferramentas.map((f) => ({ n: f.nome, d: f.descricao, p: f.parametros }))).length,
+      memoria: memoria.reduce((a, m) => a + m.texto.length, 0),
+      mensagens: textoEntrada.length,
+    };
+    const totalChars = Object.values(chars).reduce((a, b) => a + b, 0) || 1;
+    const primeiraChamada = r.chamadas[0]?.uso.entrada ?? r.uso.entrada;
+    const rateio = (n: number) => Math.round((n / totalChars) * primeiraChamada);
+    const componentes: Record<string, unknown> = {
+      wrapper: rateio(chars.wrapper), system_prompt: rateio(chars.system_prompt), schema_tools: rateio(chars.schema_tools),
+      memoria: rateio(chars.memoria), mensagens: rateio(chars.mensagens),
+      round_trip: Math.max(0, r.uso.entrada - primeiraChamada),
+      chamadas: r.chamadas.length, fonte: 'openai_usage', real_total: r.uso.entrada + r.uso.saida,
+      tools: r.tools.map((t) => t.nome), estourou_teto: r.estourouTeto, prompt_hash: prompt.hash,
+      ...(limpa.cortes.length ? { saida_cortes: limpa.cortes } : {}),
+    };
+
+    // ---- o portão (o MESMO aplica-portao.js) ----
+    const portao = await turno.medir('portao', 'aplica-portao.js', { chars: limpa.texto.length, perfil },
+      () => aplicarPortao({ db, n8nJsDir: deps.n8nJsDir, tenantId: tenant.tenant_id, conversationId, perfil, textoModelo: limpa.texto, componentes }),
+      (s) => ({ veredito: s.veredito, transferir: s.transferir, bruto: s.portao.bruto ?? null }));
+
+    // ---- envia; nota privada se o portão pediu ----
+    await turno.medir('envio', 'chatwoot.messages', { conversationId, chars: portao.output.length },
+      () => deps.chatwoot.enviar({ tenantId: tenant.tenant_id, conversationId, content: portao.output }));
+    if (portao.transferir && portao.notaPrivada) {
+      try {
+        await turno.medir('envio', 'chatwoot.nota_privada_portao', { conversationId },
+          () => deps.chatwoot.enviar({ tenantId: tenant.tenant_id, conversationId, content: portao.notaPrivada!, privada: true }));
+      } catch { /* a nota falhar não derruba o turno — a resposta já saiu */ }
+    }
+
+    // ---- Registra Mensagem: NÃO é continue — falhar aqui é falhar o turno ----
+    const ids = await turno.medir('registro', 'api_n8n_registrar_mensagem', { conversationId },
+      () => registrar(textoEntrada, portao.output, r.uso, audioSegundos || null, portao.componentes));
+
+    await turno.fechar({ status: 'ok', usageEntrada: r.uso.entrada, usageSaida: r.uso.saida, chamadasModelo: r.chamadas.length, toolsChamadas: r.tools.length, portaoVeredito: portao.veredito, mensagensLogSaidaId: ids.saidaId });
+    return { status: 'ok', turnoId: turno.id, resposta: portao.output, veredito: portao.veredito };
   } catch (e) {
     const erro = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     await turno.fechar({ status: 'falhou', erro });

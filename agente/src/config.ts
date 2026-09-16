@@ -15,6 +15,10 @@ export interface Config {
   webhookToken: string;
   /** Segredo do endpoint `POST /limpar-memoria` (o painel manda `x-limpeza-secret`). */
   limpezaSecret: string;
+  /** OpenAI: modelo, embeddings (KB) e transcrição. */
+  openaiApiKey: string;
+  /** O `x-foto-secret` da Edge Function `foto-produto`; sem ele a tool de foto recusa com motivo próprio. */
+  fotoSecret: string | null;
   /** Pasta com os corpos JS do n8n que continuam sendo fonte (extrair, filtro). */
   n8nJsDir: string;
   waha: { url: string; apiKey: string } | null;
@@ -58,6 +62,8 @@ export function lerConfig(env: NodeJS.ProcessEnv = process.env): Config {
     workerId: env.WORKER_ID?.trim() || `agente-${process.pid}`,
     webhookToken: obrigatorio('WEBHOOK_TOKEN'),
     limpezaSecret: obrigatorio('LIMPEZA_SECRET'),
+    openaiApiKey: obrigatorio('OPENAI_API_KEY'),
+    fotoSecret: env.FOTO_SECRET?.trim() || null,
     n8nJsDir: env.N8N_JS_DIR?.trim() || path.resolve(AQUI, '..', '..', 'n8n'),
     waha: wahaUrl && wahaKey ? { url: wahaUrl.replace(/\/+$/, ''), apiKey: wahaKey } : null,
     loteFila: inteiro('FILA_LOTE', 10),

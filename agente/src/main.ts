@@ -11,6 +11,8 @@ import { criarServidor } from './entrada/http.ts';
 import { carregarExtrair } from './entrada/extrair.ts';
 import { criarChatwoot } from './chatwoot/enviar.ts';
 import { criarWaha } from './waha/notificar.ts';
+import { criarModeloOpenAI } from './agente/modelo.ts';
+import { criarEmbeddingsOpenAI, criarTranscritorOpenAI } from './agente/openai-servicos.ts';
 import { umCiclo } from './fila/worker.ts';
 import { alarmeAgenteMudo, varrerRetencao } from './manutencao.ts';
 import { log, erroTexto } from './log.ts';
@@ -19,6 +21,9 @@ const cfg = lerConfig();
 const pool = criarPool(cfg.dbUrl);
 const chatwoot = criarChatwoot(pool);
 const waha = cfg.waha ? criarWaha(cfg.waha.url, cfg.waha.apiKey) : null;
+const modelo = criarModeloOpenAI(cfg.openaiApiKey);
+const embeddings = criarEmbeddingsOpenAI(cfg.openaiApiKey);
+const transcritor = criarTranscritorOpenAI(cfg.openaiApiKey);
 const alarme = process.env.ALARME_WAHA_SESSAO && process.env.ALARME_WAHA_DESTINO
   ? { sessao: process.env.ALARME_WAHA_SESSAO, destino: process.env.ALARME_WAHA_DESTINO } : null;
 
@@ -39,7 +44,10 @@ servidor.listen(cfg.porta, () => log('info', 'http.ouvindo', { porta: cfg.porta,
 async function lacoDaFila(): Promise<void> {
   while (!parando) {
     try {
-      const r = await umCiclo({ db: pool, chatwoot, waha, workerId: cfg.workerId, lote: cfg.loteFila, leaseMinutos: cfg.leaseMinutos, versaoCodigo: cfg.versaoCodigo });
+      const r = await umCiclo({
+        db: pool, chatwoot, waha, modelo, embeddings, transcritor, n8nJsDir: cfg.n8nJsDir, versaoCodigo: cfg.versaoCodigo,
+        fotoSecret: cfg.fotoSecret, fetchFn: fetch, workerId: cfg.workerId, lote: cfg.loteFila, leaseMinutos: cfg.leaseMinutos,
+      });
       if (r.reivindicadas > 0) log('info', 'fila.ciclo', { ...r });
     } catch (e) {
       log('erro', 'fila.ciclo_falhou', { erro: erroTexto(e) });

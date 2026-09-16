@@ -333,6 +333,28 @@ próprio, role `agente_codigo` membro de `n8n_agent`); `estudyou-sendbox` em
 os webhooks de volta da própria resposta descartados sem pausar. `emporio` e
 `ceejaar` seguem no n8n, intocados.
 
+**Fatia 2 — ESCRITA em 16/09/2026 (`agente/`, aguardando `OPENAI_API_KEY` no
+Coolify para o deploy):** o agente de verdade. `agente/modelo.ts` (SDK da
+OpenAI, Responses API, loop de tools nosso, teto de 10, `usage` real por
+chamada); `agente/prompt.ts` (system message por partes — provado **byte a
+byte igual** ao wrapper do n8n nos dois perfis, com as duas regras que só o
+básico carrega; hash no trace); as 6 tools com as `description` verbatim do
+JSON e `gerenciar_pedido` lendo `n8n/tool-pedido-acoes.mjs`; memória de
+`api_agente_memoria`; transcrição (`whisper-1` → `filtra-transcricao.js`);
+filtro de saída (porte de `limparVazamento`, provado igual à função original
+extraída do nó); e o **mesmo `aplica-portao.js`** rodando sobre
+`api_n8n_estado_pedido`. Os corpos JS do n8n que continuam sendo fonte rodam
+pelo `agente/n8n-js.ts`. `teste:agente-servico` **56/56** com o modelo falso,
+inclusive: fabricação ("Pedido fechado! Total R$ 80,00") **barrada** pelo
+portão em código, bruto em `mensagens_log.portao` e a memória do turno
+seguinte levando a substituta; tool executando no banco; tokens reais no log
+(`fonte_tokens = openai_usage`); teto → `TEXTO_TETO`.
+
+Divergências declaradas da fatia 2: áudio é transcrito no turno (não na
+chegada); avisos de mídia entram em `mensagens_log` como saída sem modelo; o
+rateio por componente é proporcional aos caracteres, escalado para o total
+real.
+
 **Fatia 1, o serviço — ESCRITO em 15/09/2026 (`agente/`):**
 receptor com token na URL, `classificar` provado igual ao `Roteia Evento` do
 JSON, `extrair` rodando o **mesmo** JS do n8n, portão de runtime nos dois

@@ -2,9 +2,10 @@
 
 O segundo projeto no Coolify (DESENHO-AGENTE-EM-CODIGO.md §1). Um processo
 Node 24, sem framework e sem Redis: receptor HTTP do Chatwoot + worker da fila
-no Postgres + manutenção. **Fatia 1**: responde com texto fixo, sem modelo —
-prova o caminho inteiro (webhook → fila → debounce → Chatwoot → `mensagens_log`
-→ trace) antes de gastar um token.
+no Postgres + manutenção. **Fatia 2**: o agente de verdade — modelo (OpenAI,
+Responses API, loop de tools nosso), as 6 ferramentas, memória de
+`mensagens_log`, transcrição de áudio, filtro de saída e o **mesmo**
+`aplica-portao.js` do n8n, com trace por turno e tokens reais.
 
 O n8n **continua atendendo todos os tenants** até o bot de uma conta ser
 apontado para cá. O serviço só atende tenant com `agente_runtime = 'codigo'`
@@ -27,6 +28,8 @@ ponta a ponta em transação abortada: `npm run teste:agente-fatia1`.
 | `AGENTE_DB_URL` | sim | conexão do role **`n8n_agent`** (a credencial "Agent ia Supabase" do n8n). O processo **recusa** subir com `postgres@` |
 | `WEBHOOK_TOKEN` | sim | segredo na URL do webhook: `POST /chatwoot/<token>/<inbox>`. Token errado → 404 |
 | `LIMPEZA_SECRET` | sim | o `x-limpeza-secret` que o painel manda em `POST /limpar-memoria` (o mesmo `N8N_LIMPEZA_SECRET` do painel, apontando `N8N_LIMPEZA_URL` para cá quando o tenant estiver em código) |
+| `OPENAI_API_KEY` | sim | o modelo (Responses API), os embeddings da base (`text-embedding-3-small`) e a transcrição (`whisper-1`) |
+| `FOTO_SECRET` | não | o `x-foto-secret` da Edge Function `foto-produto`; sem ele a tool de foto responde ao modelo que não pôde enviar |
 | `PORT` | não (3100) | porta HTTP |
 | `WORKER_ID` | não | identidade na fila (`reivindicada_por`); default `agente-<pid>` |
 | `WAHA_URL`, `WAHA_API_KEY` | não | notificação de anomalia (migração 53) e o alarme de agente mudo; sem elas os avisos viram só log |
@@ -75,7 +78,16 @@ src/entrada/extrair.ts  roda n8n/extrair-e-filtrar.js (fonte única na transiç�
 src/tenant/resolver.ts  api_n8n_tenant_por_chatwoot + api_agente_runtime
 src/pausa/*.ts          humano assumiu; portão de entrada (migração 53)
 src/fila/worker.ts      reivindicar -> turno_da_conversa -> executarTurno -> concluir
-src/turno/executar.ts   o turno (fatia 1: texto fixo)
+src/turno/executar.ts   o turno: sync -> portão de entrada -> mídia -> perfil/prompt/memória -> modelo -> filtro de saída -> portão -> Chatwoot -> log
+src/turno/portao.ts     roda n8n/aplica-portao.js (o mesmo corpo) sobre api_n8n_estado_pedido
+src/turno/saida.ts      limparVazamento (porte verbatim do Estima Tokens; teste de igualdade)
+src/agente/modelo.ts    Modelo (OpenAI SDK, Responses API, loop de tools, usage real, teto de 10)
+src/agente/prompt.ts    o system message por partes (== wrapper do n8n, byte a byte, testado); hash no trace
+src/agente/openai-servicos.ts  embeddings e whisper
+src/tools/*.ts          as 6 ferramentas (descriptions verbatim do JSON; gerenciar_pedido lê n8n/tool-pedido-acoes.mjs)
+src/midia/transcrever.ts  api_n8n_pode_transcrever -> baixa -> whisper -> filtra-transcricao.js
+src/n8n-js.ts           executor dos corpos JS do n8n que continuam sendo fonte
+src/perfil.ts           api_n8n_tools_ativas -> basico | vendas
 src/chatwoot/enviar.ts  POST messages com o token de Agent Bot
 src/waha/notificar.ts   POST /api/sendText
 src/manutencao.ts       retenção diária + alarme de agente mudo

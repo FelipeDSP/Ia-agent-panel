@@ -85,7 +85,14 @@ try {
   // porque o rollback aborta de propósito com qualquer um dos dois. Só faz
   // sentido se a coluna/tabela já existirem (banco pós-62).
   const temCol = (await um(`select count(*)::int n from information_schema.columns where table_name='tenants' and column_name='agente_runtime'`)).n === 1;
-  if (temCol) await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
+  // `agente_runtime` é agência-only (guard): o arranjo precisa do claim — e o
+  // savepoint isola o claim, porque a §1 abaixo mede o 42501 SEM claim.
+  if (temCol) {
+    await c.query('savepoint sp_arranjo');
+    await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
+    await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
+    await c.query(`select set_config('request.jwt.claims', '', true)`);
+  }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
   await c.query(semTx(R62));
   chk('rollback replayado: coluna, tabelas e funções ausentes',

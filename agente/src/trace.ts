@@ -3,6 +3,7 @@
  * Tudo por `api_agente_*`; o truncamento acontece no banco (§6).
  */
 import { fnValor, type Db } from './db.ts';
+import { log, erroTexto } from './log.ts';
 
 export type TipoPasso = 'entrada' | 'memoria' | 'modelo' | 'tool' | 'portao' | 'envio' | 'registro' | 'falha';
 
@@ -37,8 +38,9 @@ export class Turno {
         dados.saida === undefined ? null : JSON.stringify(dados.saida),
         dados.erro ?? null, dados.duracaoMs ?? null,
       ]);
-    } catch {
-      // deliberado: ver acima
+    } catch (e) {
+      // deliberado (ver acima) — mas visível no log do processo.
+      log('erro', 'trace.passo_falhou', { turno: this.id, tipo, nome, erro: erroTexto(e) });
     }
   }
 
@@ -66,8 +68,8 @@ export class Turno {
         p.chamadasModelo ?? null, p.toolsChamadas ?? null, p.portaoVeredito ?? null,
         p.mensagensLogSaidaId ?? null, p.erro ?? null,
       ]);
-    } catch {
-      // idem
+    } catch (e) {
+      log('erro', 'trace.fechar_falhou', { turno: this.id, erro: erroTexto(e) });
     }
   }
 }

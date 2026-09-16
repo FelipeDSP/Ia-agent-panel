@@ -2,7 +2,7 @@
   "name": "agente",
   "version": "0.1.0",
   "private": true,
-  "description": "O agente de IA em código — fatia 1: receptor do Chatwoot, fila, pausa, trace, resposta fixa. Ver docs/DESENHO-AGENTE-EM-CODIGO.md.",
+  "description": "O agente de IA em código: receptor do Chatwoot, fila, modelo com tools, memória, portão, trace. Ver docs/DESENHO-AGENTE-EM-CODIGO.md.",
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": {
@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "openai": "^5.20.0",
     "pg": "^8.22.0"
   },
   "devDependencies": {

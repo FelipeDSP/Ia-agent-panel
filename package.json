@@ -104,7 +104,7 @@
     "teste:foto-e-kb": "node --env-file=.env.local tests/foto-resposta-e-kb-consolida.mjs",
     "teste:modelos": "node tests/modelos-debounce-e-memoria.mjs",
     "teste:migracao-agente": "node --env-file=.env.local tests/migracao-agente-fatia1.mjs",
-    "teste:agente-fatia1": "node --env-file=.env.local tests/agente-fatia1.mjs",
+    "teste:agente-servico": "node --env-file=.env.local tests/agente-servico.mjs",
     "teste:agente-tipos": "node tests/agente-tipos.mjs",
     "agente:start": "npm --prefix agente start"
   },

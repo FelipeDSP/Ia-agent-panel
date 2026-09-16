@@ -11,15 +11,12 @@
  * abortada: o `main` só a chama num laço com intervalo.
  */
 import { fnTodas, fnUma, fnValor, type Db } from '../db.ts';
-import type { Chatwoot } from '../chatwoot/enviar.ts';
-import type { Waha } from '../waha/notificar.ts';
 import type { Tenant } from '../tenant/resolver.ts';
-import { executarTurno, type MensagemDaFila } from '../turno/executar.ts';
+import { executarTurno, type MensagemDaFila, type Deps as DepsTurno } from '../turno/executar.ts';
 import { log, erroTexto } from '../log.ts';
 
-export interface DepsWorker {
-  db: Db; chatwoot: Chatwoot; waha: Waha | null;
-  workerId: string; lote: number; leaseMinutos: number; versaoCodigo: string;
+export interface DepsWorker extends Omit<DepsTurno, never> {
+  workerId: string; lote: number; leaseMinutos: number;
 }
 
 interface LinhaFila {
@@ -59,12 +56,11 @@ export async function umCiclo(deps: DepsWorker): Promise<ResumoCiclo> {
       continue;
     }
 
-    const r = await executarTurno({ db: deps.db, chatwoot: deps.chatwoot, waha: deps.waha, versaoCodigo: deps.versaoCodigo },
-      { tenant, conversationId, filaIds: d.fila_ids, mensagens: d.mensagens });
+    const r = await executarTurno(deps, { tenant, conversationId, filaIds: d.fila_ids, mensagens: d.mensagens });
     const estadoFinal = r.status === 'ok' ? 'concluida' : r.status === 'descartado' ? 'descartada' : 'falhou';
     await fnValor(deps.db, 'api_agente_concluir', [linha.tenant_id, d.fila_ids, estadoFinal, r.turnoId, r.motivo ?? null]);
     if (r.status === 'ok') resumo.respondidas++; else if (r.status === 'falhou') resumo.falhas++;
-    log(r.status === 'falhou' ? 'erro' : 'info', 'fila.turno', { tenant: tenant.slug, conversa: conversationId, turno: r.turnoId, status: r.status, mensagens: d.mensagens.length, motivo: r.motivo });
+    log(r.status === 'falhou' ? 'erro' : 'info', 'fila.turno', { tenant: tenant.slug, conversa: conversationId, turno: r.turnoId, status: r.status, mensagens: d.mensagens.length, veredito: r.veredito, motivo: r.motivo });
   }
   return resumo;
 }
