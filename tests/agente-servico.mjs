@@ -56,6 +56,8 @@ const M63 = leia('20260916140000_63_agente_turno_prompt.sql');
 const R63 = leia('20260916140000_63_agente_turno_prompt_rollback.sql');
 const M64 = leia('20260916190000_64_encerramento_link_pagamento.sql');
 const R64 = leia('20260916190000_64_encerramento_link_pagamento_rollback.sql');
+const M65 = leia('20260916210000_65_conversa_resolvida_reabre.sql');
+const R65 = leia('20260916210000_65_conversa_resolvida_reabre_rollback.sql');
 const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -114,6 +116,7 @@ let transcricaoFalsa = { text: 'quero saber o horário', duration: 1.78, usage: 
 const transcritor = { async transcrever() { if (!transcricaoFalsa) throw new Error('whisper caiu'); return transcricaoFalsa; } };
 const fetchFalso = async (u) => {
   if (String(u).includes('anexo-audio')) return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+  if (String(u).includes('/toggle_status')) return new Response(JSON.stringify({ payload: { success: true } }), { status: 200 });
   throw new Error(`fetch inesperado no teste: ${u}`);
 };
 // Asaas falso: registra cada chamada (SEM guardar a chave além de conferir que veio).
@@ -150,12 +153,14 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R65));
   await c.query(semTx(R64));
   await c.query(semTx(R63));
   await c.query(semTx(R62));
   await c.query(semTx(M62));
   await c.query(semTx(M63));
   await c.query(semTx(M64));
+  await c.query(semTx(M65));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -391,6 +396,22 @@ try {
     if (fk2.resultado === 'enfileirada') { await vencer(); await umCiclo(depsWorker); }
     chk('mensagem seguinte na conversa pausada: NENHUMA resposta, NENHUMA chamada ao modelo (descarte silencioso)',
       chamadasChatwoot.length === antesCw && vistoPeloModelo.length === antesModeloK, JSON.stringify({ r: fk2.resultado, cw: chamadasChatwoot.length - antesCw }));
+
+    // 5l. RESOLVER: a tool resolve no Chatwoot E escreve `resolvido` no banco (65); a próxima
+    // mensagem do cliente REABRE (sync) e é respondida.
+    roteiro.push({ tool: 'resolver_conversa', args: {} }, { texto: 'Até mais!' });
+    const fl = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 208, content: 'era só isso, tchau' }));
+    await vencer(); const cl = await umCiclo(depsWorker);
+    const tl = await turnoDaFila(fl.filaId);
+    const pl = (await passosDe(tl.id)).find((p) => p.tipo === 'tool' && p.nome === 'resolver_conversa');
+    chk('resolver_conversa: respondida; diagnostico { motivo: resolvida, status_no_banco: resolvido }; conversas.status = resolvido',
+      cl.respondidas === 1 && pl?.saida?.diagnostico?.status_no_banco === 'resolvido'
+      && (await um(`select status from public.conversas where tenant_id=$1 and conversation_id=208`, [T.a])).status === 'resolvido', JSON.stringify(pl?.saida?.diagnostico ?? null));
+    roteiro.push({ texto: 'Oi de novo!' });
+    const fl2 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 208, content: 'oi, voltei' }));
+    await vencer(); const cl2 = await umCiclo(depsWorker);
+    chk('mensagem nova na conversa resolvida: REABRE (status ativo) e é respondida',
+      fl2.resultado === 'enfileirada' && cl2.respondidas === 1 && (await um(`select status from public.conversas where tenant_id=$1 and conversation_id=208`, [T.a])).status === 'ativo', JSON.stringify({ r: fl2.resultado, c: cl2 }));
 
     // 5j. isolamento: turnos e prompts de A não aparecem para C
     chk('agente_turnos de C só tem conversas de C', (await tudo(`select distinct conversation_id::int c from public.agente_turnos where tenant_id=$1`, [T.c])).every((x) => x.c === 300));

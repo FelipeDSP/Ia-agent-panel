@@ -17,7 +17,7 @@ tem, então o fecho é passo do conserto e não tarefa para depois.
 
 | pendência | do que se trata | gatilho |
 |---|---|---|
-| [Status da conversa](PENDENCIA-STATUS-CONVERSA.md) | `'resolvido'` nunca é escrito; o painel mostra conversa encerrada há meses como `ativo` (as 66 da Acqua) | depois da demonstração do `emporio` |
+| ~~Status da conversa~~ **FEITO em 16/09 (migração 65)** — o `resolver_conversa` em código escreve `resolvido`; mensagem nova reabre no `conversa_sync`. As 66 da Acqua continuam `ativo` (foram encerradas pelo n8n, que nunca escreveu) — se importar, é um `update` único. Histórico em `PENDENCIA-STATUS-CONVERSA.md` | — |
 | [Pergunta sem resposta](PENDENCIA-PERGUNTA-SEM-RESPOSTA.md) | não há como saber o que perguntaram e o agente não soube responder — a única métrica que diria **o que fazer** | quando alguém pedir, ou quando uma base parar de crescer |
 | [Fatura da OpenAI](PENDENCIA-FATURA-OPENAI.md) | como a fatura entra no sistema todo mês; inclui a discussão em aberto sobre cobrar o prompt do cliente | quando a cobrança por consumo for faturar de verdade |
 | [Piso de similaridade](PENDENCIA-PISO-SIMILARIDADE.md) | a busca sempre devolve algo, nunca "não tenho isso" — e as faixas de relevante e irrelevante se sobrepõem | cliente com base grande **e** resposta fora de contexto |
