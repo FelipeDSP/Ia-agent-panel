@@ -195,15 +195,9 @@ export function validarTransferirCliente(fd: FormData): Resultado<{
  */
 export function validarTransferirAgencia(fd: FormData): Resultado<{
   sessao: string;
-  descricao: string;
 }> {
-  const erros: Record<string, string> = {};
-
+  // `descricao` saiu em 16/09/2026: o texto nunca chegou ao modelo (a description
+  // da tool é fixa, no n8n e no código). Só a sessão do WAHA é da agência aqui.
   const sessao = String(fd.get('sessao') ?? '').trim();
-  const descricao = String(fd.get('descricao') ?? '').trim();
-  if (!descricao) erros['descricao'] = 'Descreva quando o agente deve transferir.';
-
-  if (Object.keys(erros).length > 0) return { ok: false, erros };
-
-  return { ok: true, valor: { sessao, descricao } };
+  return { ok: true, valor: { sessao } };
 }

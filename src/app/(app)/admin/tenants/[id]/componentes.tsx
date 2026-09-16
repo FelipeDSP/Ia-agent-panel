@@ -26,7 +26,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { Textarea } from '@/components/ui/textarea';
 import { FORMAS_PAGAMENTO, MODELOS_PERMITIDOS, ROTULO_FORMA } from '@/lib/tenants/schema';
 import { secaoPadraoTemAnomalia } from '@/lib/tools/registro';
 import type { GrupoTool } from '@/lib/tools/tipos';
@@ -340,12 +339,10 @@ function DesconectarChatwoot({ tenantId, accountId }: { tenantId: string; accoun
 
 export function FormTransferirHumano({
   tenantId,
-  descricao,
   sessao,
   habilitada,
 }: {
   tenantId: string;
-  descricao: string;
   sessao: string;
   habilitada: boolean;
 }) {
@@ -360,12 +357,6 @@ export function FormTransferirHumano({
 
       {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="descricao">Descrição da tool (ensina a IA quando transferir)</Label>
-        <Textarea id="descricao" name="descricao" rows={3} defaultValue={descricao} />
-        <ErroCampo msg={estado.errosCampo?.['descricao']} />
-      </div>
 
       <div className="flex max-w-sm flex-col gap-2">
         <Label htmlFor="sessao">Sessão WAHA (opcional)</Label>

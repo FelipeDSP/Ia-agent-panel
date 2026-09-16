@@ -11,7 +11,7 @@ import { validarConfigTenantSuper, validarCriacaoTenant } from '@/lib/tenants/sc
 import { baseUrlDoAmbiente, corpoDoWebhookAsaas, gerarTokenWebhook, urlDoWebhookNoAgente, validarAsaasTenant, type AmbienteAsaas } from '@/lib/pagamento/asaas-tenant';
 import { ROTULO_RUNTIME, normalizarRuntime, podeTrocar } from '@/lib/agente/runtime';
 import { criarUsuario, ehEmailDuplicado } from '@/lib/supabase/admin-usuarios';
-import { TOOLS_BASELINE } from '@/lib/tools/registro';
+import { REGISTRO_TOOLS, TOOLS_BASELINE } from '@/lib/tools/registro';
 import {
   HORARIO_PADRAO,
   TOOL_TRANSFERIR,
@@ -821,7 +821,6 @@ export async function salvarTransferirHumanoAgencia(
       // workflow_id não é editável pelo painel (metadado, não liga nada).
       // Preserva o que estiver no banco; em linha nova fica null.
       workflow_id: linha?.workflow_id ?? null,
-      descricao: validado.valor.descricao,
       config,
       ativo: linha ? linha.ativo : false,
     },
@@ -913,105 +912,23 @@ export async function definirContratacao(
 // minúsculo, sem espaço. Imutável depois de criado (é a PK).
 const RE_TOOL_NOME = /^[a-z][a-z0-9_]{1,60}$/;
 
-/** Valida e normaliza o schema_config (JSON de objeto). Vazio => {}. */
-function parseSchemaConfig(bruto: string): { ok: true; valor: Record<string, unknown> } | { ok: false; erro: string } {
-  const t = bruto.trim();
-  if (!t) return { ok: true, valor: {} };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(t);
-  } catch {
-    return { ok: false, erro: 'schema_config precisa ser JSON válido.' };
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    return { ok: false, erro: 'schema_config precisa ser um objeto JSON.' };
-  }
-  return { ok: true, valor: parsed as Record<string, unknown> };
-}
 
 /**
- * Cria uma tool no catálogo global. Só super admin (policy p_catalogo_all).
- * Provisionar uma capacidade nova para o produto = uma linha aqui + um
- * sub-workflow no n8n; depois é só contratar por cliente.
+ * O catálogo é derivado do código (src/lib/tools/registro.ts) desde 16/09: o que
+ * a agência ainda decide aqui é `catalogo_tools.ativo` — tirar um módulo da
+ * oferta sem descontratar ninguém. Criar/editar tool pela tela deixou de
+ * existir: a descrição nunca chegou ao modelo e o `workflow_id` era nulo.
  */
-export async function criarToolCatalogo(
-  _estado: EstadoAcao,
-  fd: FormData,
-): Promise<EstadoAcao> {
+export async function definirVisibilidadeTool(_estado: EstadoAcao, fd: FormData): Promise<EstadoAcao> {
   await exigirSuperAdmin();
-
   const tool_nome = String(fd.get('tool_nome') ?? '').trim();
-  const nome_exibicao = String(fd.get('nome_exibicao') ?? '').trim();
-  const descricao_padrao = String(fd.get('descricao_padrao') ?? '').trim();
-  const workflow_id_padrao = String(fd.get('workflow_id_padrao') ?? '').trim();
-  const schema = parseSchemaConfig(String(fd.get('schema_config') ?? ''));
-
-  const errosCampo: Record<string, string> = {};
-  if (!RE_TOOL_NOME.test(tool_nome)) {
-    errosCampo['tool_nome'] = 'Use minúsculas, números e _ (ex.: agendar_horario). Começa com letra.';
-  }
-  if (!nome_exibicao) errosCampo['nome_exibicao'] = 'Dê um nome de exibição.';
-  if (!schema.ok) errosCampo['schema_config'] = schema.erro;
-  if (Object.keys(errosCampo).length > 0) return { errosCampo };
-
+  if (!tool_nome || !REGISTRO_TOOLS[tool_nome]) return { erro: 'Tool desconhecida pelo código.' };
+  const ativo = fd.get('ativo') === 'true' || fd.get('ativo') === 'on';
   const supabase = await criarClienteServidor();
-  const { error } = await supabase.from('catalogo_tools').insert({
-    tool_nome,
-    nome_exibicao,
-    descricao_padrao: descricao_padrao || null,
-    workflow_id_padrao: workflow_id_padrao || null,
-    schema_config: (schema as { valor: Record<string, unknown> }).valor,
-    ativo: fd.get('ativo') === 'on' || fd.get('ativo') === 'true',
-  });
-
-  if (error) {
-    if (error.code === '23505') return { errosCampo: { tool_nome: 'Já existe uma tool com esse nome.' } };
-    return { erro: `Não foi possível criar: ${error.message}` };
-  }
-
-  revalidatePath('/admin/catalogo');
-  return { sucesso: `Tool "${tool_nome}" criada no catálogo.` };
-}
-
-/**
- * Edita uma tool do catálogo (tudo menos o tool_nome, que é a PK/chave do n8n).
- * Só super admin.
- */
-export async function editarToolCatalogo(
-  _estado: EstadoAcao,
-  fd: FormData,
-): Promise<EstadoAcao> {
-  await exigirSuperAdmin();
-
-  const tool_nome = String(fd.get('tool_nome') ?? '').trim();
-  if (!tool_nome) return { erro: 'Tool não informada.' };
-
-  const nome_exibicao = String(fd.get('nome_exibicao') ?? '').trim();
-  const descricao_padrao = String(fd.get('descricao_padrao') ?? '').trim();
-  const workflow_id_padrao = String(fd.get('workflow_id_padrao') ?? '').trim();
-  const schema = parseSchemaConfig(String(fd.get('schema_config') ?? ''));
-
-  const errosCampo: Record<string, string> = {};
-  if (!nome_exibicao) errosCampo['nome_exibicao'] = 'Dê um nome de exibição.';
-  if (!schema.ok) errosCampo['schema_config'] = schema.erro;
-  if (Object.keys(errosCampo).length > 0) return { errosCampo };
-
-  const supabase = await criarClienteServidor();
-  const { error } = await supabase
-    .from('catalogo_tools')
-    .update({
-      nome_exibicao,
-      descricao_padrao: descricao_padrao || null,
-      workflow_id_padrao: workflow_id_padrao || null,
-      schema_config: (schema as { valor: Record<string, unknown> }).valor,
-      ativo: fd.get('ativo') === 'on' || fd.get('ativo') === 'true',
-    })
-    .eq('tool_nome', tool_nome);
-
+  const { error } = await supabase.from('catalogo_tools').update({ ativo }).eq('tool_nome', tool_nome);
   if (error) return { erro: `Não foi possível salvar: ${error.message}` };
-
   revalidatePath('/admin/catalogo');
-  return { sucesso: 'Tool atualizada.' };
+  return { sucesso: ativo ? 'Em circulação.' : 'Oculta da oferta.' };
 }
 
 // --- Pagamento (Asaas) por tenant ------------------------------------------

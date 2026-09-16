@@ -118,7 +118,8 @@
     "teste:migracao-config-agente": "node --env-file=.env.local tests/migracao-config-agente.mjs",
     "teste:config-tenant-super": "node --import ./tests/lib/ts.mjs tests/config-tenant-super.mjs",
     "teste:asaas-tenant-painel": "node --import ./tests/lib/ts.mjs tests/asaas-tenant-painel.mjs",
-    "teste:runtime-painel": "node --import ./tests/lib/ts.mjs tests/runtime-painel.mjs"
+    "teste:runtime-painel": "node --import ./tests/lib/ts.mjs tests/runtime-painel.mjs",
+    "teste:catalogo-derivado": "node --env-file=.env.local --import ./tests/lib/ts.mjs tests/catalogo-derivado.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

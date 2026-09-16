@@ -109,6 +109,25 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
       'Uma foto por vez — há trava para não virar sequência de imagens no WhatsApp.',
     temConfigCliente: false,
   },
+  /**
+   * Link de pagamento (Asaas) do pedido fechado — migração 61, em código desde
+   * 16/09 (`agente/src/tools/gerar-link-pagamento.ts`). Depende de `vendas`
+   * (só há o que cobrar depois do `fechar`) e da credencial Asaas do tenant,
+   * que a agência cadastra em Clientes → Pagamento (Asaas). Sem credencial a
+   * tool responde ao modelo "não configurado" — não quebra o turno.
+   *
+   * Fora de TOOLS_BASELINE: é módulo vendido e mexe com dinheiro.
+   */
+  pagamento: {
+    nome: 'pagamento',
+    contratavel: true,
+    tipo: 'tool_modelo',
+    rotulo: 'Pagamento pelo agente',
+    resumo:
+      'Depois de fechar o pedido, o agente gera o link de pagamento (Asaas) e o sistema ' +
+      'avisa o cliente quando o pagamento cair. Exige o módulo Vendas e a credencial Asaas do cliente.',
+    temConfigCliente: false,
+  },
 };
 
 /** Definição de UI de uma tool, ou null se não estiver registrada. */
