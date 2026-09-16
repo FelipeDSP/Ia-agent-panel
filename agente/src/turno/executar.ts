@@ -112,7 +112,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
           // O trace guarda POR QUE não transcreveu: em 16/09 um áudio real levou 65 s e
           // saiu só `{ status: 'falhou' }` — sem o erro, não havia como saber se foi o
           // download, o whisper ou o filtro.
-          (r) => ({ status: r.status, ...(r.status === 'ok' ? { chars: r.mensagem.length, audio_segundos: r.audioSegundos } : {}),
+          (r) => ({ status: r.status, ...(r.status === 'ok' ? { chars: r.mensagem.length, audio_segundos: r.audioSegundos, download: r.diagnostico.download } : {}),
             ...('erro' in r && r.erro ? { erro: r.erro } : {}), ...('motivo' in r && r.motivo ? { motivo: r.motivo } : {}) }));
         if (t.status === 'ok') { textos.push(t.mensagem); audioSegundos += t.audioSegundos ?? 0; }
         else if (t.status === 'bloqueado') bloqueado = true;

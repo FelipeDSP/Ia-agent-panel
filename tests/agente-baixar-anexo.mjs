@@ -1,10 +1,12 @@
 /**
- * `baixarAnexo`: o download do áudio em duas tentativas curtas.
+ * `baixarAnexo`: esperar o arquivo EXISTIR no storage do Chatwoot.
  *
- * O caso que motivou (16/09/2026): o primeiro fetch PENDURA (socket keep-alive
- * morto) e nunca responde; a segunda tentativa, em socket novo, responde em
- * milissegundos. Uma tentativa única de 30 s virava "Não consegui entender seu
- * áudio" para um áudio perfeitamente baixável.
+ * Medido em 16/09/2026 (três áudios reais no sendbox): o webhook chega ~26 s
+ * ANTES de o arquivo estar no S3; a URL `proxy` pendura nesse intervalo; a
+ * `redirect` responde 302 na hora e o S3 devolve 404 até o arquivo chegar.
+ *
+ * O teste simula um Chatwoot com relógio falso: o storage passa a ter o
+ * arquivo em T+26 s. Tempo e sono são injetados — o teste roda em ms.
  *
  *   node tests/agente-baixar-anexo.mjs
  */
@@ -17,43 +19,81 @@ const chk = (nome, cond, det = '') => {
   else { falhas.push(nome); console.log(`  FALHA ${nome}${det ? ` — ${det}` : ''}`); }
 };
 
-/** fetch que pendura até o signal abortar (como o socket morto), sem nunca responder. */
-// (`AbortSignal.timeout` usa um timer unref'd no Node: sem algo segurando o
-// event loop o processo sairia antes do abort — o `setInterval` é esse algo.)
-const pendura = (_u, init) => new Promise((_, reject) => {
-  const segura = setInterval(() => {}, 1000);
-  init.signal.addEventListener('abort', () => { clearInterval(segura); reject(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })); });
-});
-const responde = async () => new Response(new Uint8Array([7, 7, 7]), { status: 200 });
+const PROXY = 'https://chatwoot.teste/rails/active_storage/blobs/proxy/TOKEN/no-filename.oga';
+const S3 = 'https://bucket.s3.teste/chave?assinatura=1';
 
-console.log('\n== 1. Primeira pendura, segunda responde -> bytes, e o token foi no header ==\n');
-{
-  let chamadas = 0; let headerVisto = null;
-  const fetchFn = (u, init) => { chamadas++; headerVisto = init.headers?.api_access_token ?? null; return chamadas === 1 ? pendura(u, init) : responde(); };
-  const t0 = Date.now();
-  // Rejeição inesperada vira FALHA, não crash (CLAUDE.md): sem o retry, isto lança.
-  let bytes = new Uint8Array(); let erro1 = null;
-  try { bytes = await baixarAnexo(fetchFn, 'https://x/anexo.oga', 'tok', [150, 5000]); } catch (e) { erro1 = e; }
-  chk('devolveu os 3 bytes da SEGUNDA tentativa (sem lançar)', erro1 === null && bytes.length === 3 && bytes[0] === 7, erro1?.message);
-  chk('foram exatamente 2 chamadas', chamadas === 2, String(chamadas));
-  chk('a primeira desistiu no timeout curto (< 2 s, não 30)', Date.now() - t0 < 2000, `${Date.now() - t0} ms`);
-  chk('o token do bot foi no header api_access_token', headerVisto === 'tok');
+/** Um Chatwoot falso cujo arquivo aparece no storage em `prontoEm` ms de relógio simulado. */
+function chatwootFalso({ prontoEm, temRedirect = true }) {
+  let relogio = 0;
+  const chamadas = [];
+  const fetchFn = async (u, init) => {
+    chamadas.push({ u: String(u), headers: init?.headers ?? {} });
+    if (String(u).includes('/blobs/redirect/')) {
+      if (!temRedirect) return new Response('', { status: 404 });
+      return new Response('', { status: 302, headers: { location: S3 } });
+    }
+    if (String(u) === S3) return relogio >= prontoEm ? new Response(new Uint8Array([7, 7, 7]), { status: 200 }) : new Response('', { status: 404 });
+    if (String(u).includes('/blobs/proxy/')) {
+      // o proxy PENDURA antes de o arquivo existir: simula-se como "o timeout da
+      // tentativa passou" (o relógio avança o timeout) e a rejeição do abort.
+      if (relogio >= prontoEm) return new Response(new Uint8Array([7, 7, 7]), { status: 200 });
+      relogio += 8_000;
+      throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+    }
+    return new Response('', { status: 500 });
+  };
+  const opcoes = {
+    prazoMs: 75_000, intervaloMs: 3_000, timeoutTentativaMs: 8_000,
+    agora: () => relogio,
+    dormir: async (ms) => { relogio += ms; },   // dormir avança o relógio simulado
+  };
+  return { fetchFn, opcoes, chamadas, agora: () => relogio };
 }
 
-console.log('\n== 2. Responde de primeira -> UMA chamada ==\n');
+console.log('\n== 1. Arquivo aparece em T+26 s: espera, segue o redirect, baixa do S3 sem o token ==\n');
 {
-  let chamadas = 0;
-  await baixarAnexo((u, init) => { chamadas++; return responde(); }, 'https://x/a.oga', null, [150, 5000]);
-  chk('uma chamada só', chamadas === 1);
+  const cw = chatwootFalso({ prontoEm: 26_000 });
+  let r = null; let erro = null;
+  try { r = await baixarAnexo(cw.fetchFn, PROXY, 'tok', cw.opcoes); } catch (e) { erro = e; }
+  chk('baixou 3 bytes, via redirect', erro === null && r.bytes.length === 3 && r.via === 'redirect', erro?.message);
+  chk('esperou 27 s de relógio em 10 tentativas (a cada 3 s), sem pendurar', r && r.esperaMs === 27_000 && r.tentativas === 10, JSON.stringify({ e: r?.esperaMs, t: r?.tentativas }));
+  const aoChatwoot = cw.chamadas.filter((c) => c.u.includes('chatwoot.teste'));
+  const aoS3 = cw.chamadas.filter((c) => c.u === S3);
+  chk('o token foi SÓ ao Chatwoot, nunca ao storage (contraprova: houve chamadas aos dois)',
+    aoChatwoot.length > 0 && aoS3.length > 0 && aoChatwoot.every((c) => c.headers.api_access_token === 'tok') && aoS3.every((c) => !c.headers.api_access_token));
+  chk('nenhuma tentativa usou a URL `proxy` (que pendura)', !cw.chamadas.some((c) => c.u.includes('/blobs/proxy/')));
 }
 
-console.log('\n== 3. As duas falham -> erro que lista as duas causas ==\n');
+console.log('\n== 2. Arquivo já existe: UMA tentativa, sem espera ==\n');
 {
-  let chamadas = 0;
-  const fetchFn = (u, init) => { chamadas++; return chamadas === 1 ? pendura(u, init) : Promise.resolve(new Response('', { status: 404 })); };
+  const cw = chatwootFalso({ prontoEm: 0 });
+  const r = await baixarAnexo(cw.fetchFn, PROXY, 'tok', cw.opcoes);
+  chk('1 tentativa, espera 0', r.tentativas === 1 && r.esperaMs === 0, JSON.stringify({ t: r.tentativas, e: r.esperaMs }));
+}
+
+console.log('\n== 3. Nunca aparece: desiste no prazo, erro com a contagem e as causas ==\n');
+{
+  const cw = chatwootFalso({ prontoEm: Infinity });
   let erro = null;
-  try { await baixarAnexo(fetchFn, 'https://x/a.oga', 'tok', [150, 150]); } catch (e) { erro = e; }
-  chk('lança, com "2 tentativas", o TimeoutError e o HTTP 404 no texto', erro && /2 tentativas/.test(erro.message) && /TimeoutError/.test(erro.message) && /HTTP 404/.test(erro.message), erro?.message);
+  try { await baixarAnexo(cw.fetchFn, PROXY, 'tok', cw.opcoes); } catch (e) { erro = e; }
+  chk('lança citando tentativas e "storage HTTP 404"', erro && /tentativas/.test(erro.message) && /storage HTTP 404/.test(erro.message), erro?.message);
+  chk('respeitou o prazo (relógio <= 75 s) e tentou mais de 20 vezes', cw.agora() <= 75_000 && /em 2[0-9] tentativas/.test(erro?.message ?? ''), `${cw.agora()} ms — ${erro?.message}`);
+}
+
+console.log('\n== 4. Instância sem rota `redirect`: cai no `proxy` com timeout curto e baixa quando o arquivo chega ==\n');
+{
+  const cw = chatwootFalso({ prontoEm: 26_000, temRedirect: false });
+  let r = null; let erro = null;
+  try { r = await baixarAnexo(cw.fetchFn, PROXY, 'tok', cw.opcoes); } catch (e) { erro = e; }
+  chk('baixou via proxy depois que o arquivo existiu', erro === null && r?.via === 'proxy' && r.bytes.length === 3, erro?.message ?? JSON.stringify(r));
+  chk('levou mais de uma tentativa (a rota ausente e os timeouts do proxy foram engolidos, não crasharam)', r?.tentativas > 1, String(r?.tentativas));
+}
+
+console.log('\n== 5. URL que não é do Chatwoot: download direto ==\n');
+{
+  const fetchFn = async () => new Response(new Uint8Array([1]), { status: 200 });
+  const r = await baixarAnexo(fetchFn, 'https://outro.teste/a.oga', null, { agora: () => 0, dormir: async () => {} });
+  chk('via direto, 1 tentativa', r.via === 'direto' && r.tentativas === 1);
 }
 
 console.log(`\n${ok} passaram, ${falhas.length} falharam\n`);

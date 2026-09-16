@@ -27,29 +27,72 @@ export type ResultadoTranscricao =
   | { status: 'nao_contratado' | 'longo' | 'falhou'; avisoAoCliente: string | null; erro?: string };
 
 /**
- * Download do anexo em DUAS tentativas curtas em vez de uma longa.
+ * Download do anexo: ESPERAR O ARQUIVO EXISTIR, com tentativas que falham
+ * rápido — não uma requisição longa que pendura.
  *
- * Medido em 16/09/2026, no sendbox: dois áudios reais penduraram o download
- * (65 s até o TCP desistir; depois 30 s no timeout) enquanto o MESMO URL, com
- * o MESMO token, baixava em 0,4–0,6 s de fora e de dentro do container com um
- * `node -e` avulso. Só o processo do serviço pendurava — e ele é o único que
- * mantém conexões keep-alive abertas com `app.chatyou.chat` entre turnos. O
- * quadro é o de socket ocioso que o outro lado fechou sem o container ver
- * (NAT do Docker): a requisição sai, nada volta. Abortar destrói o socket, e
- * a tentativa seguinte abre outro — por isso a segunda costuma passar.
+ * Medido em 16/09/2026 no sendbox, em três áudios reais: o Chatwoot dispara o
+ * webhook com a `data_url` do anexo **~26 s ANTES** de o arquivo estar no
+ * storage dele (S3 `Last-Modified` = webhook + 26–27 s, nos três). Nesse
+ * intervalo a URL `…/blobs/proxy/…` que ele manda SEGURA a conexão em vez de
+ * responder erro — e, uma vez pendurada, não destrava nem quando o arquivo
+ * chega. A variante `…/blobs/redirect/…` do MESMO blob responde na hora com
+ * 302 para o S3, e o S3 devolve 404 honesto enquanto não tem o objeto.
+ *
+ * Então: troca-se `proxy` por `redirect`, segue-se ao storage SEM o token (a
+ * URL assinada não precisa dele e o token não deve sair do Chatwoot), e
+ * repete-se a cada `intervaloMs` até o 200 ou o prazo. Se a instância não
+ * tiver a rota `redirect` (outra versão do Chatwoot), cai no `proxy` com
+ * timeout curto por tentativa.
+ *
+ * O n8n nunca viu isso porque em agosto o Chatwoot mandava a `redirect`
+ * (docs em `extrair-e-filtrar.js`); a instância passou a mandar `proxy`.
  */
-export async function baixarAnexo(fetchFn: typeof fetch, url: string, token: string | null | undefined, timeoutsMs: number[] = [10_000, 25_000]): Promise<Uint8Array> {
+export interface OpcoesDownload { prazoMs?: number; intervaloMs?: number; timeoutTentativaMs?: number; agora?: () => number; dormir?: (ms: number) => Promise<void> }
+export interface Baixado { bytes: Uint8Array; tentativas: number; esperaMs: number; via: 'redirect' | 'proxy' | 'direto' }
+
+export async function baixarAnexo(fetchFn: typeof fetch, url: string, token: string | null | undefined, o: OpcoesDownload = {}): Promise<Baixado> {
+  const prazo = o.prazoMs ?? 75_000;
+  const intervalo = o.intervaloMs ?? 3_000;
+  const timeout = o.timeoutTentativaMs ?? 8_000;
+  const agora = o.agora ?? Date.now;
+  const dormir = o.dormir ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const cabecalho = token ? { api_access_token: token } : {};
+
+  const ehProxy = url.includes('/blobs/proxy/');
+  let via: Baixado['via'] = ehProxy ? 'redirect' : 'direto';
+  const inicio = agora();
   const erros: string[] = [];
-  for (const timeout of timeoutsMs) {
+  let tentativas = 0;
+
+  while (true) {
+    tentativas++;
     try {
-      const r = await fetchFn(url, { headers: token ? { api_access_token: token } : {}, signal: AbortSignal.timeout(timeout) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return new Uint8Array(await r.arrayBuffer());
+      if (via === 'redirect') {
+        const r = await fetchFn(url.replace('/blobs/proxy/', '/blobs/redirect/'), { headers: cabecalho, redirect: 'manual', signal: AbortSignal.timeout(timeout) });
+        const destino = r.headers.get('location');
+        if (r.status >= 300 && r.status < 400 && destino) {
+          const s = await fetchFn(destino, { signal: AbortSignal.timeout(timeout) });
+          if (s.ok) return { bytes: new Uint8Array(await s.arrayBuffer()), tentativas, esperaMs: agora() - inicio, via };
+          erros.push(`storage HTTP ${s.status}`);           // 404 = ainda não existe; 403 = URL venceu
+        } else if (r.ok) {
+          return { bytes: new Uint8Array(await r.arrayBuffer()), tentativas, esperaMs: agora() - inicio, via };
+        } else {
+          // sem rota `redirect` nesta instância: daqui em diante, `proxy` com timeout curto.
+          erros.push(`redirect HTTP ${r.status}`);
+          via = 'proxy';
+        }
+      } else {
+        const r = await fetchFn(url, { headers: cabecalho, signal: AbortSignal.timeout(timeout) });
+        if (r.ok) return { bytes: new Uint8Array(await r.arrayBuffer()), tentativas, esperaMs: agora() - inicio, via };
+        erros.push(`HTTP ${r.status}`);
+      }
     } catch (e) {
       erros.push(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
     }
+    if (agora() - inicio + intervalo > prazo) break;
+    await dormir(intervalo);
   }
-  throw new Error(`baixar anexo falhou em ${timeoutsMs.length} tentativas: ${erros.join(' | ')}`);
+  throw new Error(`baixar anexo falhou em ${tentativas} tentativas / ${Math.round((agora() - inicio) / 1000)} s: ${[...new Set(erros)].join(' | ')}`);
 }
 
 export async function transcreverAnexo(p: { db: Db; n8nJsDir: string; tenantId: string; conversationId: number; anexo: Anexo; transcritor: Transcritor | null; fetchFn: typeof fetch; msgMidiaNaoSuportada: string | null }): Promise<ResultadoTranscricao> {
@@ -59,7 +102,8 @@ export async function transcreverAnexo(p: { db: Db; n8nJsDir: string; tenantId: 
   if (cfg.limite_bytes !== null && p.anexo.file_size > Number(cfg.limite_bytes)) return { status: 'longo', avisoAoCliente: cfg.msg_audio_longo };
 
   try {
-    const bytes = await baixarAnexo(p.fetchFn, p.anexo.data_url, cfg.chatwoot_token);
+    const baixado = await baixarAnexo(p.fetchFn, p.anexo.data_url, cfg.chatwoot_token);
+    const bytes = baixado.bytes;
     // A extensão vem da URL (o campo `extension` veio nulo no payload real):
     // a API de transcrição decide o parser pelo nome do arquivo.
     const nome = `audio.${p.anexo.extensao || 'oga'}`;
@@ -69,7 +113,7 @@ export async function transcreverAnexo(p: { db: Db; n8nJsDir: string; tenantId: 
     });
     const audioSegundos = typeof saida.audio_segundos === 'number' ? saida.audio_segundos : null;
     if (saida.status === 'ok') {
-      return { status: 'ok', mensagem: String(saida.mensagem ?? ''), audioSegundos, diagnostico: { fonte: saida._duracao_fonte, real: saida._duracao_real, file_size: saida._file_size } };
+      return { status: 'ok', mensagem: String(saida.mensagem ?? ''), audioSegundos, diagnostico: { fonte: saida._duracao_fonte, real: saida._duracao_real, file_size: saida._file_size, download: { tentativas: baixado.tentativas, espera_ms: baixado.esperaMs, via: baixado.via } } };
     }
     return { status: saida.status === 'bloqueado' ? 'bloqueado' : 'vazio', motivo: String(saida.motivo ?? ''), audioSegundos };
   } catch (e) {
