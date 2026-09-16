@@ -25,13 +25,20 @@ export interface FerramentaDoModelo {
   descricao: string;
   /** JSON Schema do objeto de argumentos (strict: todas as propriedades em `required`; opcionais como `['tipo','null']`). */
   parametros: Record<string, unknown>;
-  executar: (args: Record<string, unknown>) => Promise<string>;
+  /**
+   * O texto volta ao modelo. `diagnostico` (opcional) vai SÓ ao trace: o que a
+   * tool fez de fato (pausou? notificou? em quantas tentativas?) — em 16/09 a
+   * transferência gravava só o texto e não dava para saber se a pausa entrou.
+   */
+  executar: (args: Record<string, unknown>) => Promise<string | ResultadoTool>;
 }
+
+export interface ResultadoTool { texto: string; diagnostico?: unknown }
 
 export interface Uso { entrada: number; saida: number }
 
 export interface ChamadaModelo { iteracao: number; uso: Uso; toolCalls: number; latenciaMs: number; texto: string | null }
-export interface ChamadaTool { nome: string; args: Record<string, unknown>; resultado: string; latenciaMs: number; erro: string | null }
+export interface ChamadaTool { nome: string; args: Record<string, unknown>; resultado: string; latenciaMs: number; erro: string | null; diagnostico?: unknown }
 
 export interface ResultadoModelo {
   texto: string;
@@ -109,15 +116,15 @@ export function criarModeloOpenAI(apiKey: string): Modelo {
           let args: Record<string, unknown> = {};
           try { args = call.arguments ? (JSON.parse(call.arguments) as Record<string, unknown>) : {}; } catch { args = {}; }
           const t1 = Date.now();
-          let resultado: string; let erro: string | null = null;
+          let resultado: string; let erro: string | null = null; let diagnostico: unknown = undefined;
           if (!f) {
             resultado = `Ferramenta desconhecida: ${call.name}.`;
             erro = 'ferramenta_desconhecida';
           } else {
-            try { resultado = await f.executar(args); }
+            try { const r = await f.executar(args); if (typeof r === 'string') resultado = r; else { resultado = r.texto; diagnostico = r.diagnostico; } }
             catch (e) { erro = e instanceof Error ? `${e.name}: ${e.message}` : String(e); resultado = 'A ferramenta falhou agora. NAO invente o resultado; diga ao cliente que nao conseguiu e ofereca tentar de novo ou transferir.'; }
           }
-          const ct: ChamadaTool = { nome: call.name, args, resultado, latenciaMs: Date.now() - t1, erro };
+          const ct: ChamadaTool = { nome: call.name, args, resultado, latenciaMs: Date.now() - t1, erro, ...(diagnostico === undefined ? {} : { diagnostico }) };
           toolsFeitas.push(ct);
           if (p.aoChamarTool) await p.aoChamarTool(ct);
           input.push({ type: 'function_call_output', call_id: call.call_id, output: resultado });

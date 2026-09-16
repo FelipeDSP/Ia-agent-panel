@@ -98,9 +98,10 @@ const modelo = {
       chamadas.push(c1); if (p.aoChamarModelo) await p.aoChamarModelo(c1);
       if (!passo.tool) return { texto: passo.texto, uso, chamadas, tools, estourouTeto: false };
       const f = p.ferramentas.find((x) => x.nome === passo.tool);
-      let resultado; let erro = null;
-      try { resultado = f ? await f.executar(passo.args ?? {}) : `Ferramenta desconhecida: ${passo.tool}.`; } catch (e) { erro = e.message; resultado = 'A ferramenta falhou agora.'; }
-      const ct = { nome: passo.tool, args: passo.args ?? {}, resultado, latenciaMs: 1, erro };
+      let resultado; let erro = null; let diagnostico;
+      // como o loop real: a tool devolve string OU { texto, diagnostico } — o texto vai ao modelo, o diagnóstico ao trace.
+      try { const r = f ? await f.executar(passo.args ?? {}) : `Ferramenta desconhecida: ${passo.tool}.`; if (typeof r === 'string') resultado = r; else { resultado = r.texto; diagnostico = r.diagnostico; } } catch (e) { erro = e.message; resultado = 'A ferramenta falhou agora.'; }
+      const ct = { nome: passo.tool, args: passo.args ?? {}, resultado, latenciaMs: 1, erro, ...(diagnostico === undefined ? {} : { diagnostico }) };
       tools.push(ct); if (p.aoChamarTool) await p.aoChamarTool(ct);
     }
     return { texto: TEXTO_TETO, uso, chamadas, tools, estourouTeto: true };
@@ -357,6 +358,26 @@ try {
     const r9 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 206, content: 'oi' }));
     await vencer(); const c9 = await umCiclo(depsWorker); chatwootFalha = false;
     chk('Chatwoot fora -> fila e turno `falhou`, NENHUMA saída no log', c9.falhas === 1 && (await um(`select estado from public.agente_fila where id=$1`, [r9.filaId])).estado === 'falhou' && (await um(`select count(*)::int n from public.mensagens_log where tenant_id=$1 and conversation_id=206`, [T.a])).n === 0);
+
+    // 5k. TRANSFERÊNCIA: a tool pausa a conversa (e o trace diz que pausou), avisa pelo WAHA,
+    // e a PRÓXIMA mensagem do cliente é descartada sem resposta — o roteiro §5.3 passos 8-9.
+    await c.query(`update public.tenant_tools set config = '{"notificacao":{"canal":"waha","sessao":"sess-teste","destino":"5500@c.us"}}'::jsonb where tenant_id=$1 and tool_nome='transferir_humano'`, [T.a]);
+    roteiro.push({ tool: 'transferir_humano', args: { resumo: 'Cliente quer falar com humano.' } }, { texto: 'Já te transferi, aguarde um instante.' });
+    const wahaAntes = chamadasWaha.length;
+    const fk = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 207, content: 'quero falar com uma pessoa' }));
+    await vencer(); const ck = await umCiclo(depsWorker);
+    const tk = await turnoDaFila(fk.filaId);
+    const pk = (await passosDe(tk.id)).find((p) => p.tipo === 'tool' && p.nome === 'transferir_humano');
+    chk('transferir_humano: respondida, e o passo da tool traz diagnostico { pausou: true, notificou: waha, disponivel: true }',
+      ck.respondidas === 1 && pk?.saida?.diagnostico?.pausou === true && pk.saida.diagnostico.notificou === 'waha' && pk.saida.diagnostico.disponivel === true, JSON.stringify(pk?.saida ?? null));
+    chk('a conversa 207 ficou pausada no banco (motivo mensagem_humana), e o WAHA recebeu 1 aviso com o resumo',
+      (await um(`select status, motivo_pausa from public.conversas where tenant_id=$1 and conversation_id=207`, [T.a])).status === 'pausado'
+      && chamadasWaha.length === wahaAntes + 1 && /Cliente quer falar com humano/.test(chamadasWaha.at(-1).t) && chamadasWaha.at(-1).s === 'sess-teste');
+    const antesCw = chamadasChatwoot.length; const antesModeloK = vistoPeloModelo.length;
+    const fk2 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 207, content: 'oi?' }));
+    if (fk2.resultado === 'enfileirada') { await vencer(); await umCiclo(depsWorker); }
+    chk('mensagem seguinte na conversa pausada: NENHUMA resposta, NENHUMA chamada ao modelo (descarte silencioso)',
+      chamadasChatwoot.length === antesCw && vistoPeloModelo.length === antesModeloK, JSON.stringify({ r: fk2.resultado, cw: chamadasChatwoot.length - antesCw }));
 
     // 5j. isolamento: turnos e prompts de A não aparecem para C
     chk('agente_turnos de C só tem conversas de C', (await tudo(`select distinct conversation_id::int c from public.agente_turnos where tenant_id=$1`, [T.c])).every((x) => x.c === 300));

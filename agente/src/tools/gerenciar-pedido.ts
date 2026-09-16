@@ -76,12 +76,15 @@ export function ferramentaGerenciarPedido(ctx: ContextoTool): FerramentaDoModelo
       required: ['acao', 'produto_id', 'quantidade', 'observacao', 'metadados'],
       additionalProperties: false,
     },
-    executar: async (args) => (await gerenciarPedido(ctx, {
-      acao: String(args.acao ?? ''),
-      produto_id: args.produto_id == null ? null : String(args.produto_id),
-      quantidade: args.quantidade == null ? null : Number(args.quantidade),
-      observacao: args.observacao == null ? null : String(args.observacao),
-      metadados: args.metadados == null ? null : String(args.metadados),
-    })).resultado,
+    executar: async (args) => {
+      const r = await gerenciarPedido(ctx, {
+        acao: String(args.acao ?? ''),
+        produto_id: args.produto_id == null ? null : String(args.produto_id),
+        quantidade: args.quantidade == null ? null : Number(args.quantidade),
+        observacao: args.observacao == null ? null : String(args.observacao),
+        metadados: args.metadados == null ? null : String(args.metadados),
+      });
+      return { texto: r.resultado, diagnostico: { acao: r.acao, ...(r.notificacao ? { notificacao: r.notificacao } : {}) } };
+    },
   };
 }

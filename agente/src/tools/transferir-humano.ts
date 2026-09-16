@@ -36,16 +36,18 @@ export function disponivelAgora(horario: Horario | undefined, agora = new Date()
   return { disponivel: diaOk && horaOk, debug: { tz, diaSemana, hora, diaOk, horaOk } };
 }
 
-export async function transferirHumano(ctx: ContextoTool, resumo: string): Promise<{ resultado: string; disponivel: boolean; notificou: 'waha' | 'nenhum' | 'falhou' }> {
+export async function transferirHumano(ctx: ContextoTool, resumo: string): Promise<{ resultado: string; disponivel: boolean; notificou: 'waha' | 'nenhum' | 'falhou'; pausou: boolean | null }> {
   const cfg = await fnUma<ConfigTool>(ctx.db, 'api_n8n_config_tool', [ctx.tenant.tenant_id, 'transferir_humano']);
   const config = (cfg?.config ?? {}) as { horario?: Horario; notificacao?: Notificacao };
   const { disponivel } = disponivelAgora(config.horario);
   const ativa = cfg?.tool_ativa !== false;
-  if (!(ativa && disponivel)) return { resultado: TEXTO_FORA_DO_HORARIO, disponivel, notificou: 'nenhum' };
+  if (!(ativa && disponivel)) return { resultado: TEXTO_FORA_DO_HORARIO, disponivel, notificou: 'nenhum', pausou: null };
 
   // Nota privada com o resumo (o que o atendente lê), depois pausa, depois avisa.
   await ctx.chatwoot.enviar({ tenantId: ctx.tenant.tenant_id, conversationId: ctx.conversationId, content: '🤖 *Resumo do atendimento via bot:*\n\n' + resumo, privada: true });
-  try { await fnValor(ctx.db, 'api_n8n_definir_status_conversa', [ctx.tenant.tenant_id, ctx.conversationId, 'pausado']); } catch { /* onError: continue, como no n8n */ }
+  // onError: continue, como no n8n — mas o trace fica sabendo se a pausa entrou.
+  let pausou = false;
+  try { pausou = (await fnValor<string>(ctx.db, 'api_n8n_definir_status_conversa', [ctx.tenant.tenant_id, ctx.conversationId, 'pausado'])) === 'pausado'; } catch { pausou = false; }
   const n = config.notificacao ?? { canal: 'nenhum' };
   let notificou: 'waha' | 'nenhum' | 'falhou' = 'nenhum';
   if (n.canal === 'waha' && n.sessao && n.destino) {
@@ -57,7 +59,7 @@ export async function transferirHumano(ctx: ContextoTool, resumo: string): Promi
       } catch { notificou = 'falhou'; }
     }
   }
-  return { resultado: TEXTO_TRANSFERIDO, disponivel, notificou };
+  return { resultado: TEXTO_TRANSFERIDO, disponivel, notificou, pausou };
 }
 
 export function ferramentaTransferirHumano(ctx: ContextoTool): FerramentaDoModelo {
@@ -70,6 +72,9 @@ export function ferramentaTransferirHumano(ctx: ContextoTool): FerramentaDoModel
       required: ['resumo'],
       additionalProperties: false,
     },
-    executar: async (args) => (await transferirHumano(ctx, String(args.resumo ?? ''))).resultado,
+    executar: async (args) => {
+      const r = await transferirHumano(ctx, String(args.resumo ?? ''));
+      return { texto: r.resultado, diagnostico: { disponivel: r.disponivel, pausou: r.pausou, notificou: r.notificou } };
+    },
   };
 }

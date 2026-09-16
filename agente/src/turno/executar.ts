@@ -153,7 +153,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto,
       historico: memoria.map((m) => ({ papel: m.papel, texto: m.texto })), mensagemDoCliente: textoEntrada, ferramentas,
       aoChamarModelo: (c) => turno.passo('modelo', `openai#${c.iteracao}`, { saida: { texto: c.texto, tool_calls: c.toolCalls, usage: c.uso }, duracaoMs: c.latenciaMs }),
-      aoChamarTool: (c) => turno.passo('tool', c.nome, { entrada: c.args, saida: { texto: c.resultado }, erro: c.erro, duracaoMs: c.latenciaMs }),
+      aoChamarTool: (c) => turno.passo('tool', c.nome, { entrada: c.args, saida: { texto: c.resultado, ...(c.diagnostico === undefined ? {} : { diagnostico: c.diagnostico }) }, erro: c.erro, duracaoMs: c.latenciaMs }),
     });
 
     // ---- a estimativa do n8n ao lado do real (§5.8) — vai para o trace, não para o log ----
