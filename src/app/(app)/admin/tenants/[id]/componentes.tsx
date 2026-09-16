@@ -24,7 +24,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
-import { MODELOS_PERMITIDOS } from '@/lib/tenants/schema';
+import { FORMAS_PAGAMENTO, MODELOS_PERMITIDOS, ROTULO_FORMA } from '@/lib/tenants/schema';
 import { secaoPadraoTemAnomalia } from '@/lib/tools/registro';
 import type { GrupoTool } from '@/lib/tools/tipos';
 
@@ -41,12 +41,16 @@ export function FormConfigSuper({
   modelo,
   temperatura,
   debounce,
+  memoriaSilencio,
+  pagamentoFormas,
 }: {
   tenantId: string;
   nome: string;
   modelo: string;
   temperatura: number;
   debounce: number;
+  memoriaSilencio: number;
+  pagamentoFormas: string[];
 }) {
   const [estado, acao] = useActionState<EstadoAcao, FormData>(editarTenantSuper, {});
 
@@ -98,6 +102,39 @@ export function FormConfigSuper({
             defaultValue={debounce}
           />
           <ErroCampo msg={estado.errosCampo?.['debounce_segundos']} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="memoria_silencio_minutos">Memória: esquecer após (min)</Label>
+          <Input
+            id="memoria_silencio_minutos"
+            name="memoria_silencio_minutos"
+            type="number"
+            min="1"
+            max="1440"
+            defaultValue={memoriaSilencio}
+          />
+          <p className="text-xs text-muted-foreground">
+            Silêncio na conversa a partir do qual o agente recomeça sem o histórico. Padrão 40.
+          </p>
+          <ErroCampo msg={estado.errosCampo?.['memoria_silencio_minutos']} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label>Link de pagamento aceita</Label>
+          <div className="flex flex-wrap gap-4 pt-1">
+            {FORMAS_PAGAMENTO.map((f) => (
+              <label key={f} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="pagamento_formas" value={f} defaultChecked={pagamentoFormas.includes(f)} className="h-4 w-4" />
+                {ROTULO_FORMA[f]}
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Mais de uma: o cliente escolhe entre o que a conta Asaas tem habilitado. Boleto não combina com a janela de 30 min.
+          </p>
+          <ErroCampo msg={estado.errosCampo?.['pagamento_formas']} />
         </div>
       </div>
 

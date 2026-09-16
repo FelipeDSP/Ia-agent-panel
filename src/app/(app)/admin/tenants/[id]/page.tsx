@@ -40,7 +40,7 @@ export default async function PaginaDetalheTenant({
   const { data: tenant } = await supabase
     .from('tenants')
     .select(
-      'id, nome, slug, ativo, agente_ativo, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, system_prompt, modelo, temperatura, debounce_segundos',
+      'id, nome, slug, ativo, agente_ativo, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, system_prompt, modelo, temperatura, debounce_segundos, memoria_silencio_minutos, pagamento_formas',
     )
     .eq('id', id)
     .is('deletado_em', null)
@@ -185,7 +185,7 @@ export default async function PaginaDetalheTenant({
         <Card>
           <CardHeader>
             <CardTitle>Configuração</CardTitle>
-            <CardDescription>Modelo, temperatura e debounce — só a agência.</CardDescription>
+            <CardDescription>Modelo, temperatura, debounce, memória e formas de pagamento — só a agência.</CardDescription>
           </CardHeader>
           <CardContent>
             <FormConfigSuper
@@ -194,6 +194,8 @@ export default async function PaginaDetalheTenant({
               modelo={tenant.modelo}
               temperatura={Number(tenant.temperatura)}
               debounce={tenant.debounce_segundos}
+              memoriaSilencio={Number(tenant.memoria_silencio_minutos ?? 40)}
+              pagamentoFormas={(tenant.pagamento_formas as string[] | null) ?? ['PIX']}
             />
           </CardContent>
         </Card>

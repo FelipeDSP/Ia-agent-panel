@@ -76,7 +76,15 @@ export type DadosConfigSuper = {
   modelo: Modelo;
   temperatura: number;
   debounce_segundos: number;
+  /** 66: minutos de silêncio até o agente esquecer a conversa (1..1440). */
+  memoria_silencio_minutos: number;
+  /** 66: formas do link de pagamento — subconjunto não vazio de FORMAS_PAGAMENTO. */
+  pagamento_formas: FormaPagamento[];
 };
+
+export const FORMAS_PAGAMENTO = ['PIX', 'CREDIT_CARD', 'BOLETO'] as const;
+export type FormaPagamento = (typeof FORMAS_PAGAMENTO)[number];
+export const ROTULO_FORMA: Record<FormaPagamento, string> = { PIX: 'Pix', CREDIT_CARD: 'Cartão de crédito', BOLETO: 'Boleto' };
 
 function validarComuns(fd: FormData, erros: Record<string, string>) {
   const debounceBruto = String(fd.get('debounce_segundos') ?? '').trim();
@@ -174,10 +182,20 @@ export function validarConfigTenantSuper(
 
   const { debounce } = validarComuns(fd, erros);
 
+  const silencioBruto = String(fd.get('memoria_silencio_minutos') ?? '').trim();
+  const memoria_silencio_minutos = silencioBruto === '' ? NaN : Number(silencioBruto);
+  if (!Number.isInteger(memoria_silencio_minutos) || memoria_silencio_minutos < 1 || memoria_silencio_minutos > 1440) {
+    erros['memoria_silencio_minutos'] = 'Silêncio da memória: inteiro entre 1 e 1440 minutos.';
+  }
+
+  // checkboxes: `fd.getAll` — só o que está na lista fixa entra; vazio é erro.
+  const pagamento_formas = fd.getAll('pagamento_formas').map(String).filter((f): f is FormaPagamento => (FORMAS_PAGAMENTO as readonly string[]).includes(f));
+  if (pagamento_formas.length === 0) erros['pagamento_formas'] = 'Marque ao menos uma forma de pagamento.';
+
   if (Object.keys(erros).length > 0) return { ok: false, erros };
 
   return {
     ok: true,
-    valor: { nome, modelo, temperatura, debounce_segundos: debounce },
+    valor: { nome, modelo, temperatura, debounce_segundos: debounce, memoria_silencio_minutos, pagamento_formas },
   };
 }

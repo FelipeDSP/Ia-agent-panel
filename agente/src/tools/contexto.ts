@@ -29,6 +29,8 @@ export interface ContextoTool {
   fetchFn: typeof fetch;
   /** O Asaas (pagamento por link); `null` desliga a tool mesmo que contratada. */
   asaas: Asaas | null;
+  /** `tenants.pagamento_formas` (66): subconjunto de PIX / CREDIT_CARD / BOLETO. */
+  pagamentoFormas?: string[];
 }
 
 /** `api_n8n_config_tool(tenant, tool)` — a primeira coisa de toda tool, como no n8n. */

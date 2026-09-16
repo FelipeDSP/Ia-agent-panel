@@ -114,7 +114,9 @@
     "teste:migracao-encerramento": "node --env-file=.env.local tests/migracao-encerramento-link.mjs",
     "pagamento:sendbox-arranjo": "node --env-file=.env.local scripts/pagamento-sendbox-arranjo.mjs",
     "teste:agente-trace-painel": "node --import ./tests/lib/ts.mjs tests/agente-trace-painel.mjs",
-    "teste:migracao-conversa-resolvida": "node --env-file=.env.local tests/migracao-conversa-resolvida.mjs"
+    "teste:migracao-conversa-resolvida": "node --env-file=.env.local tests/migracao-conversa-resolvida.mjs",
+    "teste:migracao-config-agente": "node --env-file=.env.local tests/migracao-config-agente.mjs",
+    "teste:config-tenant-super": "node --import ./tests/lib/ts.mjs tests/config-tenant-super.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

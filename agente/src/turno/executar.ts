@@ -65,6 +65,24 @@ export interface ResultadoTurno {
   veredito?: string;
 }
 
+export interface ConfigDoAgente { memoriaSilencioMinutos: number; memoriaJanelaPares: number; pagamentoFormas: string[] }
+export const CONFIG_PADRAO: ConfigDoAgente = { memoriaSilencioMinutos: 40, memoriaJanelaPares: 20, pagamentoFormas: ['PIX'] };
+
+/** `api_agente_config` (66); sem ela ou sem linha, os defaults de antes da 66. */
+export async function lerConfigDoAgente(db: Db, tenantId: string): Promise<ConfigDoAgente> {
+  try {
+    const r = await fnUma<{ memoria_silencio_minutos: number | null; memoria_janela_pares: number | null; pagamento_formas: string[] | null }>(db, 'api_agente_config', [tenantId]);
+    if (!r) return CONFIG_PADRAO;
+    return {
+      memoriaSilencioMinutos: Number(r.memoria_silencio_minutos) || CONFIG_PADRAO.memoriaSilencioMinutos,
+      memoriaJanelaPares: Number(r.memoria_janela_pares) || CONFIG_PADRAO.memoriaJanelaPares,
+      pagamentoFormas: Array.isArray(r.pagamento_formas) && r.pagamento_formas.length ? r.pagamento_formas : CONFIG_PADRAO.pagamentoFormas,
+    };
+  } catch {
+    return CONFIG_PADRAO;   // 42883 antes da 66: o turno não pode depender da migração
+  }
+}
+
 /**
  * O que o sistema sabe e o modelo tem de tratar como fato (não como fala do
  * cliente). Hoje: o pagamento confirmado pelo webhook. Devolve `null` quando não
@@ -158,8 +176,11 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt, secoesExtras });
     await fnValor(db, 'api_agente_prompt_registrar', [tenant.tenant_id, prompt.hash, prompt.texto, `${deps.versaoCodigo}/partes:${versaoDasPartes()}`]);
     await turno.prompt(perfil, prompt.hash);
-    const memoria = await turno.medir('memoria', 'api_agente_memoria', { conversationId },
-      () => fnTodas<MensagemHistorico & { criado_em: Date }>(db, 'api_agente_memoria', [tenant.tenant_id, conversationId, 40, 20]),
+    // 66: silêncio da memória e formas de pagamento são do tenant (agência-only).
+    // Sem a função (66 não aplicada), valem os defaults de sempre: 40 min, {PIX}.
+    const cfgAgente = await lerConfigDoAgente(db, tenant.tenant_id);
+    const memoria = await turno.medir('memoria', 'api_agente_memoria', { conversationId, silencio_min: cfgAgente.memoriaSilencioMinutos },
+      () => fnTodas<MensagemHistorico & { criado_em: Date }>(db, 'api_agente_memoria', [tenant.tenant_id, conversationId, cfgAgente.memoriaSilencioMinutos, cfgAgente.memoriaJanelaPares]),
       (r) => ({ mensagens: r.length }));
     await turno.passo('entrada', 'prompt', { entrada: { perfil, tools_ativas: toolsAtivas, prompt_hash: prompt.hash, memoria: memoria.length, texto: textoEntrada } });
 
@@ -174,7 +195,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     if (estadoDoSistema) await turno.passo('registro', 'estado_do_sistema', { saida: { texto: estadoDoSistema } });
 
     // ---- o modelo ----
-    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas };
+    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas };
     const ferramentas = ferramentasDoPerfil(ctx, perfil, toolsAtivas);
     const r = await deps.modelo.responder({
       modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto, estadoDoSistema,

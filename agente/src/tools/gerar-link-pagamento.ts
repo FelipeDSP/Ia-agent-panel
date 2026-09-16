@@ -33,13 +33,25 @@ export interface Reserva {
 
 export interface ResultadoLink { texto: string; diagnostico: Record<string, unknown> }
 
-/** O corpo que vai ao Asaas — o do nó `Cria Link Asaas`, verbatim. */
-export function corpoDoLink(r: Reserva): Record<string, unknown> {
+/**
+ * `tenants.pagamento_formas` -> `billingType` do link: uma forma vai ela; mais de
+ * uma vira `UNDEFINED` (o cliente escolhe entre o que a CONTA tem habilitado —
+ * é o que o Asaas oferece; não há como restringir a um subconjunto). Vazio ou
+ * inválido cai em PIX, o comportamento de antes da 66.
+ */
+export function billingTypeDe(formas: string[] | undefined): 'PIX' | 'CREDIT_CARD' | 'BOLETO' | 'UNDEFINED' {
+  const validas = (formas ?? []).filter((f): f is 'PIX' | 'CREDIT_CARD' | 'BOLETO' => f === 'PIX' || f === 'CREDIT_CARD' || f === 'BOLETO');
+  if (validas.length === 0) return 'PIX';
+  return validas.length === 1 ? validas[0]! : 'UNDEFINED';
+}
+
+/** O corpo que vai ao Asaas — o do nó `Cria Link Asaas`, verbatim (só o `billingType` passou a ser do tenant). */
+export function corpoDoLink(r: Reserva, formas?: string[]): Record<string, unknown> {
   const vence = r.vence_em instanceof Date ? r.vence_em.toISOString() : String(r.vence_em ?? '');
   return {
     name: r.descricao,
     description: 'Pedido nº ' + r.pedido_numero,
-    billingType: 'PIX',
+    billingType: billingTypeDe(formas),
     chargeType: 'DETACHED',
     value: Math.round(Number(r.valor_centavos)) / 100,
     endDate: vence.slice(0, 10),
@@ -63,7 +75,7 @@ export async function gerarLinkPagamento(ctx: ContextoTool, asaas: Asaas): Promi
 
   let resp: { ok: boolean; status: number; corpo: Record<string, unknown> | null; detalhe: string };
   try {
-    resp = await asaas.criarLink(String(reserva.base_url), String(api_key), corpoDoLink(reserva));
+    resp = await asaas.criarLink(String(reserva.base_url), String(api_key), corpoDoLink(reserva, ctx.pagamentoFormas));
   } catch (e) {
     resp = { ok: false, status: 0, corpo: null, detalhe: e instanceof Error ? `${e.name}: ${e.message}` : String(e) };
   }

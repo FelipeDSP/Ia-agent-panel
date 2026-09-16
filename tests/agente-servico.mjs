@@ -58,6 +58,8 @@ const M64 = leia('20260916190000_64_encerramento_link_pagamento.sql');
 const R64 = leia('20260916190000_64_encerramento_link_pagamento_rollback.sql');
 const M65 = leia('20260916210000_65_conversa_resolvida_reabre.sql');
 const R65 = leia('20260916210000_65_conversa_resolvida_reabre_rollback.sql');
+const M66 = leia('20260916220000_66_config_agente_por_tenant.sql');
+const R66 = leia('20260916220000_66_config_agente_por_tenant_rollback.sql');
 const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -153,6 +155,7 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R66));
   await c.query(semTx(R65));
   await c.query(semTx(R64));
   await c.query(semTx(R63));
@@ -161,6 +164,7 @@ try {
   await c.query(semTx(M63));
   await c.query(semTx(M64));
   await c.query(semTx(M65));
+  await c.query(semTx(M66));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -451,6 +455,8 @@ try {
       return ped.id;
     };
     const pedA = await pedidoFechado(400, 5000, 7001);
+    // 66: A aceita Pix E cartão (-> billingType UNDEFINED) e esquece em 120 min; C fica no default.
+    await c.query(`update public.tenants set pagamento_formas = '{PIX,CREDIT_CARD}', memoria_silencio_minutos = 120 where id=$1`, [T.a]);
 
     // 7a. o modelo pede o link: a tool chama o Asaas com o valor DO BANCO e a chave do tenant; o texto traz a URL crua.
     roteiro.push({ tool: 'gerar_link_pagamento', args: {} }, { texto: 'Prontinho! Aqui está o link para pagar:\nhttps://sandbox.asaas.com/c/link1' });
@@ -461,9 +467,11 @@ try {
       v7.ferramentas.length === 7 && v7.ferramentas.includes('gerar_link_pagamento') && /## Ferramenta: gerar_link_pagamento/.test(v7.systemMessage), JSON.stringify(v7.ferramentas));
     const t7 = await turnoDaFila(f7.filaId);
     const p7 = (await passosDe(t7.id)).find((p) => p.tipo === 'tool' && p.nome === 'gerar_link_pagamento');
+    const pm7 = (await passosDe(t7.id)).find((p) => p.nome === 'api_agente_memoria');
+    chk('a memória deste turno usou o silêncio do TENANT (120 min, 66), não os 40 cravados', pm7?.entrada?.silencio_min === 120, JSON.stringify(pm7?.entrada));
     const criar = chamadasAsaas.filter((x) => x.op === 'criar');
-    chk('o Asaas foi chamado UMA vez, com value 50.00 (do banco), PIX/DETACHED, endDate = data, chave presente',
-      criar.length === 1 && criar[0].corpo.value === 50 && criar[0].corpo.billingType === 'PIX' && criar[0].corpo.chargeType === 'DETACHED' && /^\d{4}-\d{2}-\d{2}$/.test(criar[0].corpo.endDate) && criar[0].temChave === true && criar[0].base === 'https://api-sandbox.asaas.com', JSON.stringify(criar[0]?.corpo));
+    chk('o Asaas foi chamado UMA vez, com value 50.00 (do banco), billingType UNDEFINED (Pix+cartão, 66), DETACHED, endDate = data, chave presente',
+      criar.length === 1 && criar[0].corpo.value === 50 && criar[0].corpo.billingType === 'UNDEFINED' && criar[0].corpo.chargeType === 'DETACHED' && /^\d{4}-\d{2}-\d{2}$/.test(criar[0].corpo.endDate) && criar[0].temChave === true && criar[0].base === 'https://api-sandbox.asaas.com', JSON.stringify(criar[0]?.corpo));
     chk('o texto ao modelo traz a URL crua e o "NAO afirme"; o trace traz link_id e NÃO traz a chave',
       /https:\/\/sandbox\.asaas\.com\/c\/link1/.test(p7?.saida?.texto ?? '') && /NAO afirme/.test(p7?.saida?.texto ?? '') && p7?.saida?.diagnostico?.link_id === 'pl_1' && !JSON.stringify(p7?.saida).includes('sk_sb_teste'), JSON.stringify(p7?.saida).slice(0, 200));
     const cob = await um(`select id, url, link_id, pago_em, expira_em from public.pedido_cobrancas where tenant_id=$1 and pedido_id=$2`, [T.a, pedA]);
