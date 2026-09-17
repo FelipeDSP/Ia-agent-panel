@@ -27,6 +27,14 @@ um jeito de pagar (link, antes) — não há "pagar na entrega", "retirar na loj
   `pagamento_modo` como enum justamente para `entrega` entrar depois sem
   migração de estrutura — mas **nada de entrega é construído agora**: nem
   campo de endereço, nem taxa, nem `na_entrega`.
+- **Pedido para entrega vai para um atendente** (Felipe, 17/09, "ao menos por
+  enquanto"): quando o cliente pede entrega, o agente não inventa taxa nem
+  recusa — chama `transferir_humano` com o carrinho montado no motivo ("quer
+  entrega; 2× X, 1× Y, R$ 69,90"). O atendente fecha a venda do jeito dele. É
+  opção da conta em *Vendas* (`entrega: "atendente"` | `"nao"`), porque
+  `transferir_humano` é desligável: sem ela ligada, a única opção válida é
+  `"nao"` (o agente diz que só atende retirada). Default ao criar a config:
+  `"atendente"` se a transferência estiver ligada, senão `"nao"`.
 - Quem marca pago/retirado é o usuário da conta, em Pedidos (ver §6.1).
 
 ## 3. O modelo
@@ -36,6 +44,7 @@ um jeito de pagar (link, antes) — não há "pagar na entrega", "retirar na loj
 ```json
 {
   "modalidades": ["retirada"],
+  "entrega": "atendente",
   "pagamentos": ["link", "na_retirada"],
   "notificacao": { "canal": "waha", "sessao": "<agência>", "destino": "55DDD…@c.us",
                    "nota_chatwoot": true },
@@ -43,8 +52,14 @@ um jeito de pagar (link, antes) — não há "pagar na entrega", "retirar na loj
 }
 ```
 
-(`modalidades` só aceita `retirada` hoje; `entrega`, `taxa_entrega_*` e
-`endereco_entrega` são a gaveta — o validador do painel recusa até existirem.)
+(`modalidades` só aceita `retirada` hoje; `"entrega"` dentro de `modalidades`,
+`taxa_entrega_*` e `endereco_entrega` são a gaveta — o validador do painel
+recusa até existirem. A chave `entrega` de cima é outra coisa: o que fazer
+quando pedem entrega, `atendente` | `nao`.)
+
+O carrinho **não é fechado** na transferência: o pedido fica `rascunho`, visível
+em *Pedidos* para o atendente, e a pausa da conversa é a mesma da transferência
+de hoje (o agente para de responder; a retomada segue o `retomada-pausa`).
 
 `pedidos` ganha colunas (migração), preenchidas pelo `fechar` como argumentos
 **estruturados** (não mais texto solto em `metadados`): `modalidade`
@@ -67,7 +82,10 @@ um jeito de pagar (link, antes) — não há "pagar na entrega", "retirar na loj
 
 O prompt (seção de `gerenciar_pedido`) passa a perguntar **só** o que o tenant
 oferece: se só há link, não oferece "na retirada", e vice-versa; nunca
-pergunta endereço (entrega não existe). Com pagamento na hora, a frase certa é
+pergunta endereço (entrega não existe). Se o cliente pede entrega: com
+`entrega = atendente`, monta o carrinho normalmente e transfere no fim (não
+antes — o atendente recebe o pedido pronto); com `nao`, avisa que só atende
+retirada. Teste: mesmo diálogo em dois tenants, um de cada configuração. Com pagamento na hora, a frase certa é
 "pedido confirmado, você paga quando retirar" — o portão hoje lê
 "pagamento"+"confirmado" como afirmação de recebimento; precisa de um caso novo
 em `teste:portao-pagamento`: **"pagamento na retirada" é combinação, não
@@ -100,6 +118,6 @@ Nada em aberto: o desenho está pronto para construir.
    nota no Chatwoot, eventos) + *Pedidos* com colunas novas e botões
    pago/retirado.
 3. Serviço: `fechar` estruturado + prompt condicional ao que o tenant oferece +
-   webhook do pagamento avisando o dono (WhatsApp + nota privada) + caso novo
-   do portão.
+   entrega → `transferir_humano` com o carrinho no motivo + webhook do
+   pagamento avisando o dono (WhatsApp + nota privada) + caso novo do portão.
 4. Testes: três tenants com ofertas diferentes; portão; notificação por evento.
