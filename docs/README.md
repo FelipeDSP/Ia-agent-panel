@@ -16,6 +16,7 @@ trabalho novo. A ordem de leitura para uma sessão nova:
 4. [`POLITICA-RETENCAO.md`](POLITICA-RETENCAO.md), [`REVISAO-PAINEL-2026-09-16.md`](REVISAO-PAINEL-2026-09-16.md), [`PENDENCIAS.md`](PENDENCIAS.md).
 5. [`DESENHO-VENDAS-MODALIDADES.md`](DESENHO-VENDAS-MODALIDADES.md) — **construído 17/09; migração 69 aplicada 17/09**: retirada, pagar na retirada, aviso ao dono; configurável pelo cliente em Configurações → Vendas.
 6. [`DESENHO-USUARIOS-POR-CONTA.md`](DESENHO-USUARIOS-POR-CONTA.md) — depois de vendas: admins + agentes com capacidades fixas por conta.
+7. [`SEGURANCA-2026-09-17.md`](SEGURANCA-2026-09-17.md) — análise de segurança medida em produção: 10 achados ranqueados e o que está certo.
 
 O que continua VÁLIDO dos docs antigos: modelo de dados e regras de multi-tenancy
 (spec), o portão de venda afirmada (`aplica-portao.js` é o mesmo arquivo nos dois
