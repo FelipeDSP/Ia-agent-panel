@@ -19,24 +19,22 @@ const CHECK =
 
 /**
  * O que o cliente decide sobre vendas (migração 69). Espelha o formulário da
- * transferência: `sessao` é da agência e não aparece; sem ela, o aviso por
- * WhatsApp não é oferecido (a nota no Chatwoot não depende dela).
+ * transferência. O aviso por WhatsApp sai pela inbox do próprio agente (70),
+ * então não depende de sessão nenhuma — só do número.
  */
 export function FormularioVendas({
   ativo,
   config,
   destinoNumero,
-  temSessao,
   transferirDisponivel,
 }: {
   ativo: boolean;
   config: ConfigVendas;
   destinoNumero: string;
-  temSessao: boolean;
   transferirDisponivel: boolean;
 }) {
   const [estado, acao] = useActionState<EstadoConfig, FormData>(salvarVendas, {});
-  const [notificar, setNotificar] = useState(config.notificacao.canal === 'waha');
+  const [notificar, setNotificar] = useState(config.notificacao.canal !== 'nenhum');
 
   return (
     <form action={acao} className="flex flex-col gap-5">
@@ -118,30 +116,24 @@ export function FormularioVendas({
           <span className="text-sm">Deixar uma nota privada na conversa do Chatwoot</span>
         </label>
 
-        {temSessao ? (
-          <>
-            <label className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                name="notificar"
-                checked={notificar}
-                onChange={(e) => setNotificar(e.target.checked)}
-                className={CHECK}
-              />
-              <span className="text-sm">Me avisar no WhatsApp</span>
-            </label>
-            <div className="flex max-w-xs flex-col gap-2">
-              <Label htmlFor="destino_vendas">WhatsApp para aviso</Label>
-              <Input id="destino_vendas" name="destino" placeholder="Ex.: 556993666645" defaultValue={destinoNumero} disabled={!notificar} />
-              <p className="text-xs text-muted-foreground">Se o aviso não chegar, tente sem o 9 depois do DDD.</p>
-              <ErroCampo msg={estado.errosCampo?.['destino']} />
-            </div>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            O aviso por WhatsApp ainda não foi configurado pela agência — a nota no Chatwoot já vale.
+        <label className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            name="notificar"
+            checked={notificar}
+            onChange={(e) => setNotificar(e.target.checked)}
+            className={CHECK}
+          />
+          <span className="text-sm">Me avisar no WhatsApp</span>
+        </label>
+        <div className="flex max-w-xs flex-col gap-2">
+          <Label htmlFor="destino_vendas">WhatsApp para aviso</Label>
+          <Input id="destino_vendas" name="destino" placeholder="Ex.: 556993666645" defaultValue={destinoNumero} disabled={!notificar} />
+          <p className="text-xs text-muted-foreground">
+            O aviso chega pelo mesmo WhatsApp que atende seus clientes. Se não chegar, tente sem o 9 depois do DDD.
           </p>
-        )}
+          <ErroCampo msg={estado.errosCampo?.['destino']} />
+        </div>
       </fieldset>
 
       <div>

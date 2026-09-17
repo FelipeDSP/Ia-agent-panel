@@ -133,6 +133,18 @@ Nada em aberto: o desenho está pronto para construir.
   agente. O painel antes da 69 quebraria em *Pedidos* (colunas novas); o
   agente antes da 69 mandaria `pagamento` que a função antiga ignora (fecha
   como link — sem erro, mas sem o comportamento novo).
+- **Aviso pela inbox do agente (17/09, migração 70)** — decisão do Felipe:
+  nenhuma conta precisa de sessão WAHA. O serviço abre (ou reaproveita) a
+  conversa com o número do dono na inbox do agente (`Channel::Api`; o
+  integrador roteia pelo `phone_number`, o `source_id` é UUID do Chatwoot —
+  provado na conversa 58 da conta 57) e posta nela, com o token de usuário da
+  agência (`CHATWOOT_AGENCIA_TOKEN`; o Agent Bot leva 401 em `/contacts` e
+  `/conversations`). O canal é derivado no painel: sessão → `waha` (legado),
+  sem sessão → `chatwoot`. Vale para venda fechada, pagamento confirmado e
+  transferência. Efeito colateral tratado: o dono vira contato na inbox, e a
+  resposta dele ao aviso chegaria ao agente — a conversa cujo contato é um
+  destino de aviso é descartada no turno (`conversa_do_dono` no trace).
+  Pendência da sessão única por conta fechou por dispensa.
 - **Não construído / a saber**: `pedido_cancelado` nunca dispara pela tool —
   a ação `cancelar` do modelo não passa `alvo`, então só descarta carrinho
   (venda fechada não é cancelável pelo agente hoje). O aviso existe no banco

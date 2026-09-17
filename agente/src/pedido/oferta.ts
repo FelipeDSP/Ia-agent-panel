@@ -12,9 +12,17 @@ export interface Oferta {
   pagamentos: Pagamento[];
   entrega: 'atendente' | 'nao';
   notaChatwoot: boolean;
+  /** `notificacao.destino` (dígitos), para reconhecer a conversa do próprio dono. */
+  destinoDono: string | null;
 }
 
-export const OFERTA_PADRAO: Oferta = { pagamentos: ['link'], entrega: 'nao', notaChatwoot: false };
+export const OFERTA_PADRAO: Oferta = { pagamentos: ['link'], entrega: 'nao', notaChatwoot: false, destinoDono: null };
+
+/** `55…@c.us` / `+55…` → dígitos; null quando não parece número. */
+export function digitosDe(v: unknown): string | null {
+  const d = String(v ?? '').replace(/@.*$/, '').replace(/\D/g, '');
+  return d.length >= 10 ? d : null;
+}
 
 export function lerOferta(config: unknown): Oferta {
   const c = (config && typeof config === 'object' ? config : {}) as Record<string, unknown>;
@@ -24,6 +32,7 @@ export function lerOferta(config: unknown): Oferta {
     pagamentos: lista.length ? [...new Set(lista)] : OFERTA_PADRAO.pagamentos,
     entrega: c['entrega'] === 'atendente' ? 'atendente' : 'nao',
     notaChatwoot: n['nota_chatwoot'] === true,
+    destinoDono: digitosDe(n['destino']),
   };
 }
 

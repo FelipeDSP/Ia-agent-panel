@@ -37,8 +37,22 @@ import { transcreverAnexo, type Anexo, type Transcritor } from '../midia/transcr
 import { saidaLimpa } from './saida.ts';
 import { estimarComoN8n, desvioPct } from './estimativa.ts';
 import { aplicarPortao } from './portao.ts';
-import { lerOferta, secaoOferta } from '../pedido/oferta.ts';
+import { digitosDe, lerOferta, secaoOferta } from '../pedido/oferta.ts';
 import type { ConfigTool } from '../tools/contexto.ts';
+
+/** Os números que recebem aviso nesta conta (vendas e transferência), em dígitos. */
+export async function destinosDeAviso(db: Db, tenantId: string): Promise<string[]> {
+  const saida: string[] = [];
+  for (const tool of ['vendas', 'transferir_humano']) {
+    try {
+      const cfg = await fnUma<ConfigTool>(db, 'api_n8n_config_tool', [tenantId, tool]);
+      const n = (cfg?.config?.['notificacao'] ?? null) as Record<string, unknown> | null;
+      const d = digitosDe(n?.['destino']);
+      if (d) saida.push(d);
+    } catch { /* sem config: sem destino */ }
+  }
+  return saida;
+}
 
 export interface MensagemDaFila {
   acao: 'processar' | 'midia' | 'bloqueado';
@@ -127,6 +141,20 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
   try {
     const sync = await turno.medir('registro', 'api_n8n_conversa_sync', { conversationId },
       () => fnUma<{ historico_chars?: number | string | null }>(db, 'api_n8n_conversa_sync', [tenant.tenant_id, conversationId, primeira.contact_name, primeira.phone]));
+
+    // 17/09: o aviso ao dono sai pela inbox do agente, então o dono vira contato
+    // nela — e a resposta dele ao aviso chegaria aqui como se fosse cliente. A
+    // conversa cujo contato é um destino de aviso (vendas ou transferência)
+    // não é atendida: fica no trace como `conversa_do_dono`, sem modelo.
+    const foneContato = digitosDe(primeira.phone);
+    if (foneContato) {
+      const destinos = await destinosDeAviso(db, tenant.tenant_id);
+      if (destinos.includes(foneContato)) {
+        await turno.passo('portao', 'conversa_do_dono', { saida: { destino: foneContato } });
+        await turno.fechar({ status: 'descartado', erro: 'conversa_do_dono' });
+        return { status: 'descartado', turnoId: turno.id, motivo: 'conversa_do_dono' };
+      }
+    }
 
     const portaoIn = await turno.medir('portao', 'api_n8n_portao_mensagem', { conversationId },
       () => portaoEntrada(db, deps.waha, tenant.tenant_id, conversationId), (r) => r.portao);

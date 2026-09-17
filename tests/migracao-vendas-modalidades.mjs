@@ -22,6 +22,8 @@ const DIR = path.join(RAIZ, 'supabase', 'migrations');
 const leia = (n) => fs.readFileSync(path.join(DIR, n), 'utf8').replace(/\r\n/g, '\n');
 const M69 = leia('20260917150000_69_vendas_modalidades.sql');
 const R69 = leia('20260917150000_69_vendas_modalidades_rollback.sql');
+const M70 = leia('20260917200000_70_aviso_pelo_chatwoot.sql');
+const R70 = leia('20260917200000_70_aviso_pelo_chatwoot_rollback.sql');
 const semTx = (s) => s.replace(/^\s*(begin|commit)\s*;\s*$/gim, '');
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -56,7 +58,9 @@ const arranja = async (sufixo, config) => {
 };
 const adiciona = async (t) => um(`select public.api_n8n_adicionar_item($1, $2, $3, 1, null) r`, [t.id, CONV, t.prod]);
 const fecha = async (t, meta) => (await um(`select public.api_n8n_fechar_pedido($1, $2, $3) r`, [t.id, CONV, meta])).r;
-const pedidoDe = async (t) => um(`select id, status, modalidade, pagamento_modo, pago_em, retirado_em, metadados from public.pedidos where tenant_id=$1 and conversation_id=$2 order by criado_em desc limit 1`, [t.id, CONV]);
+// dentro da transação todo criado_em é o MESMO now(): "o mais novo" é o rascunho
+// (numero nulo) ou o maior numero — ordenar só por data era sorteio (flake 17/09)
+const pedidoDe = async (t) => um(`select id, status, modalidade, pagamento_modo, pago_em, retirado_em, metadados from public.pedidos where tenant_id=$1 and conversation_id=$2 order by criado_em desc, numero desc nulls first limit 1`, [t.id, CONV]);
 const pedidoPorId = async (id) => um(`select id, status, modalidade, pagamento_modo, pago_em, retirado_em, metadados from public.pedidos where id=$1`, [id]);
 // `trg_pedidos_upd` sobrescreve atualizado_em em todo update; para "envelhecer"
 // um pedido o trigger sai de cena só nessa linha, dentro da transação abortada
@@ -67,14 +71,16 @@ const envelhece = async (ids, horas) => {
 };
 
 try {
-  console.log('\n== 0. Rollback primeiro, 69 duas vezes, ACL por diff ==\n');
+  console.log('\n== 0. Rollback primeiro (70, depois 69), 69 e 70 duas vezes, ACL por diff ==\n');
+  await c.query(semTx(R70));
   await c.query(semTx(R69));
   const aclAntes = {};
   for (const f of SUBST) aclAntes[f] = await aclFn(f);
   chk('pré-69: sem colunas, sem funções novas', !(await temCol('pagamento_modo')) && !(await temCol('retirado_em'))
     && (await aclFn('painel_marcar_pedido')) === '(AUSENTE)' && (await aclFn('api_agente_aviso_pedido')) === '(AUSENTE)');
   await c.query(semTx(M69)); await c.query(semTx(M69));
-  chk('a 69 aplica duas vezes; colunas e funções existem', (await temCol('modalidade')) && (await temCol('pagamento_modo')) && (await temCol('pago_em')) && (await temCol('retirado_em'))
+  await c.query(semTx(M70)); await c.query(semTx(M70));
+  chk('a 69 e a 70 aplicam duas vezes; colunas e funções existem', (await temCol('modalidade')) && (await temCol('pagamento_modo')) && (await temCol('pago_em')) && (await temCol('retirado_em'))
     && (await aclFn('painel_marcar_pedido')) !== '(AUSENTE)');
   for (const f of SUBST) chk(`ACL de ${f} igual ao de antes (create or replace, sem drop)`, (await aclFn(f)) === aclAntes[f], `${aclAntes[f]} -> ${await aclFn(f)}`);
   chk('api_agente_aviso_pedido / confirmar_aviso: ACL == irmã api_n8n_fechar_pedido (service_role + n8n_agent)',
@@ -134,6 +140,25 @@ try {
   const S = await arranja('s', { pagamentos: ['na_retirada'] });
   await adiciona(S); await fecha(S, '{}');
   chk('S (sem WhatsApp nem nota): notificar_venda cala e não gasta claim', (await um(`select * from public.api_n8n_notificar_venda($1, $2)`, [S.id, CONV])) === undefined && (await pedidoDe(S)).metadados.notificacao === undefined);
+  // 70: canal chatwoot (sem sessão) devolve o destino com sessao NULA — o serviço manda pela inbox do agente
+  const W = await arranja('w', { pagamentos: ['na_retirada'], notificacao: { canal: 'chatwoot', destino: '5569900000001@c.us' } });
+  await adiciona(W); await fecha(W, '{}');
+  const nw = await um(`select * from public.api_n8n_notificar_venda($1, $2)`, [W.id, CONV]);
+  chk('W (canal chatwoot, sem sessão): notificar_venda devolve destino e sessao NULA (70)', nw?.pedido_id && nw.sessao === null && nw.destino === '5569900000001@c.us', JSON.stringify(nw));
+  await c.query(`update public.pedidos set status='pago' where tenant_id=$1`, [W.id]);
+  const aw = await um(`select * from public.api_agente_aviso_pedido($1, $2, 'pagamento_confirmado')`, [W.id, CONV]);
+  chk('W: aviso_pedido idem — destino, sessao nula', aw?.destino === '5569900000001@c.us' && aw.sessao === null, JSON.stringify(aw));
+  {
+    // sabotagem da 70: sem abrir o canal, chatwoot volta a calar (a asserção W pegaria)
+    await c.query('savepoint sp_s70');
+    const mut = M70.split("not in ('waha', 'chatwoot')").join("<> 'waha'");
+    chk('S70 mutou (md5)', md5(mut) !== md5(M70));
+    await c.query(semTx(mut));
+    const X = await arranja('x', { pagamentos: ['na_retirada'], notificacao: { canal: 'chatwoot', destino: '5569900000002@c.us' } });
+    await adiciona(X); await fecha(X, '{}');
+    chk('S70: com a condição antiga, canal chatwoot NÃO devolve linha', (await um(`select * from public.api_n8n_notificar_venda($1, $2)`, [X.id, CONV])) === undefined);
+    await c.query('rollback to savepoint sp_s70');
+  }
 
   console.log('\n== 4. painel_marcar_pedido — tenant do JWT ==\n');
   await claims(A.id);

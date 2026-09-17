@@ -22,6 +22,8 @@ export interface Config {
   /** Pasta com os corpos JS do n8n que continuam sendo fonte (extrair, filtro). */
   n8nJsDir: string;
   waha: { url: string; apiKey: string } | null;
+  /** Token de USUÁRIO admin da agência no Chatwoot (uma credencial, todas as contas): abre a conversa do aviso ao dono. Opcional. */
+  chatwootAgenciaToken: string | null;
   /** Quantas linhas o worker reivindica por ciclo, e o intervalo do ciclo. */
   loteFila: number;
   intervaloFilaMs: number;
@@ -75,6 +77,7 @@ export function lerConfig(env: NodeJS.ProcessEnv = process.env): Config {
     fotoSecret: env.FOTO_SECRET?.trim() || null,
     n8nJsDir: env.N8N_JS_DIR?.trim() || path.resolve(AQUI, '..', '..', 'n8n'),
     waha: wahaUrl && wahaKey ? { url: wahaUrl.replace(/\/+$/, ''), apiKey: wahaKey } : null,
+    chatwootAgenciaToken: env.CHATWOOT_AGENCIA_TOKEN?.trim() || null,
     loteFila: inteiro('FILA_LOTE', 10),
     intervaloFilaMs: inteiro('FILA_INTERVALO_MS', 1000),
     leaseMinutos: inteiro('FILA_LEASE_MIN', 5),

@@ -64,6 +64,8 @@ const M68 = leia('20260916235000_68_tokens_em_cache.sql');
 const R68 = leia('20260916235000_68_tokens_em_cache_rollback.sql');
 const M69 = leia('20260917150000_69_vendas_modalidades.sql');
 const R69 = leia('20260917150000_69_vendas_modalidades_rollback.sql');
+const M70 = leia('20260917200000_70_aviso_pelo_chatwoot.sql');
+const R70 = leia('20260917200000_70_aviso_pelo_chatwoot_rollback.sql');
 const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -91,7 +93,13 @@ const tudo = async (sql, p = []) => (await c.query(sql, p)).rows;
 const T = {};
 const chamadasChatwoot = [];
 let chatwootFalha = false;
-const chatwoot = { async enviar(p) { if (chatwootFalha) throw new Error('Chatwoot messages -> HTTP 500'); chamadasChatwoot.push(p); return { mensagemId: 4242 }; } };
+const chamadasNumero = [];
+let tokenAgencia = true;
+const chatwoot = {
+  async enviar(p) { if (chatwootFalha) throw new Error('Chatwoot messages -> HTTP 500'); chamadasChatwoot.push(p); return { mensagemId: 4242 }; },
+  temTokenDaAgencia: () => tokenAgencia,
+  async enviarParaNumero(p) { if (!tokenAgencia) throw new Error('sem token'); chamadasNumero.push(p); return { conversationId: 9000 + chamadasNumero.length, mensagemId: 1, contatoId: 1 }; },
+};
 const chamadasWaha = [];
 const waha = { async enviarTexto(s, d, t) { chamadasWaha.push({ s, d, t }); } };
 const roteiro = [];
@@ -159,6 +167,7 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R70));
   await c.query(semTx(R69));
   await c.query(semTx(R68));
   await c.query(semTx(R66));
@@ -173,6 +182,7 @@ try {
   await c.query(semTx(M66));
   await c.query(semTx(M68));
   await c.query(semTx(M69));
+  await c.query(semTx(M70));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -629,6 +639,44 @@ try {
       && (await um(`select pagamento_modo from public.pedidos where tenant_id=$1 and conversation_id=501 and status='aguardando_pagamento'`, [T.a])).pagamento_modo === 'link', JSON.stringify(pfs.map((x) => x.saida?.texto?.slice(0, 60))));
     chk('e com link aceito a ferramenta gerar_link_pagamento volta (7 ferramentas)', v9c.ferramentas.length === 7 && v9c.ferramentas.includes('gerar_link_pagamento'));
     await c.query('release savepoint sp_claims');
+
+    // 70: sem sessão, o aviso sai pela inbox do agente (enviarParaNumero); e a conversa do DONO não é atendida.
+    await c.query(`update public.tenant_tools set config = config || '{"pagamentos":["na_retirada"],"notificacao":{"canal":"chatwoot","destino":"5569900000123@c.us","nota_chatwoot":false}}'::jsonb where tenant_id=$1 and tool_nome='vendas'`, [T.a]);
+    roteiro.push({ tool: 'gerenciar_pedido', args: { acao: 'adicionar', produto_id: PROD, quantidade: 1, observacao: null, metadados: null, pagamento: null } },
+                  { tool: 'gerenciar_pedido', args: { acao: 'fechar', produto_id: null, quantidade: null, observacao: null, metadados: null, pagamento: null } },
+                  { texto: 'Pedido confirmado, pagamento na retirada.' });
+    const wAntes2 = chamadasWaha.length; const nAntes = chamadasNumero.length;
+    const f9d = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 503, content: 'quero 1 bolo, vou buscar' }));
+    await vencer(); await umCiclo(depsWorker);
+    const pf9d = (await passosDe((await turnoDaFila(f9d.filaId)).id)).filter((p) => p.tipo === 'tool' && p.nome === 'gerenciar_pedido').at(-1);
+    chk('canal chatwoot: o aviso foi por enviarParaNumero (+5569900000123, texto "Venda fechada"), NÃO pelo WAHA; diagnóstico enviado',
+      chamadasNumero.length === nAntes + 1 && chamadasNumero.at(-1).numero === '5569900000123@c.us' && /Venda fechada/.test(chamadasNumero.at(-1).texto) && chamadasNumero.at(-1).tenantId === T.a
+      && chamadasWaha.length === wAntes2 && pf9d?.saida?.diagnostico?.notificacao === 'enviado', JSON.stringify({ n: chamadasNumero.at(-1), d: pf9d?.saida?.diagnostico }));
+    // o dono responde ao aviso: o contato da conversa é o destino -> turno descartado, sem modelo
+    const vistosAntes = vistoPeloModelo.length;
+    const f9e = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 504, content: 'ok, separei', sender: { type: 'contact', name: 'Dono', phone_number: '+5569900000123', identifier: '5569900000123@c.us' } }));
+    await vencer(); const c9e = await umCiclo(depsWorker);
+    const t9e = await turnoDaFila(f9e.filaId);
+    chk('mensagem do DONO (contato = destino do aviso): turno descartado como conversa_do_dono, modelo não chamado, nada enviado',
+      t9e.status === 'descartado' && /conversa_do_dono/.test(t9e.erro ?? '') && vistoPeloModelo.length === vistosAntes && c9e.respondidas === 0
+      && (await passosDe(t9e.id)).some((p) => p.nome === 'conversa_do_dono'), JSON.stringify({ s: t9e.status, e: t9e.erro, c: c9e }));
+    // sem token da agência e sem sessão: sem_canal (não derruba o fechamento)
+    tokenAgencia = false;
+    roteiro.push({ tool: 'gerenciar_pedido', args: { acao: 'adicionar', produto_id: PROD, quantidade: 1, observacao: null, metadados: null, pagamento: null } },
+                  { tool: 'gerenciar_pedido', args: { acao: 'fechar', produto_id: null, quantidade: null, observacao: null, metadados: null, pagamento: null } },
+                  { texto: 'Pedido confirmado, pagamento na retirada.' });
+    const f9f = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 505, content: 'quero 1 bolo' }));
+    await vencer(); await umCiclo(depsWorker); tokenAgencia = true;
+    const pf9f = (await passosDe((await turnoDaFila(f9f.filaId)).id)).filter((p) => p.tipo === 'tool' && p.nome === 'gerenciar_pedido').at(-1);
+    chk('sem CHATWOOT_AGENCIA_TOKEN e sem sessão: fechou mesmo assim, diagnóstico sem_canal', /^Pedido nº \d+ fechado/.test(pf9f?.saida?.texto ?? '') && pf9f?.saida?.diagnostico?.notificacao === 'sem_canal', JSON.stringify(pf9f?.saida?.diagnostico));
+    // transferência sem sessão também vai pela inbox do agente
+    await c.query(`update public.tenant_tools set config = '{"horario":{"dias_semana":[0,1,2,3,4,5,6],"hora_inicio":0,"hora_fim":24},"notificacao":{"canal":"chatwoot","destino":"5569900000123@c.us"}}'::jsonb where tenant_id=$1 and tool_nome='transferir_humano'`, [T.a]);
+    roteiro.push({ tool: 'transferir_humano', args: { resumo: 'Cliente quer falar com humano sobre entrega' } }, { texto: 'Vou te passar para um atendente.' });
+    const nAntes2 = chamadasNumero.length;
+    const f9g = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 506, content: 'quero falar com alguém' }));
+    await vencer(); await umCiclo(depsWorker);
+    const pt = (await passosDe((await turnoDaFila(f9g.filaId)).id)).find((p) => p.tipo === 'tool' && p.nome === 'transferir_humano');
+    chk('transferência com canal chatwoot: aviso por enviarParaNumero, diagnóstico notificou=chatwoot', chamadasNumero.length === nAntes2 + 1 && /Novo atendimento/.test(chamadasNumero.at(-1).texto) && pt?.saida?.diagnostico?.notificou === 'chatwoot', JSON.stringify(pt?.saida?.diagnostico));
   }
 
   // =========================================================================

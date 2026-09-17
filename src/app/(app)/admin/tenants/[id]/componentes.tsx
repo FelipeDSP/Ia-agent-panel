@@ -365,7 +365,7 @@ export function FormTransferirHumano({
           id="sessao"
           name="sessao"
           defaultValue={sessao}
-          placeholder="ex.: acquaariquemes (vazio = sem aviso)"
+          placeholder="vazio = sai pela inbox do agente (Chatwoot); só o n8n exige"
         />
       </div>
 
@@ -386,8 +386,8 @@ export function FormVendasAgencia({ tenantId, sessao }: { tenantId: string; sess
       {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
       <div className="flex max-w-sm flex-col gap-2">
-        <Label htmlFor="sessao_vendas">Sessão WAHA do aviso de venda (opcional)</Label>
-        <Input id="sessao_vendas" name="sessao" defaultValue={sessao} placeholder="ex.: emporio (vazio = sem aviso por WhatsApp)" />
+        <Label htmlFor="sessao_vendas">Sessão WAHA (legado, opcional)</Label>
+        <Input id="sessao_vendas" name="sessao" defaultValue={sessao} placeholder="vazio = sai pela inbox do agente (Chatwoot)" />
       </div>
       <div>
         <SubmitButton>Salvar sessão</SubmitButton>

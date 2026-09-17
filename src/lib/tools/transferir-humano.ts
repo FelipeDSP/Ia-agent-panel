@@ -26,7 +26,8 @@ export type Horario = {
 };
 
 export type Notificacao = {
-  canal: 'waha' | 'nenhum';
+  /** 70: `chatwoot` = pela inbox do agente, sem sessão; `waha` = sessão da agência (legado). */
+  canal: 'waha' | 'chatwoot' | 'nenhum';
   sessao?: string;
   destino?: string;
 };

@@ -18,7 +18,7 @@ import {
   validarTransferirAgencia,
   type ConfigTransferir,
 } from '@/lib/tools/transferir-humano';
-import { TOOL_VENDAS, lerConfigVendas, validarVendasAgencia } from '@/lib/tools/vendas-config';
+import { TOOL_VENDAS, canalDerivado, lerConfigVendas, validarVendasAgencia } from '@/lib/tools/vendas-config';
 
 export type EstadoAcao = {
   erro?: string;
@@ -798,14 +798,11 @@ export async function salvarTransferirHumanoAgencia(
   if (erroSel) return { erro: `Não foi possível carregar: ${erroSel.message}` };
 
   const atual = (linha?.config ?? {}) as Partial<ConfigTransferir>;
-  // Sem sessão WAHA não há por onde o aviso sair. Se a agência limpar a sessão,
-  // o canal cai para 'nenhum' — senão ficaria canal='waha' pendurado, o n8n
-  // tentaria notificar sem sessão e falharia calado, e o cliente nem veria o
-  // controle para corrigir (a tela dele esconde quando não há sessão). Espelha
-  // o mesmo guard que o lado do cliente já aplica.
-  const canal: 'waha' | 'nenhum' = validado.valor.sessao
-    ? (atual.notificacao?.canal ?? 'nenhum')
-    : 'nenhum';
+  // 70: a sessão é legado. Com ela o aviso vai pelo WAHA; sem ela vai pela
+  // inbox do agente (`chatwoot`). Tirar a sessão NÃO desliga o aviso do
+  // cliente — só troca o caminho. (Tenant no n8n congelado só sabe `waha`:
+  // ao tirar a sessão de um deles, o n8n para de avisar até migrar.)
+  const canal = canalDerivado((atual.notificacao?.canal ?? 'nenhum') !== 'nenhum', validado.valor.sessao);
   const config: ConfigTransferir = {
     horario: atual.horario ?? HORARIO_PADRAO,
     notificacao: {
@@ -870,7 +867,7 @@ export async function salvarVendasAgencia(_estado: EstadoAcao, fd: FormData): Pr
   const sessao = validado.valor.sessao;
   const notificacao = {
     ...atual.notificacao,
-    canal: sessao ? atual.notificacao.canal : ('nenhum' as const),
+    canal: canalDerivado(atual.notificacao.canal !== 'nenhum', sessao),
   };
   if (sessao) notificacao.sessao = sessao; else delete notificacao.sessao;
 
@@ -882,7 +879,7 @@ export async function salvarVendasAgencia(_estado: EstadoAcao, fd: FormData): Pr
   if (error) return { erro: `Não foi possível salvar: ${error.message}` };
 
   revalidatePath(`/admin/tenants/${tenantId}`);
-  return { sucesso: sessao ? 'Sessão do aviso de venda salva.' : 'Sessão removida — o aviso de venda por WhatsApp fica desligado.' };
+  return { sucesso: sessao ? 'Sessão salva: o aviso de venda sai pelo WAHA.' : 'Sem sessão: o aviso de venda sai pela inbox do agente (Chatwoot).' };
 }
 
 /**

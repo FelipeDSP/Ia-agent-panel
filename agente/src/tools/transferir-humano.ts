@@ -11,6 +11,7 @@
  * America/Sao_Paulo. Textos de retorno verbatim.
  */
 import { fnUma, fnValor } from '../db.ts';
+import { mandarAoDono } from '../pedido/aviso.ts';
 import type { FerramentaDoModelo } from '../agente/modelo.ts';
 import type { ConfigTool, ContextoTool } from './contexto.ts';
 
@@ -36,7 +37,7 @@ export function disponivelAgora(horario: Horario | undefined, agora = new Date()
   return { disponivel: diaOk && horaOk, debug: { tz, diaSemana, hora, diaOk, horaOk } };
 }
 
-export async function transferirHumano(ctx: ContextoTool, resumo: string): Promise<{ resultado: string; disponivel: boolean; notificou: 'waha' | 'nenhum' | 'falhou'; pausou: boolean | null }> {
+export async function transferirHumano(ctx: ContextoTool, resumo: string): Promise<{ resultado: string; disponivel: boolean; notificou: 'waha' | 'chatwoot' | 'nenhum' | 'falhou'; pausou: boolean | null }> {
   const cfg = await fnUma<ConfigTool>(ctx.db, 'api_n8n_config_tool', [ctx.tenant.tenant_id, 'transferir_humano']);
   const config = (cfg?.config ?? {}) as { horario?: Horario; notificacao?: Notificacao };
   const { disponivel } = disponivelAgora(config.horario);
@@ -49,15 +50,14 @@ export async function transferirHumano(ctx: ContextoTool, resumo: string): Promi
   let pausou = false;
   try { pausou = (await fnValor<string>(ctx.db, 'api_n8n_definir_status_conversa', [ctx.tenant.tenant_id, ctx.conversationId, 'pausado'])) === 'pausado'; } catch { pausou = false; }
   const n = config.notificacao ?? { canal: 'nenhum' };
-  let notificou: 'waha' | 'nenhum' | 'falhou' = 'nenhum';
-  if (n.canal === 'waha' && n.sessao && n.destino) {
-    if (!ctx.waha) notificou = 'falhou';
-    else {
-      try {
-        await ctx.waha.enviarTexto(n.sessao, n.destino, `🔔 *Novo atendimento solicitado!*\n\n💬 *Assunto:* ${resumo}\n\nO cliente solicita atendimento humano.`);
-        notificou = 'waha';
-      } catch { notificou = 'falhou'; }
-    }
+  let notificou: 'waha' | 'chatwoot' | 'nenhum' | 'falhou' = 'nenhum';
+  // canal `waha` com sessão = como sempre; `chatwoot` (ou waha sem sessão) =
+  // pela inbox do agente, sem sessão por conta (17/09). Ver `mandarAoDono`.
+  if ((n.canal === 'waha' || n.canal === 'chatwoot') && n.destino) {
+    try {
+      notificou = await mandarAoDono({ db: ctx.db, chatwoot: ctx.chatwoot, waha: ctx.waha },
+        { tenantId: ctx.tenant.tenant_id, sessao: n.sessao || null, destino: n.destino, texto: `🔔 *Novo atendimento solicitado!*\n\n💬 *Assunto:* ${resumo}\n\nO cliente solicita atendimento humano.` });
+    } catch { notificou = 'falhou'; }
   }
   return { resultado: TEXTO_TRANSFERIDO, disponivel, notificou, pausou };
 }

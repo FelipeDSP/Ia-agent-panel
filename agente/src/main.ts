@@ -21,7 +21,7 @@ import { log, erroTexto } from './log.ts';
 
 const cfg = lerConfig();
 const pool = criarPool(cfg.dbUrl);
-const chatwoot = criarChatwoot(pool);
+const chatwoot = criarChatwoot(pool, fetch, cfg.chatwootAgenciaToken);
 const waha = cfg.waha ? criarWaha(cfg.waha.url, cfg.waha.apiKey) : null;
 const modelo = criarModeloOpenAI(cfg.openaiApiKey);
 const embeddings = criarEmbeddingsOpenAI(cfg.openaiApiKey);

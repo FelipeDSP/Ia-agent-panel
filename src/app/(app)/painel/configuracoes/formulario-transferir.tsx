@@ -21,13 +21,11 @@ export function FormularioTransferir({
   horario,
   notificarAtual,
   destinoNumero,
-  temSessao,
 }: {
   ativo: boolean;
   horario: Horario;
   notificarAtual: boolean;
   destinoNumero: string;
-  temSessao: boolean;
 }) {
   const [estado, acao] = useActionState<EstadoConfig, FormData>(salvarTransferirHumano, {});
   const [notificar, setNotificar] = useState(notificarAtual);
@@ -54,13 +52,8 @@ export function FormularioTransferir({
             <Alert>
               <strong>Você não recebe aviso quando alguém pede atendimento.</strong> A conversa é
               pausada e fica marcada no <strong>Chatwoot</strong> — é lá que você acompanha e
-              responde. Ninguém é notificado por WhatsApp.
-              {temSessao ? (
-                <> Para receber aviso, ligue a notificação abaixo e informe o número.</>
-              ) : (
-                <> Se quiser aviso no WhatsApp, fale com a agência: o canal ainda não foi
-                  configurado para você.</>
-              )}
+              responde. Ninguém é notificado por WhatsApp. Para receber aviso, ligue a
+              notificação abaixo e informe o número.
             </Alert>
           ) : null}
         </>
@@ -149,42 +142,37 @@ export function FormularioTransferir({
       <fieldset className="flex flex-col gap-3 rounded-xl border border-border p-4">
         <legend className="px-1 text-sm font-medium">Notificação</legend>
 
-        {temSessao ? (
-          <>
-            <label className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                name="notificar"
-                checked={notificar}
-                onChange={(e) => setNotificar(e.target.checked)}
-                className="h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              />
-              <span className="text-sm">Me avisar no WhatsApp quando alguém pedir atendimento</span>
-            </label>
+        {/* 70: o aviso sai pelo WhatsApp do próprio agente (a inbox), então não
+            depende mais de a agência configurar uma sessão — o campo existe
+            para todo cliente. */}
+        <label className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            name="notificar"
+            checked={notificar}
+            onChange={(e) => setNotificar(e.target.checked)}
+            className="h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          />
+          <span className="text-sm">Me avisar no WhatsApp quando alguém pedir atendimento</span>
+        </label>
 
-            <div className="flex max-w-xs flex-col gap-2">
-              <Label htmlFor="destino">WhatsApp para aviso</Label>
-              <Input
-                id="destino"
-                name="destino"
-                placeholder="Ex.: 556993666645"
-                defaultValue={destinoNumero}
-                disabled={!notificar}
-              />
-              {/* O formato está no placeholder. Sobra a regra do 9, que é
-                  armadilha real e não se deduz de lugar nenhum — mas cabe em
-                  uma linha em vez de três. */}
-              <p className="text-xs text-muted-foreground">
-                Se o aviso não chegar, tente sem o 9 depois do DDD.
-              </p>
-              <ErroCampo msg={estado.errosCampo?.['destino']} />
-            </div>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            O aviso por WhatsApp ainda não foi configurado pela agência — o horário acima já vale.
+        <div className="flex max-w-xs flex-col gap-2">
+          <Label htmlFor="destino">WhatsApp para aviso</Label>
+          <Input
+            id="destino"
+            name="destino"
+            placeholder="Ex.: 556993666645"
+            defaultValue={destinoNumero}
+            disabled={!notificar}
+          />
+          {/* O formato está no placeholder. Sobra a regra do 9, que é
+              armadilha real e não se deduz de lugar nenhum — mas cabe em
+              uma linha em vez de três. */}
+          <p className="text-xs text-muted-foreground">
+            Se o aviso não chegar, tente sem o 9 depois do DDD.
           </p>
-        )}
+          <ErroCampo msg={estado.errosCampo?.['destino']} />
+        </div>
       </fieldset>
 
       <div>

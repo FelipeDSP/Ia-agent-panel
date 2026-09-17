@@ -8,13 +8,18 @@
  *   { pagamentos: ('link'|'na_retirada')[],        // ausente = ['link']
  *     entrega: 'atendente'|'nao',                  // ausente = 'nao'
  *     eventos: Evento[],                           // ausente = todos
- *     notificacao: { canal: 'waha'|'nenhum', sessao?, destino?, nota_chatwoot? },
+ *     notificacao: { canal: 'waha'|'chatwoot'|'nenhum', sessao?, destino?, nota_chatwoot? },
  *     horas_expirar_pagamento?: string }           // da migração 38; não é daqui
  *
+ * CANAL (17/09, migração 70): o cliente só diz SE quer WhatsApp e PARA QUAL
+ * número; por onde sai é derivado — com `sessao` da agência é `waha`, sem
+ * sessão é `chatwoot` (a inbox do próprio agente, token da agência). Nenhuma
+ * conta precisa de sessão para ser avisada; a sessão ficou como legado.
+ *
  * Corte de responsabilidade, o mesmo da transferência:
- *  - Cliente (painel): pagamentos, entrega, eventos, notificacao.canal,
- *    notificacao.destino, notificacao.nota_chatwoot.
- *  - Agência (super_admin): notificacao.sessao.
+ *  - Cliente (painel): pagamentos, entrega, eventos, notificar/destino,
+ *    notificacao.nota_chatwoot.
+ *  - Agência (super_admin): notificacao.sessao (opcional).
  * Cada lado preserva os campos do outro ao salvar (merge do jsonb).
  *
  * ENTREGA É GAVETA (decisão de 17/09): `modalidades` não existe aqui de
@@ -41,8 +46,16 @@ export const EVENTOS = [
 ] as const;
 export type Evento = (typeof EVENTOS)[number]['valor'];
 
+export type CanalAviso = 'waha' | 'chatwoot' | 'nenhum';
+
+/** Por onde o WhatsApp sai: com sessão da agência, WAHA; sem, a inbox do agente. */
+export function canalDerivado(notificar: boolean, sessao: string | undefined | null): CanalAviso {
+  if (!notificar) return 'nenhum';
+  return sessao ? 'waha' : 'chatwoot';
+}
+
 export type NotificacaoVendas = {
-  canal: 'waha' | 'nenhum';
+  canal: CanalAviso;
   sessao?: string;
   destino?: string;
   nota_chatwoot?: boolean;
@@ -85,7 +98,7 @@ export function lerConfigVendas(bruto: unknown): ConfigVendas {
     entrega: c['entrega'] === 'atendente' ? 'atendente' : 'nao',
     eventos: eventos.length > 0 ? [...new Set(eventos)] : VENDAS_PADRAO.eventos,
     notificacao: {
-      canal: n['canal'] === 'waha' ? 'waha' : 'nenhum',
+      canal: n['canal'] === 'waha' || n['canal'] === 'chatwoot' ? n['canal'] : 'nenhum',
       ...(typeof n['sessao'] === 'string' && n['sessao'] ? { sessao: n['sessao'] } : {}),
       ...(typeof n['destino'] === 'string' && n['destino'] ? { destino: n['destino'] } : {}),
       ...(n['nota_chatwoot'] === true ? { nota_chatwoot: true } : {}),
@@ -108,7 +121,7 @@ export function validarVendasCliente(
   pagamentos: Pagamento[];
   entrega: 'atendente' | 'nao';
   eventos: Evento[];
-  canal: 'waha' | 'nenhum';
+  notificar: boolean;
   destino?: string;
   nota_chatwoot: boolean;
 }> {
@@ -151,7 +164,7 @@ export function validarVendasCliente(
       // lista vazia = todos (é como o banco lê a ausência); gravar vazio
       // seria "nenhum" na tela e "todos" no banco
       eventos: eventos.length > 0 ? eventos : VENDAS_PADRAO.eventos,
-      canal: notificar ? 'waha' : 'nenhum',
+      notificar,
       destino,
       nota_chatwoot,
     },

@@ -33,6 +33,7 @@ ponta a ponta em transação abortada: `npm run teste:agente-fatia1`.
 | `PORT` | não (3100) | porta HTTP |
 | `WORKER_ID` | não | identidade na fila (`reivindicada_por`); default `agente-<pid>` |
 | `WAHA_URL`, `WAHA_API_KEY` | não | notificação de anomalia (migração 53) e o alarme de agente mudo; sem elas os avisos viram só log |
+| `CHATWOOT_AGENCIA_TOKEN` | não | token de USUÁRIO (admin da agência em todas as contas) do Chatwoot: abre a conversa do aviso ao dono pela inbox do agente (venda fechada, pagamento, transferência) — o token do Agent Bot não pode. Sem ele, aviso por WhatsApp só sai para conta com sessão WAHA (legado) |
 | `ALARME_WAHA_SESSAO`, `ALARME_WAHA_DESTINO` | não | para onde vai o alarme de agente mudo |
 | `FILA_LOTE` (10), `FILA_INTERVALO_MS` (1000), `FILA_LEASE_MIN` (5) | não | o worker |
 | `TRACE_RETENCAO_DIAS` (30), `MUDO_MINUTOS` (10) | não | manutenção |

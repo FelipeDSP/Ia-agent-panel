@@ -175,9 +175,8 @@ export default async function PaginaConfiguracoes() {
             <FormularioTransferir
               ativo={Boolean(toolTransferir?.ativo)}
               horario={horarioTransferir}
-              notificarAtual={configTransferir.notificacao?.canal === 'waha'}
+              notificarAtual={(configTransferir.notificacao?.canal ?? 'nenhum') !== 'nenhum'}
               destinoNumero={numeroParaExibir(configTransferir.notificacao?.destino)}
-              temSessao={Boolean(configTransferir.notificacao?.sessao)}
             />
           </CardContent>
         </Card>
@@ -197,7 +196,6 @@ export default async function PaginaConfiguracoes() {
               ativo={Boolean(toolVendas?.ativo)}
               config={configVendas}
               destinoNumero={numeroParaExibir(configVendas.notificacao.destino)}
-              temSessao={Boolean(configVendas.notificacao.sessao)}
               transferirDisponivel={transferirDisponivel}
             />
           </CardContent>

@@ -366,8 +366,9 @@ export default async function PaginaDetalheTenant({
             <CardHeader>
               <CardTitle>Tool: vendas — aviso ao dono</CardTitle>
               <CardDescription>
-                Infra do aviso de venda. O cliente escolhe formas de pagar, eventos e número em
-                Configurações → Vendas; aqui só a sessão do WAHA por onde o aviso sai.
+                O cliente escolhe formas de pagar, eventos e número em Configurações → Vendas. O
+                aviso sai pela inbox do próprio agente (Chatwoot); a sessão WAHA aqui é legado —
+                preenchida, o aviso vai por ela.
                 {configVendas.notificacao.destino
                   ? ` Destino do cliente: ${configVendas.notificacao.destino}.`
                   : ' O cliente ainda não informou o número.'}

@@ -15,13 +15,30 @@ import type { Waha } from '../waha/notificar.ts';
 import { log, erroTexto } from '../log.ts';
 
 export type Evento = 'pedido_fechado' | 'pagamento_confirmado' | 'pedido_cancelado';
-export type ResultadoAviso = 'enviado' | 'falhou' | 'sem_destino' | 'sem_waha';
+export type ResultadoAviso = 'enviado' | 'falhou' | 'sem_destino' | 'sem_canal';
 
 export interface DepsAviso { db: Db; chatwoot: Chatwoot; waha: Waha | null }
 
 interface LinhaAviso {
   pedido_id: string | null; numero: number | null; sessao: string | null; destino: string | null;
   nota_chatwoot?: boolean | null; mensagem: string | null;
+}
+
+/**
+ * Manda um texto ao WhatsApp do dono. Com sessão (config antiga, agência) vai
+ * pelo WAHA; sem sessão vai pelo Chatwoot, pela inbox do próprio agente
+ * (`enviarParaNumero`, token da agência). Decisão do Felipe em 17/09: nenhuma
+ * conta precisa de sessão configurada para ser avisada.
+ */
+export async function mandarAoDono(deps: DepsAviso, p: { tenantId: string; sessao: string | null; destino: string; texto: string }): Promise<'waha' | 'chatwoot'> {
+  if (p.sessao) {
+    if (!deps.waha) throw new Error('WAHA nao configurado no agente');
+    await deps.waha.enviarTexto(p.sessao, p.destino, p.texto);
+    return 'waha';
+  }
+  if (!deps.chatwoot.temTokenDaAgencia()) throw new Error('sem sessao WAHA e sem CHATWOOT_AGENCIA_TOKEN');
+  await deps.chatwoot.enviarParaNumero({ tenantId: p.tenantId, numero: p.destino, texto: p.texto });
+  return 'chatwoot';
 }
 
 /**
@@ -40,10 +57,11 @@ async function entregar(deps: DepsAviso, tenantId: string, conversationId: numbe
   }
   let resultado: ResultadoAviso = 'sem_destino';
   if (querWhats) {
-    if (!deps.waha) { erros.push('WAHA nao configurado no agente'); resultado = 'sem_waha'; }
+    const semCanal = n.sessao ? !deps.waha : !deps.chatwoot.temTokenDaAgencia();
+    if (semCanal) { erros.push(n.sessao ? 'WAHA nao configurado no agente' : 'CHATWOOT_AGENCIA_TOKEN ausente'); resultado = 'sem_canal'; }
     else {
-      try { await deps.waha.enviarTexto(n.sessao ?? '', n.destino ?? '', n.mensagem ?? ''); algumOk = true; resultado = 'enviado'; }
-      catch (e) { erros.push(`waha: ${erroTexto(e)}`); resultado = 'falhou'; }
+      try { await mandarAoDono(deps, { tenantId, sessao: n.sessao, destino: n.destino ?? '', texto: n.mensagem ?? '' }); algumOk = true; resultado = 'enviado'; }
+      catch (e) { erros.push(`whatsapp: ${erroTexto(e)}`); resultado = 'falhou'; }
     }
   } else if (algumOk) resultado = 'enviado';
   else resultado = 'falhou';

@@ -15,7 +15,7 @@ import {
   validarTransferirCliente,
   type ConfigTransferir,
 } from '@/lib/tools/transferir-humano';
-import { TOOL_VENDAS, lerConfigVendas, validarVendasCliente, type ConfigVendas } from '@/lib/tools/vendas-config';
+import { TOOL_VENDAS, canalDerivado, lerConfigVendas, validarVendasCliente, type ConfigVendas } from '@/lib/tools/vendas-config';
 
 export type EstadoConfig = {
   erro?: string;
@@ -189,9 +189,9 @@ export async function salvarTransferirHumano(
   const atual = (linha.config ?? {}) as Partial<ConfigTransferir>;
   const sessao = atual.notificacao?.sessao;
 
-  // Sem sessão configurada pela agência, não há para onde o WAHA enviar — força
-  // canal 'nenhum' para não deixar um 'waha' pendurado que falharia calado.
-  const canal = validado.valor.canal === 'waha' && sessao ? 'waha' : 'nenhum';
+  // 70: com sessão da agência o aviso vai pelo WAHA; sem sessão, pela inbox
+  // do próprio agente (`chatwoot`). O cliente só escolhe SE quer e o número.
+  const canal = canalDerivado(validado.valor.canal === 'waha', sessao);
 
   const novaConfig: ConfigTransferir = {
     horario: validado.valor.horario,
@@ -248,9 +248,8 @@ export async function salvarVendas(_estado: EstadoConfig, fd: FormData): Promise
 
   const atual = lerConfigVendas(vendas.config);
   const sessao = atual.notificacao.sessao;
-  // Sem sessão da agência não há por onde o WhatsApp sair; a nota no Chatwoot
-  // não depende dela e fica.
-  const canal = validado.valor.canal === 'waha' && sessao ? 'waha' : 'nenhum';
+  // 70: sessão da agência → WAHA; sem sessão → inbox do agente (`chatwoot`).
+  const canal = canalDerivado(validado.valor.notificar, sessao);
   const novaConfig: ConfigVendas = {
     pagamentos: validado.valor.pagamentos,
     entrega: validado.valor.entrega,
