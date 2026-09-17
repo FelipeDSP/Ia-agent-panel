@@ -63,8 +63,13 @@ exceção da regra 1 de 16/09).
 
 ## 6. O que falta decidir
 
-1. **Quem marca pago/entregue** para pedidos na hora — o dono no painel do
-   cliente (proposta) ou o atendente no Chatwoot? (Felipe ainda não respondeu.)
+1. ~~Quem marca pago/entregue~~ — **resolvido por construção (Felipe, 17/09):**
+   hoje cada conta tem UM usuário (o admin), então quem marca é *o usuário da
+   conta, em Pedidos*. Quem PODE marcar vira permissão quando existir o tópico
+   **usuários por conta** (admin cria atendentes com menos poder que ele) —
+   tópico grande, que o Felipe quer ver DEPOIS deste. Construir os botões sem
+   supor papel: a checagem de permissão entra quando o modelo de usuários
+   existir.
 2. **Nota privada no Chatwoot** além do WhatsApp — sim/não.
 3. **Taxa de entrega**: valor fixo por tenant, ou por bairro/faixa? Começar
    com fixo.
