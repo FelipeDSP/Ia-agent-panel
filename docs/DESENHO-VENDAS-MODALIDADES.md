@@ -1,7 +1,7 @@
 # Desenho — modalidades de venda e aviso ao dono
 
-> Conversa de 17/09/2026. **CONSTRUÍDO em 17/09 (ver §8); migrações 69 e 70 APLICADAS
-> em 17/09 (ledger até 20260917200000).** O que o Felipe decidiu está
+> Conversa de 17/09/2026. **CONSTRUÍDO em 17/09 (ver §8); migrações 69, 70 e 71 APLICADAS
+> em 17/09 (ledger até 20260917210000).** O que o Felipe decidiu está
 > marcado como decisão.
 
 ## 1. O problema
@@ -145,6 +145,9 @@ Nada em aberto: o desenho está pronto para construir.
   resposta dele ao aviso chegaria ao agente — a conversa cujo contato é um
   destino de aviso é descartada no turno (`conversa_do_dono` no trace).
   Pendência da sessão única por conta fechou por dispensa.
+- **71 (17/09)**: o fato "pagamento confirmado" que o serviço injeta no
+  modelo tem fim — pedido retirado encerra o ciclo; pago sem retirar vale 24 h.
+  Sem isso, o pedido pago no balcão travava a conversa em "já está pago".
 - **Não construído / a saber**: `pedido_cancelado` nunca dispara pela tool —
   a ação `cancelar` do modelo não passa `alvo`, então só descarta carrinho
   (venda fechada não é cancelável pelo agente hoje). O aviso existe no banco
