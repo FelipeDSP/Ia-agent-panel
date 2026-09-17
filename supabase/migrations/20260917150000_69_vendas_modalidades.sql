@@ -723,12 +723,12 @@ begin
     execute format('grant execute on function %s to n8n_agent', f);
   end loop;
 
-  -- helper interno: ninguem de fora
+  -- helper interno, na forma das irmãs (pedido_em_texto): postgres + service_role
   f := 'public.vendas_oferta(uuid)';
   execute format('revoke all on function %s from public', f);
   execute format('revoke all on function %s from anon', f);
   execute format('revoke all on function %s from authenticated', f);
-  execute format('revoke all on function %s from service_role', f);
+  execute format('grant execute on function %s to service_role', f);
 
   -- o painel: authenticated (tenant do JWT) e service_role, como conversa_historico
   f := 'public.painel_marcar_pedido(uuid, text)';

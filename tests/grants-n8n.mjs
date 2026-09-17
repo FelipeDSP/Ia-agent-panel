@@ -172,6 +172,7 @@ try {
       'billing_volume_mensal',    // /painel/relatorios (era /painel/consumo)
       'conversa_historico',       // /painel/conversas/[id]
       'agendar_podcast',          // formulario publico do site
+      'painel_marcar_pedido',     // /painel/pedidos/[id] (69: pago / retirado)
     ];
     const { rows } = await c.query(
       `select p.proname
@@ -258,6 +259,7 @@ try {
   {
     const PAINEL_AUTHENTICATED = [
       'agendar_podcast', 'billing_consumo_mensal', 'billing_volume_mensal', 'conversa_historico',
+      'painel_marcar_pedido',
     ];
     const { rows } = await c.query(
       `select p.proname,

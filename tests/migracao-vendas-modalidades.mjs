@@ -81,7 +81,7 @@ try {
     (await aclFn('api_agente_aviso_pedido')) === aclAntes['api_n8n_fechar_pedido'] && (await aclFn('api_agente_confirmar_aviso')) === aclAntes['api_n8n_fechar_pedido'],
     await aclFn('api_agente_aviso_pedido'));
   chk('painel_marcar_pedido: ACL == irmã conversa_historico (authenticated + service_role)', (await aclFn('painel_marcar_pedido')) === (await aclFn('conversa_historico')), await aclFn('painel_marcar_pedido'));
-  chk('vendas_oferta: só postgres (helper interno)', (await aclFn('vendas_oferta')) === '{postgres=X/postgres}', await aclFn('vendas_oferta'));
+  chk('vendas_oferta: ACL == irmã pedido_em_texto (helper interno: postgres + service_role)', (await aclFn('vendas_oferta')) === (await aclFn('pedido_em_texto')), await aclFn('vendas_oferta'));
   chk('aplicar NÃO muda pedido nenhum: nenhum ganhou modalidade/pagamento_modo', (await um(`select count(*)::int n from public.pedidos where modalidade is not null or pagamento_modo is not null or pago_em is not null or retirado_em is not null`)).n === 0);
 
   console.log('\n== 1. Três ofertas ==\n');
