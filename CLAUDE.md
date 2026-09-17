@@ -18,43 +18,73 @@ Toda a documentação vive em `docs/` (veja `docs/README.md` para o índice).
 - Deploy no **Coolify**, em dois projetos: o painel (`Dockerfile` da raiz) e o
   agente em código (`agente/Dockerfile`, contexto = raiz). Não é Vercel.
 
-## O agente em código (`agente/`) — e o n8n congelado
+## ESTADO ATUAL — leia antes de qualquer coisa (atualizado 17/09/2026)
 
-Desde 15/09/2026 o agente está sendo migrado do n8n para `agente/` (desenho em
-`docs/DESENHO-AGENTE-EM-CODIGO.md`; roteiro em `agente/README.md`). Regras que
-valem durante a transição:
+**O agente É CÓDIGO: `agente/` (Node 24, TypeScript, sem framework, sem Redis),
+rodando no Coolify em `https://hercules.chatyou.chat`.** Desenho em
+`docs/DESENHO-AGENTE-EM-CODIGO.md`, roteiro operacional em `agente/README.md`,
+estado vivo em `docs/DESENHO-AGENTE-EM-CODIGO.md` §5 (os oito critérios).
 
-- **o n8n não recebe mais nada**: nem import, nem conserto, nem experimento.
-  Decisão do Felipe em 15/09 — o que está lá fica como está até o último
-  tenant migrar. `n8n/workflows/*.json` e `n8n/*.js` continuam versionados
-  porque descrevem o comportamento que o código precisa igualar (e dois deles,
-  `extrair-e-filtrar.js` e `filtro-texto.js`, são executados pelo próprio
-  serviço enquanto os dois lados coexistem);
-- **quem atende cada tenant é `tenants.agente_runtime`** (`n8n` | `codigo`,
-  migração 62, agência-only). O serviço descarta com 200 qualquer webhook de
-  tenant que não esteja em `codigo` — é o que impede resposta dupla enquanto
-  um bot é apontado. Mudar de lado é trocar a `outgoing_url` do Agent Bot da
-  conta no Chatwoot e a coluna; voltar é o inverso, e a memória (que vem de
-  `mensagens_log`) sobrevive;
-- **o serviço conecta como `n8n_agent`** e só fala com o banco por
+**O n8n é LEGADO.** Está congelado desde 15/09/2026 (decisão do Felipe): nada
+entra nele — nem import, nem conserto, nem experimento, nem "melhoria". Ele
+ainda **atende** `emporio` e `ceejaar` só porque esses dois ainda não foram
+apontados para o serviço; o dia em que forem, o n8n desliga. **Nunca proponha
+mexer em workflow do n8n. Toda funcionalidade nova é no código.**
+
+O que ainda cita n8n neste repositório, e por quê:
+
+- `n8n/workflows/*.json` e `n8n/*.js` — descrição do comportamento que o
+  código igualou; `extrair-e-filtrar.js`, `filtro-texto.js`, `aplica-portao.js`,
+  `tool-pagamento-resposta.js`, `webhook-pagamento-extrai.js` e os `.mjs` de
+  tool são **executados pelo próprio serviço** (fonte única). Quando um `.js`
+  muda, `scripts/aplicar-portao-venda.mjs` re-injeta o JSON do repo — só para
+  o repositório ficar coerente; o JSON não é importado em lugar nenhum;
+- as funções `api_n8n_*` e o role `n8n_agent` — nomes históricos. O serviço
+  conecta como `agente_codigo` (membro de `n8n_agent`) e só fala com o banco por
   `api_n8n_*` e `api_agente_*` (`teste:grants-n8n` varre as duas). Nunca a URL
   de `postgres` — `config.ts` recusa;
-- **sem Redis no agente**: memória de `mensagens_log` com corte, debounce pela
-  fila `agente_fila` com lock por conversa. Os modelos executáveis em
-  `tests/lib/debounce-modelo.mjs` e `memoria-modelo.mjs` são a especificação;
+- `src/lib/n8n.ts` e o ramo `n8n` de `limpeza-memoria-destino.ts` — o painel
+  ainda sabe mandar "limpar memória" ao n8n para os dois tenants que restam;
+- `docs/PENDENCIA-*`, `docs/ENTREGA-*` antigos e as seções deste arquivo
+  sobre o gerador do workflow — **história**. Valem para entender por que o
+  código é como é, não para orientar trabalho novo.
+
+**Quem atende cada tenant é `tenants.agente_runtime`** (`n8n` | `codigo`,
+migração 62, agência-only; trocar é pelo painel: *Clientes → cliente → Quem
+atende*, que mostra a URL do bot para cada lado e exige a ordem certa). O
+serviço descarta com 200 webhook de tenant que não esteja em `codigo` — é o
+que impede resposta dupla. A memória vem de `mensagens_log` (os dois lados
+escrevem), então trocar de lado não perde contexto.
+
+Migrações aplicadas até aqui: **62–68** (fila/trace/runtime, prompt no turno,
+encerramento do link Asaas, conversa resolvida reabre, config por tenant,
+retenção de dados, tokens em cache). Pagamento por link (Asaas) funciona no
+sandbox; BaaS/subcontas depende da conta PJ da estud.you (não é código).
+
+Regras do serviço que não se "consertam":
+
+- **sem Redis**: memória de `mensagens_log` com corte (silêncio por tenant,
+  default 40 min) e debounce pela fila `agente_fila` com lock por conversa. Os
+  modelos executáveis em `tests/lib/debounce-modelo.mjs` e `memoria-modelo.mjs`
+  são a especificação;
 - os comportamentos que mudam de propósito estão nomeados nos testes como
-  `divergencia_esperada` (memória pós-portão em vez do bruto; pausa dentro do
-  debounce vira descarte em vez de erro). Não "conserte" nenhum deles.
+  `divergencia_esperada`. Não os "corrija" para parecer o n8n;
+- o portão de saída (`n8n/aplica-portao.js`, o mesmo arquivo) é a defesa
+  contra fabricação; migrar para código não o substituiu.
 
 ## Contexto crítico
 
-**Existe um cliente em produção.** Acqua Lavanderia, `chatwoot_account_id = 56`,
-12 documentos vetorizados, 74 conversas. O agente dele roda em n8n e lê deste mesmo
-banco. Qualquer migração de schema precisa mantê-lo funcionando — não é ambiente limpo.
+**Existem clientes reais em produção.** `emporio` e `ceejaar` (mesmo dono,
+ciente do período de teste) — atendidos pelo n8n congelado até migrarem — e o
+`estudyou-sendbox` no código. Acqua Lavanderia (`chatwoot_account_id = 56`) está
+sem tráfego desde julho. Qualquer migração de schema precisa manter os dois
+lados funcionando — não é ambiente limpo.
 
-**O n8n é um segundo consumidor do banco.** O painel não é o único cliente. Toda
-mudança em `kb_documentos`, `conversas` ou `tenants` pode quebrar o agente em produção.
-Ao alterar essas tabelas, verifique o impacto no n8n antes.
+**O banco tem DOIS consumidores além do painel: o serviço `agente/` e o n8n
+congelado.** Os dois chamam as mesmas funções `api_n8n_*`. Toda mudança de
+assinatura ou de tipo de retorno afeta os dois — e o n8n não pode ser ajustado.
+Regra prática: mudança de comportamento entra por função NOVA ou por chave nova
+no jsonb, nunca trocando a assinatura de função viva.
 
 ## Regras de multi-tenancy
 
@@ -398,7 +428,10 @@ Nos dois casos, re-rode o teste de recall (`npm run teste:recall`) antes e depoi
 e compare os números. Trocar plano de busca vetorial sem medir recall é como
 trocar o tamanho do chunk sem medir: quebra calado.
 
-## O gerador do workflow do n8n
+## (HISTÓRICO) O gerador do workflow do n8n
+
+> Vale como registro de por que os arquivos em `n8n/` são como são. Não há
+> trabalho novo aqui: o n8n está congelado (ver ESTADO ATUAL).
 
 `scripts/gerar-principal.mjs` **não gera do zero — ele lê o próprio arquivo de
 saída e o muta**:

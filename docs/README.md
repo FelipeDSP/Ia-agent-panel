@@ -3,6 +3,24 @@
 Índice de tudo que vive em `docs/`. Código e configs ficam na raiz; aqui é só
 documentação e material de referência.
 
+## Comece por aqui (17/09/2026)
+
+O agente é **código** (`agente/`); o n8n está **congelado** e só atende `emporio` e
+`ceejaar` até serem apontados para o serviço. Tudo abaixo que fala de n8n como
+lugar de trabalho é **histórico** — vale para entender decisões, não para orientar
+trabalho novo. A ordem de leitura para uma sessão nova:
+
+1. `CLAUDE.md` → seção **ESTADO ATUAL**.
+2. [`DESENHO-AGENTE-EM-CODIGO.md`](DESENHO-AGENTE-EM-CODIGO.md) — o desenho, o estado dos oito critérios (§5) e o que ficou de fora.
+3. [`../agente/README.md`](../agente/README.md) — envs, rotas, como apontar uma conta, estrutura do serviço.
+4. [`POLITICA-RETENCAO.md`](POLITICA-RETENCAO.md), [`REVISAO-PAINEL-2026-09-16.md`](REVISAO-PAINEL-2026-09-16.md), [`PENDENCIAS.md`](PENDENCIAS.md).
+
+O que continua VÁLIDO dos docs antigos: modelo de dados e regras de multi-tenancy
+(spec), o portão de venda afirmada (`aplica-portao.js` é o mesmo arquivo nos dois
+lados), o desenho do pagamento Asaas (§3, §11 e §12 da entrega — implementados em
+código). O que NÃO vale mais: `ADICIONAR-TOOL.md` (lado n8n), os passos de import
+de workflow, e qualquer "próximo passo" que diga para importar/consertar no n8n.
+
 ## Especificação e arquitetura — [`especificacao/`](especificacao/)
 - [`ESPECIFICACAO.md`](especificacao/ESPECIFICACAO.md) — **leia primeiro.** Modelo de
   dados, decisões de arquitetura e fases de implementação.
@@ -19,8 +37,10 @@ documentação e material de referência.
 - [`FLUXO-CRITICO.md`](especificacao/FLUXO-CRITICO.md) — o caminho crítico do sistema.
 
 ## Guias
-- [`ADICIONAR-TOOL.md`](ADICIONAR-TOOL.md) — **como adicionar uma tool nova** ao agente
-  (lado n8n + lado painel), passo a passo.
+- [`ADICIONAR-TOOL.md`](ADICIONAR-TOOL.md) — **(HISTÓRICO: lado n8n)**. Tool nova hoje é
+  `agente/src/tools/*.ts` + funções `api_n8n_*` + seção em `agente/src/agente/prompt.ts` +
+  entrada em `src/lib/tools/registro.ts` + linha em `catalogo_tools` pela migração
+  (`teste:catalogo-derivado` acusa se faltar).
 - [`VERIFICACAO-GRUPOS-MODULOS.md`](VERIFICACAO-GRUPOS-MODULOS.md) — os três grupos de
   módulo (padrão / configurável / contratável), o que cada um mostra ao cliente, e o
   **roteiro para exercitar o filtro de `contratado`**, que existia desde a §5.2 e nunca
