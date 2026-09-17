@@ -14,6 +14,7 @@ trabalho novo. A ordem de leitura para uma sessão nova:
 2. [`DESENHO-AGENTE-EM-CODIGO.md`](DESENHO-AGENTE-EM-CODIGO.md) — o desenho, o estado dos oito critérios (§5) e o que ficou de fora.
 3. [`../agente/README.md`](../agente/README.md) — envs, rotas, como apontar uma conta, estrutura do serviço.
 4. [`POLITICA-RETENCAO.md`](POLITICA-RETENCAO.md), [`REVISAO-PAINEL-2026-09-16.md`](REVISAO-PAINEL-2026-09-16.md), [`PENDENCIAS.md`](PENDENCIAS.md).
+5. [`DESENHO-VENDAS-MODALIDADES.md`](DESENHO-VENDAS-MODALIDADES.md) — **próximo trabalho (só desenho)**: entrega/retirada, pagar na hora, aviso ao dono; configurável pelo cliente no painel.
 
 O que continua VÁLIDO dos docs antigos: modelo de dados e regras de multi-tenancy
 (spec), o portão de venda afirmada (`aplica-portao.js` é o mesmo arquivo nos dois
