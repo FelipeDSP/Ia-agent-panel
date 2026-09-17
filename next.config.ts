@@ -18,6 +18,29 @@ const nextConfig: NextConfig = {
     // Build falha em erro de tipo. E o criterio de conclusao do CLAUDE.md.
     ignoreBuildErrors: false,
   },
+  /*
+   * Cabecalhos de seguranca (analise de 17/09/2026, achado 6). O painel nao
+   * embute nada de terceiros nem e embutido por ninguem: `frame-ancestors
+   * 'none'` fecha clickjacking; HSTS por um ano (Cloudflare/Coolify ja
+   * servem so HTTPS). CSP deliberadamente SEM restringir script/style: o
+   * Next injeta scripts inline com nonce que exigiriam middleware proprio —
+   * fica para uma rodada dedicada, com medicao.
+   */
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'; base-uri 'self'; form-action 'self'" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

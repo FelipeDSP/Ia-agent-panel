@@ -176,6 +176,16 @@ conta PJ/BaaS do Asaas entrar em produção; hoje é sandbox.
 - Git: nenhum `.env` versionado; varredura por padrões de chave não achou
   nada fora de testes/exemplos.
 
+## Andamento
+
+- **17/09 — feito, aguardando deploy do painel:** #1 (`next` 15.5.21 → 15.5.25,
+  `sharp` 0.35.4, `nanoid`; sobra só `postcss` 8.4.31 preso dentro do `next`,
+  cuja falha é de build com CSS de atacante — não há CSS de usuário aqui;
+  aceito até o Next soltar); #6 (cabeçalhos em `next.config.ts`, sem CSP de
+  script por enquanto); #2 (migração **73**, guarda de colunas em
+  `usuarios_painel`, `teste:migracao-guard-usuarios` 12/12 com sabotagem —
+  escrita, aplicar antes do deploy). Suíte 88/88 depois da atualização.
+
 ## Plano sugerido (ordem)
 
 1. **Hoje**: atualizar Next/sharp/postcss/nanoid (#1); cabeçalhos no
