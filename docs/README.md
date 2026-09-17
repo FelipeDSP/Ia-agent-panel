@@ -14,7 +14,7 @@ trabalho novo. A ordem de leitura para uma sessão nova:
 2. [`DESENHO-AGENTE-EM-CODIGO.md`](DESENHO-AGENTE-EM-CODIGO.md) — o desenho, o estado dos oito critérios (§5) e o que ficou de fora.
 3. [`../agente/README.md`](../agente/README.md) — envs, rotas, como apontar uma conta, estrutura do serviço.
 4. [`POLITICA-RETENCAO.md`](POLITICA-RETENCAO.md), [`REVISAO-PAINEL-2026-09-16.md`](REVISAO-PAINEL-2026-09-16.md), [`PENDENCIAS.md`](PENDENCIAS.md).
-5. [`DESENHO-VENDAS-MODALIDADES.md`](DESENHO-VENDAS-MODALIDADES.md) — **próximo trabalho (só desenho)**: entrega/retirada, pagar na hora, aviso ao dono; configurável pelo cliente no painel.
+5. [`DESENHO-VENDAS-MODALIDADES.md`](DESENHO-VENDAS-MODALIDADES.md) — **construído 17/09; migração 69 aguardando aplicação**: retirada, pagar na retirada, aviso ao dono; configurável pelo cliente em Configurações → Vendas.
 6. [`DESENHO-USUARIOS-POR-CONTA.md`](DESENHO-USUARIOS-POR-CONTA.md) — depois de vendas: admins + agentes com capacidades fixas por conta.
 
 O que continua VÁLIDO dos docs antigos: modelo de dados e regras de multi-tenancy

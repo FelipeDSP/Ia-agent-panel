@@ -30,6 +30,9 @@
 --
 --   * `api_n8n_notificar_venda` (mesma assinatura) escreve a modalidade e a
 --     forma de pagar no aviso, e respeita `config.eventos` (ausente = todos).
+--     Com `notificacao.nota_chatwoot` e sem WhatsApp, devolve a linha com
+--     `sessao`/`destino` NULOS — o serviço posta só a nota; o n8n congelado
+--     (que testa "tem destino") ignora a linha, e o claim expira em 5 min.
 --
 --   * NOVAS: `api_agente_aviso_pedido` / `api_agente_confirmar_aviso` — o
 --     aviso ao dono para os OUTROS eventos (`pagamento_confirmado`,
@@ -324,6 +327,7 @@ declare
   v_sessao   text;
   v_destino  text;
   v_eventos  text[];
+  v_nota     boolean;
   v_pedido   uuid;
   v_numero   integer;
   v_total    integer;
@@ -358,16 +362,21 @@ begin
   v_sessao  := btrim(coalesce(v_cfg #>> '{notificacao,sessao}', ''));
   v_destino := btrim(coalesce(v_cfg #>> '{notificacao,destino}', ''));
 
-  -- Config vazia nao e erro, e estado. Sai sem gastar o claim, para que
-  -- preencher o numero amanha passe a valer da proxima venda.
-  if coalesce(v_canal, 'nenhum') <> 'waha' or v_sessao = '' or v_destino = '' then
+  -- 69: o dono escolhe quais eventos avisam e se quer a nota no Chatwoot
+  select o.eventos, o.nota_chatwoot into v_eventos, v_nota from public.vendas_oferta(p_tenant_id) o;
+  v_nota := coalesce(v_nota, false);
+  if v_eventos is not null and not ('pedido_fechado' = any (v_eventos)) then
     return;
   end if;
 
-  -- 69: o dono escolhe quais eventos avisam; sem `pedido_fechado`, nada aqui
-  select o.eventos into v_eventos from public.vendas_oferta(p_tenant_id) o;
-  if v_eventos is not null and not ('pedido_fechado' = any (v_eventos)) then
-    return;
+  -- Config vazia nao e erro, e estado. Sai sem gastar o claim, para que
+  -- preencher o numero amanha passe a valer da proxima venda. 69: sem
+  -- WhatsApp mas com a nota pedida, segue com sessao/destino nulos.
+  if coalesce(v_canal, 'nenhum') <> 'waha' or v_sessao = '' or v_destino = '' then
+    if not v_nota then
+      return;
+    end if;
+    v_sessao := null; v_destino := null;
   end if;
 
   -- --- o pedido recem-fechado desta conversa ---

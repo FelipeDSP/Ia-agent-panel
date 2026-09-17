@@ -125,6 +125,15 @@ try {
   await c.query(`update public.tenant_tools set config = config || '{"notificacao":{"canal":"waha","sessao":"sess","destino":"5569922222222@c.us"}}' where tenant_id=$1 and tool_nome='vendas'`, [C.id]);
   chk('C: eventos sem pedido_fechado -> notificar_venda cala', (await um(`select * from public.api_n8n_notificar_venda($1, $2)`, [C.id, CONV])) === undefined);
   chk('C: pedido de C NÃO ganhou claim (calar não gasta)', (await pedidoDe(C)).metadados.notificacao === undefined);
+  // só a nota, sem WhatsApp: a linha vem com sessao/destino nulos e o claim é gasto
+  const N = await arranja('n', { pagamentos: ['na_retirada'], notificacao: { canal: 'nenhum', nota_chatwoot: true } });
+  await adiciona(N); await fecha(N, '{}');
+  const nn = await um(`select * from public.api_n8n_notificar_venda($1, $2)`, [N.id, CONV]);
+  chk('N (só nota): notificar_venda devolve a linha com sessao/destino NULOS e a mensagem', nn?.pedido_id && nn.sessao === null && nn.destino === null && /Venda fechada/.test(nn.mensagem ?? ''), JSON.stringify(nn));
+  chk('N: e gastou o claim (segunda chamada vazia)', (await um(`select * from public.api_n8n_notificar_venda($1, $2)`, [N.id, CONV])) === undefined);
+  const S = await arranja('s', { pagamentos: ['na_retirada'] });
+  await adiciona(S); await fecha(S, '{}');
+  chk('S (sem WhatsApp nem nota): notificar_venda cala e não gasta claim', (await um(`select * from public.api_n8n_notificar_venda($1, $2)`, [S.id, CONV])) === undefined && (await pedidoDe(S)).metadados.notificacao === undefined);
 
   console.log('\n== 4. painel_marcar_pedido — tenant do JWT ==\n');
   await claims(A.id);

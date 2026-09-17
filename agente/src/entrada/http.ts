@@ -85,7 +85,7 @@ export function criarServidor(deps: DepsHttp): http.Server {
       let body: unknown;
       try { body = JSON.parse(await lerCorpo(req)); } catch { return responder(res, 200, { reconhecido: false, motivo: 'corpo_invalido' }); }
       try {
-        const { estado } = await receberWebhookAsaas({ db: deps.db, chatwoot: deps.chatwoot, n8nJsDir: deps.n8nJsDir }, req.headers, body);
+        const { estado } = await receberWebhookAsaas({ db: deps.db, chatwoot: deps.chatwoot, n8nJsDir: deps.n8nJsDir, waha: deps.waha }, req.headers, body);
         return responder(res, 200, estado);
       } catch (e) {
         log('erro', 'asaas.webhook.falhou', { erro: erroTexto(e) });

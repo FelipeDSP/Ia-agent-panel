@@ -27,7 +27,9 @@ export function ferramentasDoPerfil(ctx: ContextoTool, perfil: Perfil, toolsAtiv
   const basicas = [ferramentaBuscaConhecimento(ctx), ferramentaTransferirHumano(ctx), ferramentaResolverConversa(ctx)];
   if (perfil === 'basico') return basicas;
   const vendas = [...basicas, ferramentaConsultarCatalogo(ctx), ferramentaGerenciarPedido(ctx), ferramentaEnviarFoto(ctx)];
-  if (temPagamento(toolsAtivas) && ctx.asaas) vendas.push(ferramentaGerarLinkPagamento(ctx, ctx.asaas));
+  // 69: a conta que não aceita pagar por link (só na retirada) não recebe a
+  // tool, mesmo com `pagamento` contratada — mesma condição da seção do prompt.
+  if (temPagamento(toolsAtivas) && ctx.asaas && ctx.aceitaLink !== false) vendas.push(ferramentaGerarLinkPagamento(ctx, ctx.asaas));
   return vendas;
 }
 

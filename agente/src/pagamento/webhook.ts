@@ -19,11 +19,13 @@
  * vem do log) — e é o que o prompt manda ele usar para confirmar ao cliente.
  */
 import { fnUma, fnValor, type Db } from '../db.ts';
+import { avisarDono } from '../pedido/aviso.ts';
+import type { Waha } from '../waha/notificar.ts';
 import { corpoN8n, rodarN8n } from '../n8n-js.ts';
 import type { Chatwoot } from '../chatwoot/enviar.ts';
 import { log, erroTexto } from '../log.ts';
 
-export interface DepsWebhook { db: Db; chatwoot: Chatwoot; n8nJsDir: string }
+export interface DepsWebhook { db: Db; chatwoot: Chatwoot; n8nJsDir: string; waha?: Waha | null }
 
 export interface EstadoWebhook { reconhecido: boolean; ja_processado: boolean; aplicou: boolean; motivo: string | null }
 
@@ -70,6 +72,10 @@ export async function receberWebhookAsaas(deps: DepsWebhook, headers: Record<str
       }
       try { await fnValor(deps.db, 'api_n8n_confirmar_pagamento_notificado', [r.tenant_id, r.cobranca_id, ok, detalhe]); }
       catch (e) { log('erro', 'asaas.webhook.confirmar_falhou', { erro: erroTexto(e) }); }
+      // 69: o dono fica sabendo que o dinheiro entrou (WhatsApp e/ou nota).
+      // `avisarDono` nunca lança; a função no banco cala se a conta não pediu.
+      const aviso = await avisarDono({ db: deps.db, chatwoot: deps.chatwoot, waha: deps.waha ?? null }, { tenantId: r.tenant_id, conversationId, evento: 'pagamento_confirmado', pedidoId: r.pedido_id });
+      if (aviso !== 'sem_destino') log('info', 'asaas.webhook.aviso_dono', { tenant: r.tenant_id, pedido: r.pedido_numero, aviso });
     }
     if (r.precisa_humano && Number.isFinite(conversationId)) {
       try { await deps.chatwoot.enviar({ tenantId: r.tenant_id, conversationId, content: NOTA_FORA_DO_PRAZO(r.pedido_numero, r.total_centavos), privada: true }); }

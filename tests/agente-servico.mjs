@@ -62,6 +62,8 @@ const M66 = leia('20260916220000_66_config_agente_por_tenant.sql');
 const R66 = leia('20260916220000_66_config_agente_por_tenant_rollback.sql');
 const M68 = leia('20260916235000_68_tokens_em_cache.sql');
 const R68 = leia('20260916235000_68_tokens_em_cache_rollback.sql');
+const M69 = leia('20260917150000_69_vendas_modalidades.sql');
+const R69 = leia('20260917150000_69_vendas_modalidades_rollback.sql');
 const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -157,6 +159,7 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R69));
   await c.query(semTx(R68));
   await c.query(semTx(R66));
   await c.query(semTx(R65));
@@ -169,6 +172,7 @@ try {
   await c.query(semTx(M65));
   await c.query(semTx(M66));
   await c.query(semTx(M68));
+  await c.query(semTx(M69));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -557,6 +561,74 @@ try {
 
     // 7h. tenant SEM pagamento (C, basico) e um com vendas sem pagamento não veem a tool.
     chk('tenant sem `pagamento` não vê a tool nem a seção (o de C tinha 3 ferramentas)', vistoPeloModelo.some((v) => v.ferramentas.length === 3) && !vistoPeloModelo.some((v) => v.ferramentas.length === 3 && v.ferramentas.includes('gerar_link_pagamento')));
+  }
+
+  // =========================================================================
+  console.log('\n== 7½. VENDAS (69): só na retirada, prompt por conta, aviso ao dono ==\n');
+  // =========================================================================
+  {
+    // A passa a vender SÓ na retirada, com entrega → atendente e aviso por WhatsApp + nota.
+    await c.query(`update public.tenant_tools set config = '{"pagamentos":["na_retirada"],"entrega":"atendente","notificacao":{"canal":"waha","sessao":"sess-teste","destino":"5500@c.us","nota_chatwoot":true}}'::jsonb where tenant_id=$1 and tool_nome='vendas'`, [T.a]);
+    roteiro.push({ tool: 'gerenciar_pedido', args: { acao: 'adicionar', produto_id: PROD, quantidade: 2, observacao: null, metadados: null, pagamento: null } },
+                  { tool: 'gerenciar_pedido', args: { acao: 'fechar', produto_id: null, quantidade: null, observacao: null, metadados: '{"observacao":"buscar as 7h"}', pagamento: null } },
+                  { texto: 'Pedido nº 7004 confirmado, pagamento na retirada — te espero às 7h!' });
+    const cwAntes = chamadasChatwoot.length; const wAntes = chamadasWaha.length;
+    const f9 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 500, content: 'quero 2 bolos, pego às 7h' }));
+    await vencer(); const c9 = await umCiclo(depsWorker);
+    const v9 = vistoPeloModelo.at(-1); const t9 = await turnoDaFila(f9.filaId);
+    chk('o system message tem a seção "Como esta loja vende" com "só NA RETIRADA" e entrega → transferir_humano',
+      /## Como esta loja vende/.test(v9.systemMessage) && /só NA RETIRADA/.test(v9.systemMessage) && /chame transferir_humano/.test(v9.systemMessage), v9.systemMessage.slice(-400));
+    chk('conta que não aceita link NÃO vê gerar_link_pagamento (mesmo com a tool contratada): 6 ferramentas',
+      v9.ferramentas.length === 6 && !v9.ferramentas.includes('gerar_link_pagamento') && !/## Ferramenta: gerar_link_pagamento/.test(v9.systemMessage), JSON.stringify(v9.ferramentas));
+    const ped9 = await um(`select id, status, numero, modalidade, pagamento_modo, metadados from public.pedidos where tenant_id=$1 and conversation_id=500 order by criado_em desc limit 1`, [T.a]);
+    const pf = (await passosDe(t9.id)).filter((p) => p.tipo === 'tool' && p.nome === 'gerenciar_pedido').at(-1);
+    chk('fechar sem `pagamento`: a única opção da conta vale — pedido aguardando, retirada, na_retirada, observação preservada; o retorno avisa NA RETIRADA',
+      ped9?.status === 'aguardando_pagamento' && ped9.modalidade === 'retirada' && ped9.pagamento_modo === 'na_retirada' && ped9.metadados?.observacao === 'buscar as 7h' && /NA RETIRADA/.test(pf?.saida?.texto ?? ''), JSON.stringify({ ped9, t: pf?.saida?.texto?.slice(0, 80) }));
+    chk('aviso ao dono: WhatsApp (sess-teste → 5500@c.us) com "NA RETIRADA" E nota privada no Chatwoot com "Venda fechada"; diagnóstico = enviado',
+      chamadasWaha.length === wAntes + 1 && chamadasWaha.at(-1).s === 'sess-teste' && chamadasWaha.at(-1).d === '5500@c.us' && /NA RETIRADA/.test(chamadasWaha.at(-1).t)
+      && chamadasChatwoot.slice(cwAntes).some((x) => x.privada === true && /Venda fechada/.test(x.content)) && pf?.saida?.diagnostico?.notificacao === 'enviado', JSON.stringify({ w: chamadasWaha.at(-1), d: pf?.saida?.diagnostico }));
+    chk('a resposta "confirmado, pagamento na retirada" PASSOU no portão (69) e chegou ao cliente', c9.respondidas === 1 && t9.portao_veredito === 'passou' && /pagamento na retirada/.test(chamadasChatwoot.at(-1).content), JSON.stringify({ v: t9.portao_veredito, c: chamadasChatwoot.at(-1).content.slice(0, 80) }));
+    chk('na retirada não trava o encerramento: tem_pedido_pendente = false', (await um(`select public.api_n8n_tem_pedido_pendente($1, 500) r`, [T.a])).r === false);
+
+    // o dono marca pago no painel (tenant do JWT do tenant_admin de A) e o aviso de pagamento sai pelos dois canais
+    await c.query('savepoint sp_claims');
+    await c.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ app_metadata: { papel: 'tenant_admin', tenant_id: T.a } })]);
+    const mk = await um(`select * from public.painel_marcar_pedido($1, 'pago')`, [ped9.id]);
+    await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
+    chk('painel_marcar_pedido(pago) pela conta: pago + retirado_em (pagou ao retirar)', mk.ok === true && mk.status === 'pago' && mk.retirado_em !== null, JSON.stringify(mk));
+    const { avisarDono } = await import('../agente/src/pedido/aviso.ts');
+    const cw2 = chamadasChatwoot.length; const w2 = chamadasWaha.length;
+    const av = await avisarDono({ db: c, chatwoot, waha }, { tenantId: T.a, conversationId: 500, evento: 'pagamento_confirmado', pedidoId: ped9.id });
+    chk('avisarDono(pagamento_confirmado): WhatsApp + nota "Pagamento confirmado", resultado enviado, claim gravado',
+      av === 'enviado' && chamadasWaha.length === w2 + 1 && /Pagamento confirmado/.test(chamadasWaha.at(-1).t) && chamadasChatwoot.slice(cw2).some((x) => x.privada === true && /Pagamento confirmado/.test(x.content))
+      && (await um(`select metadados #>> '{avisos,pagamento_confirmado,enviado_em}' e from public.pedidos where id=$1`, [ped9.id])).e !== null, JSON.stringify({ av, w: chamadasWaha.at(-1)?.t?.slice(0, 40) }));
+    const av2 = await avisarDono({ db: c, chatwoot, waha }, { tenantId: T.a, conversationId: 500, evento: 'pagamento_confirmado', pedidoId: ped9.id });
+    chk('de novo: sem_destino (claim já gasto), nada enviado', av2 === 'sem_destino' && chamadasWaha.length === w2 + 1);
+
+    // entrega: o banco recusa fechar e manda transferir; nada muda no pedido
+    roteiro.push({ tool: 'gerenciar_pedido', args: { acao: 'adicionar', produto_id: PROD, quantidade: 1, observacao: null, metadados: null, pagamento: null } },
+                  { tool: 'gerenciar_pedido', args: { acao: 'fechar', produto_id: null, quantidade: null, observacao: null, metadados: '{"entrega":"entrega"}', pagamento: null } },
+                  { texto: 'Para entrega vou te passar para um atendente, tá?' });
+    const f9b = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 501, content: 'quero 1 bolo entregue em casa' }));
+    await vencer(); await umCiclo(depsWorker);
+    const pf2 = (await passosDe((await turnoDaFila(f9b.filaId)).id)).filter((p) => p.tipo === 'tool' && p.nome === 'gerenciar_pedido').at(-1);
+    chk('fechar com entrega: "NADA FOI FECHADO … transferir_humano"; o carrinho segue rascunho',
+      /^NADA FOI FECHADO: pedido para ENTREGA/.test(pf2?.saida?.texto ?? '') && /transferir_humano/.test(pf2?.saida?.texto ?? '')
+      && (await um(`select status from public.pedidos where tenant_id=$1 and conversation_id=501 order by criado_em desc limit 1`, [T.a])).status === 'rascunho', pf2?.saida?.texto?.slice(0, 100));
+    // a conta que aceita os dois: sem `pagamento` o banco manda perguntar; com pagamento="link" fecha como link
+    await c.query(`update public.tenant_tools set config = config || '{"pagamentos":["link","na_retirada"]}'::jsonb where tenant_id=$1 and tool_nome='vendas'`, [T.a]);
+    roteiro.push({ tool: 'gerenciar_pedido', args: { acao: 'fechar', produto_id: null, quantidade: null, observacao: null, metadados: null, pagamento: null } },
+                  { tool: 'gerenciar_pedido', args: { acao: 'fechar', produto_id: null, quantidade: null, observacao: null, metadados: null, pagamento: 'link' } },
+                  { texto: 'Fechado! Já te mando o link.' });
+    const f9c = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 501, content: 'deixa, vou buscar' }));
+    await vencer(); await umCiclo(depsWorker);
+    const v9c = vistoPeloModelo.at(-1);
+    const pfs = (await passosDe((await turnoDaFila(f9c.filaId)).id)).filter((p) => p.tipo === 'tool' && p.nome === 'gerenciar_pedido');
+    chk('os dois oferecidos: o prompt manda PERGUNTAR; fechar sem pagamento -> "falta saber como o cliente prefere pagar"; com pagamento="link" fecha como link',
+      /PERGUNTE antes de fechar/.test(v9c.systemMessage) && /falta saber como o cliente prefere pagar/.test(pfs[0]?.saida?.texto ?? '') && /^Pedido nº \d+ fechado\./.test(pfs[1]?.saida?.texto ?? '')
+      && (await um(`select pagamento_modo from public.pedidos where tenant_id=$1 and conversation_id=501 and status='aguardando_pagamento'`, [T.a])).pagamento_modo === 'link', JSON.stringify(pfs.map((x) => x.saida?.texto?.slice(0, 60))));
+    chk('e com link aceito a ferramenta gerar_link_pagamento volta (7 ferramentas)', v9c.ferramentas.length === 7 && v9c.ferramentas.includes('gerar_link_pagamento'));
+    await c.query('release savepoint sp_claims');
   }
 
   // =========================================================================

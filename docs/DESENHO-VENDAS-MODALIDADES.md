@@ -1,7 +1,8 @@
 # Desenho — modalidades de venda e aviso ao dono
 
-> Conversa de 17/09/2026. **Só desenho; nada construído.** O que o Felipe
-> decidiu está marcado como decisão; o que falta decidir está na §6.
+> Conversa de 17/09/2026. **CONSTRUÍDO em 17/09 (ver §8); a migração 69 está
+> ESCRITA e aguarda autorização para aplicar.** O que o Felipe decidiu está
+> marcado como decisão.
 
 ## 1. O problema
 
@@ -107,7 +108,39 @@ recebimento** (mesma família da exceção da regra 1 de 16/09).
 
 Nada em aberto: o desenho está pronto para construir.
 
-## 7. Ordem de construção
+## 8. O que foi construído (17/09) e o que falta para entrar no ar
+
+- **Migração 69** (`20260917150000_69_vendas_modalidades.sql`, rollback com os
+  4 corpos anteriores verbatim): colunas em `pedidos`; `fechar_pedido` lê
+  `pagamento`/`modalidade` do jsonb e valida contra `tenant_tools.config` de
+  `vendas` (`vendas_oferta()`); na retirada não expira nem trava o resolver;
+  `notificar_venda` com modalidade/pagamento, `eventos` e nota-só;
+  `api_agente_aviso_pedido`/`confirmar_aviso`; `painel_marcar_pedido`.
+  `teste:migracao-vendas-modalidades` 53/53.
+- **Painel**: *Configurações → Vendas* (`formulario-vendas.tsx`, action
+  `salvarVendas`), sessão WAHA do aviso em *Clientes → cliente*
+  (`salvarVendasAgencia`), *Pedidos* com modalidade/pagamento e os botões
+  pago/retirado (`painel/pedidos/acoes.ts` → `painel_marcar_pedido`).
+  `src/lib/tools/vendas-config.ts` lê com os mesmos defaults do banco.
+- **Serviço**: seção dinâmica do prompt por conta (`pedido/oferta.ts`), tool
+  `gerenciar_pedido` com parâmetro `pagamento`, `gerar_link_pagamento` some
+  para quem não aceita link, aviso ao dono por WhatsApp + nota
+  (`pedido/aviso.ts`) na venda fechada e no webhook de pagamento; portão com
+  a exceção "pagamento na retirada" (`RE_PAGAMENTO_NA_RETIRADA`, que não
+  vale quando a frase afirma "recebido/caiu"). `teste:agente-servico` 95/95,
+  `teste:portao-pagamento` 56/56.
+- **Ordem para entrar no ar**: aplicar a 69 → redeploy do painel → redeploy do
+  agente. O painel antes da 69 quebraria em *Pedidos* (colunas novas); o
+  agente antes da 69 mandaria `pagamento` que a função antiga ignora (fecha
+  como link — sem erro, mas sem o comportamento novo).
+- **Não construído / a saber**: `pedido_cancelado` nunca dispara pela tool —
+  a ação `cancelar` do modelo não passa `alvo`, então só descarta carrinho
+  (venda fechada não é cancelável pelo agente hoje). O aviso existe no banco
+  e no serviço para quando isso mudar. Quem marca pago no painel não é
+  avisado (foi ele mesmo). Marcar pago no painel encerra a cobrança aberta
+  no banco, mas o link no Asaas fica ativo até vencer sozinho (30 min).
+
+## 7. Ordem de construção (como foi)
 
 1. Migração: colunas em `pedidos` (`modalidade`, `pagamento_modo`, `pago_em`,
    `retirado_em`) + `api_n8n_fechar_pedido` ganhando os campos por chave nova

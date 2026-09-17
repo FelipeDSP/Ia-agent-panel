@@ -245,6 +245,31 @@ const AFIRMA_PAGAMENTO_DO_PEDIDO = 'Sim! O pagamento do pedido nº 7001 foi conf
 }
 
 // ============================================================================
+console.log('\n== 5c. 69: "pagamento na retirada" e COMBINACAO, nao recebimento ==\n');
+// ============================================================================
+// A conta que aceita pagar ao buscar faz o modelo dizer "pedido confirmado,
+// pagamento na retirada" com o pedido AGUARDANDO. O marcador casa
+// ("confirmado, pagamento"); o que desfaz e o complemento que nomeia o
+// momento futuro. O espelho continua barrando: a mesma frase sem esse
+// complemento afirma recebimento e o pedido nao esta pago.
+const NA_RETIRADA = [
+  ['confirmado, pagamento na retirada', 'Pedido nº 7 confirmado, pagamento na retirada — é só chegar e acertar quando buscar.'],
+  ['sera na retirada', 'Seu pedido está confirmado e o pagamento será na retirada. 😊'],
+  ['ao retirar', 'Fechado! Pagamento confirmado para ser feito ao retirar no balcão.'],
+  ['quando vier buscar', 'Pedido confirmado. O pagamento você faz quando vier buscar.'],
+];
+for (const [rot, txt] of NA_RETIRADA) {
+  const r = rodar(FONTE, { texto: txt, estado: fechado() });
+  chk(`na retirada "${rot}" PASSA com pedido aguardando`, r._portao.veredito === 'passou', `${r._portao.veredito}: ${r.output.slice(0, 60)}`);
+}
+{
+  const r = rodar(FONTE, { texto: 'Pedido nº 7 confirmado, pagamento confirmado — é só chegar.', estado: fechado() });
+  chk('ESPELHO: a mesma forma SEM "na retirada" continua barrando (regra 3)', r._portao.veredito === 'barrado_regra_3', r._portao.veredito);
+  const r2 = rodar(FONTE, { texto: 'Seu pagamento na retirada já foi recebido, obrigado!', estado: fechado() });
+  chk('e "na retirada" nao e salvo-conduto: frase que AFIRMA recebido cai na regra 1 ou 3', r2._portao.veredito !== 'passou', r2._portao.veredito);
+}
+
+// ============================================================================
 console.log('\n== 6. SABOTAGEM ==\n');
 // ============================================================================
 function sabotar(de, para, rotulo) {
@@ -264,6 +289,16 @@ function sabotar(de, para, rotulo) {
   if (s) {
     const r = rodar(s, { texto: AFIRMA_PAGAMENTO_DO_PEDIDO, estado: pago({ escreveu_neste_turno: false }) });
     chk('S0: sem a excecao, a confirmacao VERDADEIRA e barrada pela regra 1 (a §5b pega)', r._portao.veredito === 'barrado_regra_1', r._portao.veredito);
+  }
+}
+
+// S5 (69) — sem a excecao da retirada, "pedido confirmado, pagamento na
+// retirada" volta a ser barrado com o pedido aguardando: a §5c pega.
+{
+  const s = sabotar('&& !(RE_PAGAMENTO_NA_RETIRADA.test(f) && !RE_DINHEIRO_ENTROU.test(f)));', ');', 'excecao da retirada removida');
+  if (s) {
+    const r = rodar(s, { texto: NA_RETIRADA[0][1], estado: fechado() });
+    chk('S5: sem a excecao, "pagamento na retirada" e barrado pela regra 3 (a §5c pega)', r._portao.veredito === 'barrado_regra_3', r._portao.veredito);
   }
 }
 

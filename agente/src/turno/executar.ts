@@ -37,6 +37,8 @@ import { transcreverAnexo, type Anexo, type Transcritor } from '../midia/transcr
 import { saidaLimpa } from './saida.ts';
 import { estimarComoN8n, desvioPct } from './estimativa.ts';
 import { aplicarPortao } from './portao.ts';
+import { lerOferta, secaoOferta } from '../pedido/oferta.ts';
+import type { ConfigTool } from '../tools/contexto.ts';
 
 export interface MensagemDaFila {
   acao: 'processar' | 'midia' | 'bloqueado';
@@ -172,8 +174,13 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
 
     // ---- perfil, prompt, memória ----
     const { perfil, toolsAtivas } = await turno.medir('registro', 'api_n8n_tools_ativas', {}, () => resolverPerfil(db, tenant.tenant_id));
-    const secoesExtras = perfil === 'vendas' && temPagamento(toolsAtivas) && deps.asaas ? ['gerar_link_pagamento'] : [];
-    const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt, secoesExtras });
+    // 69: o que ESTA conta oferece (formas de pagar, entrega → atendente) vira
+    // seção do prompt; o link só é oferecido ao modelo se a conta aceita link.
+    const oferta = perfil === 'vendas'
+      ? lerOferta((await fnUma<ConfigTool>(db, 'api_n8n_config_tool', [tenant.tenant_id, 'vendas']))?.config)
+      : null;
+    const secoesExtras = perfil === 'vendas' && temPagamento(toolsAtivas) && deps.asaas && (oferta?.pagamentos.includes('link') ?? true) ? ['gerar_link_pagamento'] : [];
+    const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt, secoesExtras, ...(oferta ? { secaoDinamica: secaoOferta(oferta) } : {}) });
     await fnValor(db, 'api_agente_prompt_registrar', [tenant.tenant_id, prompt.hash, prompt.texto, `${deps.versaoCodigo}/partes:${versaoDasPartes()}`]);
     await turno.prompt(perfil, prompt.hash);
     // 66: silêncio da memória e formas de pagamento são do tenant (agência-only).
@@ -195,7 +202,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     if (estadoDoSistema) await turno.passo('registro', 'estado_do_sistema', { saida: { texto: estadoDoSistema } });
 
     // ---- o modelo ----
-    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas };
+    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas, aceitaLink: oferta?.pagamentos.includes('link') ?? true };
     const ferramentas = ferramentasDoPerfil(ctx, perfil, toolsAtivas);
     const r = await deps.modelo.responder({
       modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto, estadoDoSistema,

@@ -97,13 +97,16 @@ export function hash(texto: string): string {
  * `system_prompt` do tenant — o espaço vem da expressão `\` {{ ... }}` e é
  * reproduzido aqui para a igualdade byte a byte com o wrapper.
  */
-export function montarSystemMessage(p: { perfil: Perfil; systemPromptDoTenant: string | null; secoesExtras?: string[] }): { texto: string; hash: string } {
+export function montarSystemMessage(p: { perfil: Perfil; systemPromptDoTenant: string | null; secoesExtras?: string[]; secaoDinamica?: string }): { texto: string; hash: string } {
   const secoes = [...SECOES_POR_PERFIL[p.perfil], ...(p.secoesExtras ?? [])];
+  // `secaoDinamica` (69): texto por tenant (o que a conta oferece em vendas),
+  // depois das seções fixas e antes das regras gerais. Sem ela, byte a byte o
+  // wrapper de sempre.
   const fixo = INTRO + secoes.map((s) => {
     const t = SECOES[s];
     if (!t) throw new Error(`seção de prompt desconhecida: ${s}`);
     return t;
-  }).join('') + REGRAS_GERAIS + (p.perfil === 'basico' ? REGRAS_SO_BASICO : '') + CAUDA;
+  }).join('') + (p.secaoDinamica ?? '') + REGRAS_GERAIS + (p.perfil === 'basico' ? REGRAS_SO_BASICO : '') + CAUDA;
   const texto = fixo + ' ' + (p.systemPromptDoTenant ?? '');
   return { texto, hash: hash(texto) };
 }

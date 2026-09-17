@@ -286,6 +286,20 @@ const RE_PAGAMENTO_FUTURO = new RegExp(
   'i',
 );
 
+// 69 — PAGAMENTO NA RETIRADA e combinacao, nao recebimento. A conta que aceita
+// pagar ao buscar faz o modelo dizer "pedido confirmado, pagamento na retirada"
+// com o pedido aguardando: o marcador casa ("confirmado, pagamento") e a frase
+// nao afirma que dinheiro entrou — diz ONDE vai entrar. Desfaz a afirmacao SO
+// quando a frase nomeia o momento futuro E nao traz forma forte de "entrou"
+// (recebido, caiu, compensado, identificado, ja esta/foi pago): "seu pagamento
+// na retirada ja foi recebido" continua afirmando, e continua barrando.
+const RE_PAGAMENTO_NA_RETIRADA = new RegExp(
+  '(na retirada|ao retirar|na hora de (retirar|buscar|pegar)'
+  + '|quando (vier |for |voc[eê] )?(retirar|buscar|pegar)|no balc[aã]o)',
+  'i',
+);
+const RE_DINHEIRO_ENTROU = /(recebid|caiu|compensad|identificad|(ja|já) (esta|está|foi) pag)/i;
+
 // Afirma pagamento recebido se ALGUMA frase traz a forma consumada e nenhuma
 // das duas listas de negacao a desfaz. `RE_NAO_CONSUMADO` entra tambem porque
 // pergunta e oferta valem aqui igual: "o pagamento ja foi confirmado?" e o
@@ -294,7 +308,8 @@ function afirmaPagamentoRecebido(txt) {
   return frases(txt).some((f) =>
     RE_PAGAMENTO_RECEBIDO.test(f)
     && !RE_PAGAMENTO_FUTURO.test(f)
-    && !RE_NAO_CONSUMADO.test(f));
+    && !RE_NAO_CONSUMADO.test(f)
+    && !(RE_PAGAMENTO_NA_RETIRADA.test(f) && !RE_DINHEIRO_ENTROU.test(f)));
 }
 
 // ----------------------------------------------------------------------------
