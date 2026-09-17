@@ -1,7 +1,7 @@
 # Desenho — modalidades de venda e aviso ao dono
 
-> Conversa de 17/09/2026. **CONSTRUÍDO em 17/09 (ver §8); migração 69 APLICADA
-> em 17/09 (ledger 20260917150000).** O que o Felipe decidiu está
+> Conversa de 17/09/2026. **CONSTRUÍDO em 17/09 (ver §8); migrações 69 e 70 APLICADAS
+> em 17/09 (ledger até 20260917200000).** O que o Felipe decidiu está
 > marcado como decisão.
 
 ## 1. O problema
