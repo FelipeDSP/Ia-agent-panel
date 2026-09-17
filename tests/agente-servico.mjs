@@ -66,6 +66,8 @@ const M69 = leia('20260917150000_69_vendas_modalidades.sql');
 const R69 = leia('20260917150000_69_vendas_modalidades_rollback.sql');
 const M70 = leia('20260917200000_70_aviso_pelo_chatwoot.sql');
 const R70 = leia('20260917200000_70_aviso_pelo_chatwoot_rollback.sql');
+const M71 = leia('20260917210000_71_pagamento_confirmado_tem_fim.sql');
+const R71 = leia('20260917210000_71_pagamento_confirmado_tem_fim_rollback.sql');
 const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -167,6 +169,7 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R71));
   await c.query(semTx(R70));
   await c.query(semTx(R69));
   await c.query(semTx(R68));
@@ -183,6 +186,7 @@ try {
   await c.query(semTx(M68));
   await c.query(semTx(M69));
   await c.query(semTx(M70));
+  await c.query(semTx(M71));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -606,6 +610,11 @@ try {
     const mk = await um(`select * from public.painel_marcar_pedido($1, 'pago')`, [ped9.id]);
     await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
     chk('painel_marcar_pedido(pago) pela conta: pago + retirado_em (pagou ao retirar)', mk.ok === true && mk.status === 'pago' && mk.retirado_em !== null, JSON.stringify(mk));
+    // 71: depois de retirado, o turno seguinte NÃO recebe o fato "pagamento confirmado" (era o que travava o pedido novo)
+    roteiro.push({ texto: 'Oi! O que você gostaria hoje?' });
+    const f9z = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 500, content: 'oi, quero fazer outro pedido' }));
+    await vencer(); await umCiclo(depsWorker);
+    chk('71: pedido pago E retirado -> o modelo NÃO recebe fato de sistema no turno seguinte', (vistoPeloModelo.at(-1).estado ?? null) === null && !(await passosDe((await turnoDaFila(f9z.filaId)).id)).some((p) => p.nome === 'estado_do_sistema'), String(vistoPeloModelo.at(-1).estado));
     const { avisarDono } = await import('../agente/src/pedido/aviso.ts');
     const cw2 = chamadasChatwoot.length; const w2 = chamadasWaha.length;
     const av = await avisarDono({ db: c, chatwoot, waha }, { tenantId: T.a, conversationId: 500, evento: 'pagamento_confirmado', pedidoId: ped9.id });

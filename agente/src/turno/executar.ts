@@ -108,8 +108,12 @@ export async function narrarEstadoDoSistema(db: Db, tenantId: string, conversati
   if (perfil !== 'vendas') return null;
   const e = await fnUma<{ pagamento_confirmado: boolean | null; pedido_numero: number | null; pedido_status: string | null }>(db, 'api_n8n_estado_pedido', [tenantId, conversationId, perfil]);
   if (e?.pagamento_confirmado !== true) return null;
-  return 'FATO DO SISTEMA (do banco, não do cliente): o pagamento do pedido desta conversa está CONFIRMADO — '
-    + 'o sistema já recebeu e já avisou o cliente com "Pagamento confirmado!". Se o cliente perguntar se caiu, confirme que sim.';
+  // 71: o banco só devolve `true` para pedido pago, não retirado, há menos de
+  // 24 h — o fato nomeia o pedido para o modelo não estendê-lo a um novo.
+  const qual = e.pedido_numero ? `do pedido nº ${e.pedido_numero}` : 'do último pedido desta conversa';
+  return `FATO DO SISTEMA (do banco, não do cliente): o pagamento ${qual} está CONFIRMADO — `
+    + 'o sistema já recebeu e já avisou o cliente com "Pagamento confirmado!". Se o cliente perguntar se caiu, confirme que sim. '
+    + 'Isso vale SÓ para esse pedido: um pedido novo começa do zero e não está pago.';
 }
 
 /** Sem texto nenhum utilizável (só avisos de mídia): o que dizer. */

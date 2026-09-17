@@ -24,6 +24,8 @@ const M69 = leia('20260917150000_69_vendas_modalidades.sql');
 const R69 = leia('20260917150000_69_vendas_modalidades_rollback.sql');
 const M70 = leia('20260917200000_70_aviso_pelo_chatwoot.sql');
 const R70 = leia('20260917200000_70_aviso_pelo_chatwoot_rollback.sql');
+const M71 = leia('20260917210000_71_pagamento_confirmado_tem_fim.sql');
+const R71 = leia('20260917210000_71_pagamento_confirmado_tem_fim_rollback.sql');
 const semTx = (s) => s.replace(/^\s*(begin|commit)\s*;\s*$/gim, '');
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -71,16 +73,19 @@ const envelhece = async (ids, horas) => {
 };
 
 try {
-  console.log('\n== 0. Rollback primeiro (70, depois 69), 69 e 70 duas vezes, ACL por diff ==\n');
+  console.log('\n== 0. Rollback primeiro (71, 70, 69), 69/70/71 duas vezes, ACL por diff ==\n');
+  await c.query(semTx(R71));
   await c.query(semTx(R70));
   await c.query(semTx(R69));
   const aclAntes = {};
-  for (const f of SUBST) aclAntes[f] = await aclFn(f);
+  for (const f of [...SUBST, 'api_n8n_estado_pedido']) aclAntes[f] = await aclFn(f);
   chk('pré-69: sem colunas, sem funções novas', !(await temCol('pagamento_modo')) && !(await temCol('retirado_em'))
     && (await aclFn('painel_marcar_pedido')) === '(AUSENTE)' && (await aclFn('api_agente_aviso_pedido')) === '(AUSENTE)');
   await c.query(semTx(M69)); await c.query(semTx(M69));
   await c.query(semTx(M70)); await c.query(semTx(M70));
-  chk('a 69 e a 70 aplicam duas vezes; colunas e funções existem', (await temCol('modalidade')) && (await temCol('pagamento_modo')) && (await temCol('pago_em')) && (await temCol('retirado_em'))
+  await c.query(semTx(M71)); await c.query(semTx(M71));
+  chk('ACL de api_n8n_estado_pedido igual ao de antes (71: create or replace)', (await aclFn('api_n8n_estado_pedido')) === aclAntes['api_n8n_estado_pedido']);
+  chk('a 69, a 70 e a 71 aplicam duas vezes; colunas e funções existem', (await temCol('modalidade')) && (await temCol('pagamento_modo')) && (await temCol('pago_em')) && (await temCol('retirado_em'))
     && (await aclFn('painel_marcar_pedido')) !== '(AUSENTE)');
   for (const f of SUBST) chk(`ACL de ${f} igual ao de antes (create or replace, sem drop)`, (await aclFn(f)) === aclAntes[f], `${aclAntes[f]} -> ${await aclFn(f)}`);
   chk('api_agente_aviso_pedido / confirmar_aviso: ACL == irmã api_n8n_fechar_pedido (service_role + n8n_agent)',
@@ -170,6 +175,10 @@ try {
   const xp = await um(`select * from public.painel_marcar_pedido($1, 'pago')`, [pb.id]);
   const pb2 = await pedidoDe(B);
   chk('B: pago -> status pago, pago_em E retirado_em (paga ao retirar)', xp.ok === true && pb2.status === 'pago' && pb2.pago_em !== null && pb2.retirado_em !== null, JSON.stringify(xp));
+  await claims(null);
+  chk('71: pedido pago E retirado -> estado_pedido.pagamento_confirmado = FALSE (o ciclo fechou; o próximo turno começa limpo)',
+    (await um(`select pagamento_confirmado p from public.api_n8n_estado_pedido($1, $2)`, [B.id, CONV])).p === false);
+  await claims(B.id);
   chk('B: pago de novo -> nao_esta_aguardando; retirado de novo -> ja_retirado',
     (await um(`select * from public.painel_marcar_pedido($1, 'pago')`, [pb.id])).motivo === 'nao_esta_aguardando'
     && (await um(`select * from public.painel_marcar_pedido($1, 'retirado')`, [pb.id])).motivo === 'ja_retirado');
@@ -193,6 +202,22 @@ try {
   const xa2 = await um(`select * from public.painel_marcar_pedido($1, 'retirado')`, [pa2.id]);
   await claims(null);
   chk('A (link): retirado depois de pago -> ok, retirado_em preenchido', xa2.ok === true && xa2.retirado_em !== null && (await pedidoPorId(pa2.id)).retirado_em !== null, JSON.stringify(xa2));
+  // 71: pago sem retirada vale 24 h — o "caiu?" de logo depois continua coberto; a semana seguinte não
+  {
+    const L = await arranja('l', {});
+    await adiciona(L); await fecha(L, '{}');
+    const pl = await pedidoDe(L);
+    await c.query(`update public.pedidos set status='pago' where id=$1`, [pl.id]);   // como o webhook do Asaas (sem pago_em)
+    chk('71: pago pelo link agora (sem retirar) -> pagamento_confirmado TRUE', (await um(`select pagamento_confirmado p from public.api_n8n_estado_pedido($1, $2)`, [L.id, CONV])).p === true);
+    await envelhece([pl.id], 30);
+    chk('71: o mesmo pedido pago há 30 h -> FALSE', (await um(`select pagamento_confirmado p from public.api_n8n_estado_pedido($1, $2)`, [L.id, CONV])).p === false);
+    await c.query('savepoint sp_s71');
+    const mut = M71.split("and p.retirado_em is null\n").join('');
+    chk('S71 mutou (md5)', md5(mut) !== md5(M71));
+    await c.query(semTx(mut));
+    chk('S71: sem a condição de retirada, B (pago e retirado) volta a ser "confirmado" (a asserção 71 pegaria)', (await um(`select pagamento_confirmado p from public.api_n8n_estado_pedido($1, $2)`, [B.id, CONV])).p === true);
+    await c.query('rollback to savepoint sp_s71');
+  }
 
   console.log('\n== 5. Aviso por evento (idempotente, por evento) ==\n');
   const av = await um(`select * from public.api_agente_aviso_pedido($1, $2, 'pagamento_confirmado')`, [B.id, CONV]);
