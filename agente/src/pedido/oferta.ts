@@ -14,9 +14,19 @@ export interface Oferta {
   notaChatwoot: boolean;
   /** `notificacao.destino` (dígitos), para reconhecer a conversa do próprio dono. */
   destinoDono: string | null;
+  /** 72: o agente pergunta em nome de quem fica o pedido (o banco recusa fechar sem). */
+  pedirNome: boolean;
+  /** 72: endereço e link do mapa que o serviço manda ao cliente após fechar para retirada. */
+  retirada: { endereco: string | null; mapaUrl: string | null };
 }
 
-export const OFERTA_PADRAO: Oferta = { pagamentos: ['link'], entrega: 'nao', notaChatwoot: false, destinoDono: null };
+export const OFERTA_PADRAO: Oferta = { pagamentos: ['link'], entrega: 'nao', notaChatwoot: false, destinoDono: null, pedirNome: false, retirada: { endereco: null, mapaUrl: null } };
+
+/** A mensagem de endereço que vai ao cliente; null quando a conta não cadastrou. */
+export function mensagemDeRetirada(o: Oferta): string | null {
+  if (!o.retirada.endereco) return null;
+  return `📍 *Retirada:* ${o.retirada.endereco}` + (o.retirada.mapaUrl ? `\n🗺️ ${o.retirada.mapaUrl}` : '');
+}
 
 /** `55…@c.us` / `+55…` → dígitos; null quando não parece número. */
 export function digitosDe(v: unknown): string | null {
@@ -33,6 +43,13 @@ export function lerOferta(config: unknown): Oferta {
     entrega: c['entrega'] === 'atendente' ? 'atendente' : 'nao',
     notaChatwoot: n['nota_chatwoot'] === true,
     destinoDono: digitosDe(n['destino']),
+    pedirNome: c['pedir_nome'] === true,
+    retirada: (() => {
+      const r = (c['retirada'] && typeof c['retirada'] === 'object' ? c['retirada'] : {}) as Record<string, unknown>;
+      const endereco = typeof r['endereco'] === 'string' && r['endereco'].trim() ? r['endereco'].trim().slice(0, 300) : null;
+      const mapaUrl = typeof r['mapa_url'] === 'string' && /^https?:\/\/\S+$/.test(r['mapa_url'].trim()) ? r['mapa_url'].trim() : null;
+      return { endereco, mapaUrl };
+    })(),
   };
 }
 
@@ -49,6 +66,12 @@ export function secaoOferta(o: Oferta): string {
     linhas.push('- Se o cliente quiser ENTREGA: monte o pedido normalmente (adicionar/ver) e, quando ele confirmar os itens, NÃO chame fechar — chame transferir_humano com o resumo "cliente quer entrega" + os itens e o total. Um atendente combina a entrega e o valor.');
   } else {
     linhas.push('- Se o cliente quiser ENTREGA: diga que por aqui só há retirada no local e pergunte se quer retirar. Não transfira por isso.');
+  }
+  if (o.pedirNome) {
+    linhas.push('- Antes de fechar, pergunte EM NOME DE QUEM fica o pedido (quem vai retirar) e passe em nome_retirada. Sem o nome o fechamento é recusado.');
+  }
+  if (o.retirada.endereco) {
+    linhas.push('- O endereço de retirada é enviado ao cliente automaticamente, em mensagem própria, assim que o pedido fecha — não o repita nem invente outro.');
   }
   const soLink = o.pagamentos.length === 1 && o.pagamentos[0] === 'link';
   const soRetirada = o.pagamentos.length === 1 && o.pagamentos[0] === 'na_retirada';

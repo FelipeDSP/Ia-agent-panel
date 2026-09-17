@@ -254,6 +254,8 @@ export async function salvarVendas(_estado: EstadoConfig, fd: FormData): Promise
     pagamentos: validado.valor.pagamentos,
     entrega: validado.valor.entrega,
     eventos: validado.valor.eventos,
+    pedir_nome: validado.valor.pedir_nome,
+    retirada: validado.valor.retirada,
     notificacao: {
       canal,
       ...(sessao ? { sessao } : {}),

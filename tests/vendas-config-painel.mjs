@@ -71,6 +71,24 @@ console.log('\n== canalDerivado (70): o cliente diz SE; o caminho é derivado da
   chk('lerConfigVendas aceita canal chatwoot', lerConfigVendas({ notificacao: { canal: 'chatwoot', destino: '55@c.us' } }).notificacao.canal === 'chatwoot');
 }
 
+console.log('\n== 72: nome de quem retira e endereço ==\n');
+{
+  const base = { pagamento_link: 'on', entrega: 'nao' };
+  const r = validarVendasCliente(form({ ...base, pedir_nome: 'on', endereco: ' Av. Central, 10 ', mapa_url: 'https://maps.app.goo.gl/abc' }), { transferirDisponivel: false });
+  chk('pedir_nome + endereço + mapa -> ok, endereço com trim', r.ok && r.valor.pedir_nome === true && r.valor.retirada.endereco === 'Av. Central, 10' && r.valor.retirada.mapa_url === 'https://maps.app.goo.gl/abc', JSON.stringify(r));
+  const r2 = validarVendasCliente(form({ ...base, mapa_url: 'maps.app.goo.gl/abc', endereco: 'x' }), { transferirDisponivel: false });
+  chk('mapa sem https -> erro em mapa_url', !r2.ok && 'mapa_url' in r2.erros);
+  const r3 = validarVendasCliente(form({ ...base, mapa_url: 'https://maps.app.goo.gl/abc' }), { transferirDisponivel: false });
+  chk('mapa sem endereço em texto -> erro em endereco', !r3.ok && 'endereco' in r3.erros);
+  const r4 = validarVendasCliente(form({ ...base, endereco: 'x'.repeat(301) }), { transferirDisponivel: false });
+  chk('endereço acima de 300 -> erro', !r4.ok && 'endereco' in r4.erros);
+  const r5 = validarVendasCliente(form(base), { transferirDisponivel: false });
+  chk('sem nada -> pedir_nome false e retirada {}', r5.ok && r5.valor.pedir_nome === false && JSON.stringify(r5.valor.retirada) === '{}');
+  const l = lerConfigVendas({ pedir_nome: true, retirada: { endereco: 'Rua A', mapa_url: 'ftp://x' } });
+  chk('lerConfigVendas: pedir_nome true; mapa inválido descartado; endereço fica', l.pedir_nome === true && l.retirada.endereco === 'Rua A' && l.retirada.mapa_url === undefined);
+  chk('lerConfigVendas({}): pedir_nome false, retirada {}', lerConfigVendas({}).pedir_nome === false && JSON.stringify(lerConfigVendas({}).retirada) === '{}');
+}
+
 console.log('\n== validarVendasAgencia ==\n');
 {
   chk('sessão vazia é válida (= sem aviso)', validarVendasAgencia(form({ sessao: '  ' })).ok === true && validarVendasAgencia(form({ sessao: '  ' })).valor.sessao === '');

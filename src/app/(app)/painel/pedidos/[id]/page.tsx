@@ -27,7 +27,7 @@ export default async function PaginaPedido({ params }: { params: Promise<{ id: s
   // outro cliente dá 404, não "sem permissão", que confirmaria a existência.
   const { data: pedido } = await supabase
     .from('pedidos')
-    .select('id, numero, conversation_id, status, total_centavos, metadados, criado_em, atualizado_em, modalidade, pagamento_modo, pago_em, retirado_em')
+    .select('id, numero, conversation_id, status, total_centavos, metadados, criado_em, atualizado_em, modalidade, pagamento_modo, pago_em, retirado_em, retirada_nome')
     .eq('id', id)
     .eq('tenant_id', usuario.tenantId)
     .is('deletado_em', null)
@@ -85,6 +85,12 @@ export default async function PaginaPedido({ params }: { params: Promise<{ id: s
                 <dt className="font-medium">Pagamento:</dt>
                 <dd className="text-muted-foreground">{rotuloPagamentoModo(pedido.pagamento_modo as string | null)}</dd>
               </div>
+              {pedido.retirada_nome ? (
+                <div className="flex gap-2">
+                  <dt className="font-medium">Quem retira:</dt>
+                  <dd className="text-muted-foreground">{pedido.retirada_nome as string}</dd>
+                </div>
+              ) : null}
               {pedido.pago_em ? (
                 <div className="flex gap-2">
                   <dt className="font-medium">Pago em:</dt>

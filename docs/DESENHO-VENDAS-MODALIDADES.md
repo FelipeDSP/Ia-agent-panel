@@ -148,6 +148,14 @@ Nada em aberto: o desenho está pronto para construir.
 - **71 (17/09)**: o fato "pagamento confirmado" que o serviço injeta no
   modelo tem fim — pedido retirado encerra o ciclo; pago sem retirar vale 24 h.
   Sem isso, o pedido pago no balcão travava a conversa em "já está pago".
+- **72 (17/09, pedido do Felipe)**: *quem retira* — opção `pedir_nome` em
+  *Configurações → Vendas*; com ela o banco recusa fechar sem o nome
+  (`nome_retirada` na tool), coluna `pedidos.retirada_nome`, "🙋 Retira" no
+  aviso e em *Pedidos*. *Endereço de retirada* + link do mapa na mesma tela:
+  o serviço manda ao cliente em mensagem própria logo após fechar para
+  retirada (entra em `mensagens_log`, fonte `endereco_retirada`); não é
+  "localização" nativa do WhatsApp — em inbox API isso depende do integrador,
+  e texto + link funciona em qualquer canal.
 - **Não construído / a saber**: `pedido_cancelado` nunca dispara pela tool —
   a ação `cancelar` do modelo não passa `alvo`, então só descarta carrinho
   (venda fechada não é cancelável pelo agente hoje). O aviso existe no banco

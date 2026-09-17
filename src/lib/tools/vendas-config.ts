@@ -9,6 +9,8 @@
  *     entrega: 'atendente'|'nao',                  // ausente = 'nao'
  *     eventos: Evento[],                           // ausente = todos
  *     notificacao: { canal: 'waha'|'chatwoot'|'nenhum', sessao?, destino?, nota_chatwoot? },
+ *     pedir_nome: boolean,                          // 72: fechar exige o nome de quem retira
+ *     retirada: { endereco?, mapa_url? },           // 72: o serviço manda ao cliente ao fechar
  *     horas_expirar_pagamento?: string }           // da migração 38; não é daqui
  *
  * CANAL (17/09, migração 70): o cliente só diz SE quer WhatsApp e PARA QUAL
@@ -61,11 +63,17 @@ export type NotificacaoVendas = {
   nota_chatwoot?: boolean;
 };
 
+export type Retirada = { endereco?: string; mapa_url?: string };
+
 export type ConfigVendas = {
   pagamentos: Pagamento[];
   entrega: 'atendente' | 'nao';
   eventos: Evento[];
   notificacao: NotificacaoVendas;
+  /** 72: o agente pergunta em nome de quem fica o pedido; o banco recusa fechar sem. Ausente = não. */
+  pedir_nome: boolean;
+  /** 72: endereço (e link do mapa) que o serviço manda ao cliente depois de fechar para retirada. */
+  retirada: Retirada;
 };
 
 /** O que o banco assume quando a chave falta — a mesma leitura de `vendas_oferta()`. */
@@ -74,7 +82,16 @@ export const VENDAS_PADRAO: ConfigVendas = {
   entrega: 'nao',
   eventos: EVENTOS.map((e) => e.valor),
   notificacao: { canal: 'nenhum' },
+  pedir_nome: false,
+  retirada: {},
 };
+
+export const MAX_ENDERECO = 300;
+
+/** http(s) com host; qualquer outra coisa é recusada (o link vai ao cliente clicável). */
+export function urlDeMapaValida(v: string): boolean {
+  try { const u = new URL(v); return (u.protocol === 'https:' || u.protocol === 'http:') && u.hostname.length > 0; } catch { return false; }
+}
 
 const PAGAMENTOS_VALIDOS = new Set<string>(PAGAMENTOS.map((p) => p.valor));
 const EVENTOS_VALIDOS = new Set<string>(EVENTOS.map((e) => e.valor));
@@ -93,6 +110,9 @@ export function lerConfigVendas(bruto: unknown): ConfigVendas {
     ? (c['eventos'].filter((x): x is Evento => typeof x === 'string' && EVENTOS_VALIDOS.has(x)))
     : [];
   const n = (c['notificacao'] && typeof c['notificacao'] === 'object' ? c['notificacao'] : {}) as Record<string, unknown>;
+  const r = (c['retirada'] && typeof c['retirada'] === 'object' ? c['retirada'] : {}) as Record<string, unknown>;
+  const endereco = typeof r['endereco'] === 'string' ? r['endereco'].trim().slice(0, MAX_ENDERECO) : '';
+  const mapa = typeof r['mapa_url'] === 'string' && urlDeMapaValida(r['mapa_url'].trim()) ? r['mapa_url'].trim() : '';
   return {
     pagamentos: pagamentos.length > 0 ? [...new Set(pagamentos)] : VENDAS_PADRAO.pagamentos,
     entrega: c['entrega'] === 'atendente' ? 'atendente' : 'nao',
@@ -103,6 +123,8 @@ export function lerConfigVendas(bruto: unknown): ConfigVendas {
       ...(typeof n['destino'] === 'string' && n['destino'] ? { destino: n['destino'] } : {}),
       ...(n['nota_chatwoot'] === true ? { nota_chatwoot: true } : {}),
     },
+    pedir_nome: c['pedir_nome'] === true,
+    retirada: { ...(endereco ? { endereco } : {}), ...(mapa ? { mapa_url: mapa } : {}) },
   };
 }
 
@@ -124,8 +146,17 @@ export function validarVendasCliente(
   notificar: boolean;
   destino?: string;
   nota_chatwoot: boolean;
+  pedir_nome: boolean;
+  retirada: Retirada;
 }> {
   const erros: Record<string, string> = {};
+
+  const pedir_nome = fd.get('pedir_nome') === 'on' || fd.get('pedir_nome') === 'true';
+  const endereco = String(fd.get('endereco') ?? '').trim();
+  if (endereco.length > MAX_ENDERECO) erros['endereco'] = `Endereço com no máximo ${MAX_ENDERECO} caracteres.`;
+  const mapa_url = String(fd.get('mapa_url') ?? '').trim();
+  if (mapa_url && !urlDeMapaValida(mapa_url)) erros['mapa_url'] = 'Cole o link completo do mapa (começa com https://).';
+  if (mapa_url && !endereco) erros['endereco'] = 'Com o link do mapa, informe também o endereço em texto.';
 
   const pagamentos = PAGAMENTOS.map((p) => p.valor).filter((v) => fd.get(`pagamento_${v}`) === 'on');
   if (pagamentos.length === 0) erros['pagamentos'] = 'Marque ao menos uma forma de pagamento.';
@@ -167,6 +198,8 @@ export function validarVendasCliente(
       notificar,
       destino,
       nota_chatwoot,
+      pedir_nome,
+      retirada: { ...(endereco ? { endereco } : {}), ...(mapa_url ? { mapa_url } : {}) },
     },
   };
 }

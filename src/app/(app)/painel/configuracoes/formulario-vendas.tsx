@@ -7,7 +7,8 @@ import { Alert } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SubmitButton } from '@/components/ui/submit-button';
-import { EVENTOS, PAGAMENTOS, type ConfigVendas } from '@/lib/tools/vendas-config';
+import { Textarea } from '@/components/ui/textarea';
+import { EVENTOS, MAX_ENDERECO, PAGAMENTOS, type ConfigVendas } from '@/lib/tools/vendas-config';
 
 function ErroCampo({ msg }: { msg?: string }) {
   if (!msg) return null;
@@ -65,6 +66,32 @@ export function FormularioVendas({
         <p className="text-xs text-muted-foreground">
           Com as duas marcadas, o agente pergunta ao cliente qual prefere antes de fechar.
         </p>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-3 rounded-xl border border-border p-4">
+        <legend className="px-1 text-sm font-medium">Retirada</legend>
+        <label className="flex items-start gap-3">
+          <input type="checkbox" name="pedir_nome" defaultChecked={config.pedir_nome} className={`${CHECK} mt-0.5`} />
+          <span className="flex flex-col">
+            <span className="text-sm">Perguntar o nome de quem vai retirar</span>
+            <span className="text-xs text-muted-foreground">
+              O agente pergunta em nome de quem fica o pedido antes de fechar; o nome vai no aviso e em Pedidos.
+            </span>
+          </span>
+        </label>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="endereco">Endereço de retirada</Label>
+          <Textarea id="endereco" name="endereco" rows={2} maxLength={MAX_ENDERECO} defaultValue={config.retirada.endereco ?? ''} placeholder="Ex.: Av. Tancredo Neves, 1234 — Centro, Ariquemes. Seg a sex, 8h às 18h." />
+          <p className="text-xs text-muted-foreground">
+            Enviado ao cliente assim que o pedido fecha para retirada. Vazio = não envia.
+          </p>
+          <ErroCampo msg={estado.errosCampo?.['endereco']} />
+        </div>
+        <div className="flex max-w-md flex-col gap-2">
+          <Label htmlFor="mapa_url">Link do mapa (opcional)</Label>
+          <Input id="mapa_url" name="mapa_url" defaultValue={config.retirada.mapa_url ?? ''} placeholder="https://maps.app.goo.gl/…" />
+          <ErroCampo msg={estado.errosCampo?.['mapa_url']} />
+        </div>
       </fieldset>
 
       <fieldset className="flex flex-col gap-3 rounded-xl border border-border p-4">

@@ -18,9 +18,10 @@ import type { FerramentaDoModelo } from '../agente/modelo.ts';
 import type { ConfigTool, ContextoTool } from './contexto.ts';
 import { TEXTO_VENDAS_INDISPONIVEL } from './consultar-catalogo.ts';
 import { avisarDono, avisarVendaFechada, type ResultadoAviso } from '../pedido/aviso.ts';
-import { lerOferta } from '../pedido/oferta.ts';
+import { lerOferta, mensagemDeRetirada } from '../pedido/oferta.ts';
+import { log, erroTexto } from '../log.ts';
 
-export interface ArgsPedido { acao: string; produto_id: string | null; quantidade: number | null; observacao: string | null; metadados: string | null; pagamento?: string | null }
+export interface ArgsPedido { acao: string; produto_id: string | null; quantidade: number | null; observacao: string | null; metadados: string | null; pagamento?: string | null; nome_retirada?: string | null }
 
 /**
  * `pagamento` (69) entra no jsonb que `api_n8n_fechar_pedido` já recebia — a
@@ -28,19 +29,20 @@ export interface ArgsPedido { acao: string; produto_id: string | null; quantidad
  * que ela passou a ler. Metadados que não são JSON-objeto viram `observacao`,
  * como a função faria sozinha.
  */
-export function metadadosComPagamento(metadados: string | null, pagamento: string | null | undefined): string | null {
+export function metadadosComPagamento(metadados: string | null, pagamento: string | null | undefined, nomeRetirada?: string | null): string | null {
   const pg = String(pagamento ?? '').trim().toLowerCase();
-  if (!pg) return metadados;
+  const nome = String(nomeRetirada ?? '').trim().slice(0, 120);
+  if (!pg && !nome) return metadados;
   let base: Record<string, unknown> = {};
   const bruto = String(metadados ?? '').trim();
   if (bruto) {
     try { const j: unknown = JSON.parse(bruto); base = j && typeof j === 'object' && !Array.isArray(j) ? (j as Record<string, unknown>) : { observacao: bruto }; }
     catch { base = { observacao: bruto }; }
   }
-  return JSON.stringify({ ...base, pagamento: pg });
+  return JSON.stringify({ ...base, ...(pg ? { pagamento: pg } : {}), ...(nome ? { nome_retirada: nome } : {}) });
 }
 
-export async function gerenciarPedido(ctx: ContextoTool, a: ArgsPedido): Promise<{ resultado: string; acao: string; notificacao?: ResultadoAviso }> {
+export async function gerenciarPedido(ctx: ContextoTool, a: ArgsPedido): Promise<{ resultado: string; acao: string; notificacao?: ResultadoAviso; endereco?: 'enviado' | 'falhou' }> {
   const cfg = await fnUma<ConfigTool>(ctx.db, 'api_n8n_config_tool', [ctx.tenant.tenant_id, TOOL_NOME]);
   if (cfg?.tool_ativa !== true) return { resultado: TEXTO_VENDAS_INDISPONIVEL, acao: a.acao };
 
@@ -50,7 +52,7 @@ export async function gerenciarPedido(ctx: ContextoTool, a: ArgsPedido): Promise
   const valores: Record<string, unknown> = {
     tenant_id: ctx.tenant.tenant_id, conversation_id: ctx.conversationId,
     produto_id: a.produto_id ?? null, quantidade: a.quantidade ?? null,
-    observacao: a.observacao ?? null, metadados: metadadosComPagamento(a.metadados ?? null, a.pagamento),
+    observacao: a.observacao ?? null, metadados: metadadosComPagamento(a.metadados ?? null, a.pagamento, a.nome_retirada),
   };
   const params = acao.params.map((p) => valores[p] === undefined ? null : valores[p]);
   const r = await ctx.db.query<{ resultado: string }>(acao.query, params);
@@ -60,8 +62,22 @@ export async function gerenciarPedido(ctx: ContextoTool, a: ArgsPedido): Promise
   // A notificação de venda ao dono, com os três `onError: continue` do n8n —
   // e a nota privada (69) quando a conta pediu.
   if (acao.notificaVenda) {
-    const notificacao = await avisarVendaFechada(deps, { tenantId: ctx.tenant.tenant_id, conversationId: ctx.conversationId, nota: lerOferta(cfg.config).notaChatwoot });
-    return { resultado, acao: acao.acao, notificacao };
+    const oferta = lerOferta(cfg.config);
+    const notificacao = await avisarVendaFechada(deps, { tenantId: ctx.tenant.tenant_id, conversationId: ctx.conversationId, nota: oferta.notaChatwoot });
+    // 72: fechou para retirada e a conta cadastrou o endereço -> vai ao cliente
+    // em mensagem própria, agora, e entra na memória (saída sem tokens). Não
+    // depende do modelo repetir; falha aqui não desfaz o fechamento.
+    let endereco: 'enviado' | 'falhou' | undefined;
+    const msg = mensagemDeRetirada(oferta);
+    if (msg && /^Pedido nº \d+ fechado/.test(resultado) && /retirada no local/.test(resultado)) {
+      try {
+        await ctx.chatwoot.enviar({ tenantId: ctx.tenant.tenant_id, conversationId: ctx.conversationId, content: msg });
+        endereco = 'enviado';
+        try { await ctx.db.query(`select public.api_n8n_registrar_mensagem($1, $2, 'saida', $3, 0, 0, null, null, null, $4)`, [ctx.tenant.tenant_id, ctx.conversationId, msg, JSON.stringify({ fonte: 'endereco_retirada', chamadas: 0 })]); }
+        catch (e) { log('erro', 'endereco_retirada.log_falhou', { erro: erroTexto(e) }); }
+      } catch (e) { endereco = 'falhou'; log('erro', 'endereco_retirada.falhou', { tenant: ctx.tenant.tenant_id, conversa: ctx.conversationId, erro: erroTexto(e) }); }
+    }
+    return { resultado: endereco === 'enviado' ? resultado + '\n(O endereço de retirada já foi enviado ao cliente em mensagem separada; não repita.)' : resultado, acao: acao.acao, notificacao, ...(endereco ? { endereco } : {}) };
   }
   // 69: cancelar uma venda já FECHADA ("Pedido nº N (...) cancelado.") avisa o
   // dono; descartar carrinho não é evento de ninguém.
@@ -85,8 +101,9 @@ export function ferramentaGerenciarPedido(ctx: ContextoTool): FerramentaDoModelo
         observacao: { type: ['string', 'null'], description: 'observacao do cliente sobre o item, ex: sem cebola. null se nao houver' },
         metadados: { type: ['string', 'null'], description: 'json com observacao geral do pedido, ex: {"observacao":"retirar as 7h"}; null se nao houver' },
         pagamento: { type: ['string', 'null'], enum: ['link', 'na_retirada', null], description: 'so em acao=fechar: como o cliente vai pagar — "link" (Pix/cartao agora) ou "na_retirada" (paga quando buscar). Se a loja oferece os dois, pergunte antes. null fora de fechar' },
+        nome_retirada: { type: ['string', 'null'], description: 'so em acao=fechar: nome de quem vai retirar o pedido, como o cliente informou. null fora de fechar ou se a loja nao pede' },
       },
-      required: ['acao', 'produto_id', 'quantidade', 'observacao', 'metadados', 'pagamento'],
+      required: ['acao', 'produto_id', 'quantidade', 'observacao', 'metadados', 'pagamento', 'nome_retirada'],
       additionalProperties: false,
     },
     executar: async (args) => {
@@ -97,8 +114,9 @@ export function ferramentaGerenciarPedido(ctx: ContextoTool): FerramentaDoModelo
         observacao: args.observacao == null ? null : String(args.observacao),
         metadados: args.metadados == null ? null : String(args.metadados),
         pagamento: args.pagamento == null ? null : String(args.pagamento),
+        nome_retirada: args.nome_retirada == null ? null : String(args.nome_retirada),
       });
-      return { texto: r.resultado, diagnostico: { acao: r.acao, ...(r.notificacao ? { notificacao: r.notificacao } : {}) } };
+      return { texto: r.resultado, diagnostico: { acao: r.acao, ...(r.notificacao ? { notificacao: r.notificacao } : {}), ...(r.endereco ? { endereco: r.endereco } : {}) } };
     },
   };
 }

@@ -24,7 +24,7 @@ export default async function PaginaPedidos() {
   // um fica na página do pedido.
   const { data, error } = await supabase
     .from('pedidos')
-    .select('id, numero, conversation_id, status, total_centavos, criado_em, pagamento_modo, retirado_em, pedido_itens(id)')
+    .select('id, numero, conversation_id, status, total_centavos, criado_em, pagamento_modo, retirado_em, retirada_nome, pedido_itens(id)')
     .eq('tenant_id', usuario.tenantId)
     .is('deletado_em', null)
     .order('criado_em', { ascending: false })
@@ -87,7 +87,8 @@ export default async function PaginaPedidos() {
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {itens} {itens === 1 ? 'item' : 'itens'}
-                        {p.pagamento_modo ? ` · ${rotuloPagamentoModo(p.pagamento_modo as string)}` : ''} · conversa{' '}
+                        {p.pagamento_modo ? ` · ${rotuloPagamentoModo(p.pagamento_modo as string)}` : ''}
+                        {p.retirada_nome ? ` · retira: ${p.retirada_nome as string}` : ''} · conversa{' '}
                         {String(p.conversation_id)} · {dataCurta(p.criado_em as string)}
                       </p>
                     </div>

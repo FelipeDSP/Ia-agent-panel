@@ -26,6 +26,8 @@ const M70 = leia('20260917200000_70_aviso_pelo_chatwoot.sql');
 const R70 = leia('20260917200000_70_aviso_pelo_chatwoot_rollback.sql');
 const M71 = leia('20260917210000_71_pagamento_confirmado_tem_fim.sql');
 const R71 = leia('20260917210000_71_pagamento_confirmado_tem_fim_rollback.sql');
+const M72 = leia('20260917220000_72_nome_de_quem_retira.sql');
+const R72 = leia('20260917220000_72_nome_de_quem_retira_rollback.sql');
 const semTx = (s) => s.replace(/^\s*(begin|commit)\s*;\s*$/gim, '');
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -62,7 +64,7 @@ const adiciona = async (t) => um(`select public.api_n8n_adicionar_item($1, $2, $
 const fecha = async (t, meta) => (await um(`select public.api_n8n_fechar_pedido($1, $2, $3) r`, [t.id, CONV, meta])).r;
 // dentro da transação todo criado_em é o MESMO now(): "o mais novo" é o rascunho
 // (numero nulo) ou o maior numero — ordenar só por data era sorteio (flake 17/09)
-const pedidoDe = async (t) => um(`select id, status, modalidade, pagamento_modo, pago_em, retirado_em, metadados from public.pedidos where tenant_id=$1 and conversation_id=$2 order by criado_em desc, numero desc nulls first limit 1`, [t.id, CONV]);
+const pedidoDe = async (t) => um(`select id, status, modalidade, pagamento_modo, pago_em, retirado_em, retirada_nome, metadados from public.pedidos where tenant_id=$1 and conversation_id=$2 order by criado_em desc, numero desc nulls first limit 1`, [t.id, CONV]);
 const pedidoPorId = async (id) => um(`select id, status, modalidade, pagamento_modo, pago_em, retirado_em, metadados from public.pedidos where id=$1`, [id]);
 // `trg_pedidos_upd` sobrescreve atualizado_em em todo update; para "envelhecer"
 // um pedido o trigger sai de cena só nessa linha, dentro da transação abortada
@@ -73,7 +75,8 @@ const envelhece = async (ids, horas) => {
 };
 
 try {
-  console.log('\n== 0. Rollback primeiro (71, 70, 69), 69/70/71 duas vezes, ACL por diff ==\n');
+  console.log('\n== 0. Rollback primeiro (72, 71, 70, 69), 69/70/71/72 duas vezes, ACL por diff ==\n');
+  await c.query(semTx(R72));
   await c.query(semTx(R71));
   await c.query(semTx(R70));
   await c.query(semTx(R69));
@@ -84,6 +87,8 @@ try {
   await c.query(semTx(M69)); await c.query(semTx(M69));
   await c.query(semTx(M70)); await c.query(semTx(M70));
   await c.query(semTx(M71)); await c.query(semTx(M71));
+  await c.query(semTx(M72)); await c.query(semTx(M72));
+  chk('72: coluna retirada_nome existe', await temCol('retirada_nome'));
   chk('ACL de api_n8n_estado_pedido igual ao de antes (71: create or replace)', (await aclFn('api_n8n_estado_pedido')) === aclAntes['api_n8n_estado_pedido']);
   chk('a 69, a 70 e a 71 aplicam duas vezes; colunas e funções existem', (await temCol('modalidade')) && (await temCol('pagamento_modo')) && (await temCol('pago_em')) && (await temCol('retirado_em'))
     && (await aclFn('painel_marcar_pedido')) !== '(AUSENTE)');
@@ -144,6 +149,27 @@ try {
   chk('N: e gastou o claim (segunda chamada vazia)', (await um(`select * from public.api_n8n_notificar_venda($1, $2)`, [N.id, CONV])) === undefined);
   const S = await arranja('s', { pagamentos: ['na_retirada'] });
   await adiciona(S); await fecha(S, '{}');
+  // 72: nome de quem retira — obrigatório só quando a conta pediu
+  {
+    const Q = await arranja('q', { pagamentos: ['na_retirada'], pedir_nome: true, notificacao: { canal: 'chatwoot', destino: '5569900000009@c.us' } });
+    await adiciona(Q);
+    chk('Q (pedir_nome): fechar sem nome -> NADA FOI FECHADO: falta o nome', /^NADA FOI FECHADO: falta o nome de quem vai retirar/.test(await fecha(Q, '{}')));
+    const fq = await fecha(Q, '{"nome_retirada":" Maria Souza ","observacao":"7h"}');
+    const pq = await pedidoDe(Q);
+    chk('Q: com nome fecha; retirada_nome na coluna (trim), fora do metadados; texto traz "Retira: Maria Souza"', /Retira: Maria Souza/.test(fq) && pq.retirada_nome === 'Maria Souza' && pq.metadados.observacao === '7h' && !('nome_retirada' in pq.metadados), JSON.stringify({ fq: fq.split('\n')[1], pq }));
+    const nq = await um(`select mensagem from public.api_n8n_notificar_venda($1, $2)`, [Q.id, CONV]);
+    chk('Q: o aviso ao dono traz "🙋 Retira: Maria Souza"', /🙋 Retira: Maria Souza/.test(nq?.mensagem ?? ''), nq?.mensagem);
+    await adiciona(A);
+    chk('A (sem pedir_nome): fecha sem nome como sempre (o n8n congelado nunca passa nome)', /^Pedido nº \d+ fechado\./.test(await fecha(A, '{}')) && (await pedidoDe(A)).retirada_nome === null);
+    await c.query('savepoint sp_s72');
+    const mut = M72.split("if coalesce(v_pedir_nome, false) and v_nome = '' then").join("if false then");
+    chk('S72 mutou (md5)', md5(mut) !== md5(M72));
+    await c.query(semTx(mut));
+    const Z = await arranja('z', { pagamentos: ['na_retirada'], pedir_nome: true });
+    await adiciona(Z);
+    chk('S72: sem a recusa, fecha sem nome mesmo com pedir_nome (a asserção Q pegaria)', /^Pedido nº/.test(await fecha(Z, '{}')));
+    await c.query('rollback to savepoint sp_s72');
+  }
   chk('S (sem WhatsApp nem nota): notificar_venda cala e não gasta claim', (await um(`select * from public.api_n8n_notificar_venda($1, $2)`, [S.id, CONV])) === undefined && (await pedidoDe(S)).metadados.notificacao === undefined);
   // 70: canal chatwoot (sem sessão) devolve o destino com sessao NULA — o serviço manda pela inbox do agente
   const W = await arranja('w', { pagamentos: ['na_retirada'], notificacao: { canal: 'chatwoot', destino: '5569900000001@c.us' } });

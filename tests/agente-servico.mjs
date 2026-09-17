@@ -68,6 +68,8 @@ const M70 = leia('20260917200000_70_aviso_pelo_chatwoot.sql');
 const R70 = leia('20260917200000_70_aviso_pelo_chatwoot_rollback.sql');
 const M71 = leia('20260917210000_71_pagamento_confirmado_tem_fim.sql');
 const R71 = leia('20260917210000_71_pagamento_confirmado_tem_fim_rollback.sql');
+const M72 = leia('20260917220000_72_nome_de_quem_retira.sql');
+const R72 = leia('20260917220000_72_nome_de_quem_retira_rollback.sql');
 const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -169,6 +171,7 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R72));
   await c.query(semTx(R71));
   await c.query(semTx(R70));
   await c.query(semTx(R69));
@@ -187,6 +190,7 @@ try {
   await c.query(semTx(M69));
   await c.query(semTx(M70));
   await c.query(semTx(M71));
+  await c.query(semTx(M72));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -686,6 +690,27 @@ try {
     await vencer(); await umCiclo(depsWorker);
     const pt = (await passosDe((await turnoDaFila(f9g.filaId)).id)).find((p) => p.tipo === 'tool' && p.nome === 'transferir_humano');
     chk('transferência com canal chatwoot: aviso por enviarParaNumero, diagnóstico notificou=chatwoot', chamadasNumero.length === nAntes2 + 1 && /Novo atendimento/.test(chamadasNumero.at(-1).texto) && pt?.saida?.diagnostico?.notificou === 'chatwoot', JSON.stringify(pt?.saida?.diagnostico));
+
+    // 72: nome de quem retira + endereço de retirada ao cliente
+    await c.query(`update public.tenant_tools set config = config || '{"pedir_nome":true,"retirada":{"endereco":"Av. Central, 10 — Centro","mapa_url":"https://maps.app.goo.gl/x1"}}'::jsonb where tenant_id=$1 and tool_nome='vendas'`, [T.a]);
+    roteiro.push({ tool: 'gerenciar_pedido', args: { acao: 'adicionar', produto_id: PROD, quantidade: 1, observacao: null, metadados: null, pagamento: null, nome_retirada: null } },
+                  { tool: 'gerenciar_pedido', args: { acao: 'fechar', produto_id: null, quantidade: null, observacao: null, metadados: null, pagamento: null, nome_retirada: null } },
+                  { tool: 'gerenciar_pedido', args: { acao: 'fechar', produto_id: null, quantidade: null, observacao: null, metadados: null, pagamento: null, nome_retirada: 'Maria Souza' } },
+                  { texto: 'Pedido fechado em nome de Maria, pagamento na retirada.' });
+    const cwAntes3 = chamadasChatwoot.length;
+    const f9h = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 507, content: 'quero 1 bolo, é pra Maria buscar' }));
+    await vencer(); await umCiclo(depsWorker);
+    const v9h = vistoPeloModelo.at(-1);
+    const pfs2 = (await passosDe((await turnoDaFila(f9h.filaId)).id)).filter((p) => p.tipo === 'tool' && p.nome === 'gerenciar_pedido');
+    chk('72: o prompt manda perguntar em nome de quem fica e avisa que o endereço vai sozinho', /EM NOME DE QUEM/.test(v9h.systemMessage) && /endereço de retirada é enviado ao cliente automaticamente/.test(v9h.systemMessage));
+    chk('72: fechar sem nome -> recusado; com nome_retirada -> fechou com "Retira: Maria Souza" e a coluna gravada',
+      /falta o nome de quem vai retirar/.test(pfs2[1]?.saida?.texto ?? '') && /Retira: Maria Souza/.test(pfs2[2]?.saida?.texto ?? '')
+      && (await um(`select retirada_nome from public.pedidos where tenant_id=$1 and conversation_id=507 and status='aguardando_pagamento'`, [T.a])).retirada_nome === 'Maria Souza', JSON.stringify(pfs2.map((x) => x.saida?.texto?.slice(0, 50))));
+    const enderecoMsg = chamadasChatwoot.slice(cwAntes3).find((x) => x.privada !== true && /📍 \*Retirada:\* Av\. Central, 10/.test(x.content));
+    chk('72: o endereço (+ link do mapa) foi ao cliente em mensagem própria, antes da resposta do modelo; diagnóstico endereco=enviado; entrou em mensagens_log',
+      enderecoMsg && /maps\.app\.goo\.gl\/x1/.test(enderecoMsg.content) && pfs2[2]?.saida?.diagnostico?.endereco === 'enviado' && /já foi enviado ao cliente/.test(pfs2[2]?.saida?.texto ?? '')
+      && (await um(`select count(*)::int n from public.mensagens_log where tenant_id=$1 and conversation_id=507 and direcao='saida' and conteudo like '📍%'`, [T.a])).n === 1, JSON.stringify({ e: enderecoMsg?.content, d: pfs2[2]?.saida?.diagnostico }));
+    chk('72: o aviso ao dono traz "🙋 Retira: Maria Souza"', /🙋 Retira: Maria Souza/.test(chamadasNumero.at(-1)?.texto ?? ''), chamadasNumero.at(-1)?.texto?.slice(0, 200));
   }
 
   // =========================================================================
