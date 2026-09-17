@@ -16,7 +16,11 @@ const STATUS: Record<string, { rotulo: string; variante: 'success' | 'warning' |
   expirado: { rotulo: 'Expirado', variante: 'secondary' },
 };
 
-export function StatusPedido({ status }: { status: string }) {
+export function StatusPedido({ status, retiradoEm }: { status: string; retiradoEm?: string | null }) {
+  // 69: "retirado" não é status — é `retirado_em` sobre um pedido pago. O
+  // badge mostra o que o dono quer saber (já foi buscado?) sem inventar um
+  // valor que as funções do agente não conhecem.
+  if (status === 'pago' && retiradoEm) return <Badge variant="success">Pago e retirado</Badge>;
   const s = STATUS[status] ?? { rotulo: status, variante: 'secondary' as const };
   return <Badge variant={s.variante}>{s.rotulo}</Badge>;
 }

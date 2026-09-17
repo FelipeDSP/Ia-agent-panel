@@ -67,7 +67,8 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
     resumo:
       'O agente consulta seu catálogo, monta o pedido junto com o cliente na conversa e fecha. ' +
       'O preço vem sempre do catálogo.',
-    temConfigCliente: false,
+    // 69: formas de pagar, entrega → atendente, aviso ao dono (Configurações → Vendas)
+    temConfigCliente: true,
   },
   /**
    * NÃO é tool do modelo — é etapa do fluxo. O agente não a chama e não sabe

@@ -9,11 +9,13 @@ import { validarEdicaoTenantAdmin } from '@/lib/tenants/schema';
 import { clientePodeDesligar } from '@/lib/tools/registro';
 import { MAX_DESCRICAO_TOTAL, validarTime } from '@/lib/tools/times-chatwoot';
 import { verificarTime } from '@/lib/tools/times-chatwoot.server';
+import { ERRO_NAO_CONTRATADA, temToolContratada } from '@/lib/tools/contratacao';
 import {
   TOOL_TRANSFERIR,
   validarTransferirCliente,
   type ConfigTransferir,
 } from '@/lib/tools/transferir-humano';
+import { TOOL_VENDAS, lerConfigVendas, validarVendasCliente, type ConfigVendas } from '@/lib/tools/vendas-config';
 
 export type EstadoConfig = {
   erro?: string;
@@ -210,6 +212,68 @@ export async function salvarTransferirHumano(
 
   revalidatePath('/painel/configuracoes');
   return { sucesso: 'Configuração de transferência salva.' };
+}
+
+/**
+ * Cliente salva a config de vendas (migração 69): formas de pagar, o que fazer
+ * com pedido de entrega, eventos e destino do aviso ao dono.
+ *
+ * Superfície de tool: só quem contratou `vendas` chega aqui (a rota de
+ * configurações é sempre-visível, então a checagem é desta action, não do
+ * guard de rota). `sessao` é da agência e é preservada do que está gravado.
+ * `entrega = atendente` exige a transferência contratada E ligada — é o
+ * mesmo dado que a tela usa para mostrar a opção, lido de novo aqui porque
+ * esconder não é o mesmo que não poder.
+ */
+export async function salvarVendas(_estado: EstadoConfig, fd: FormData): Promise<EstadoConfig> {
+  const usuario = await exigirTenantAdmin();
+  if (!(await temToolContratada(usuario.tenantId, TOOL_VENDAS))) return { erro: ERRO_NAO_CONTRATADA };
+
+  const supabase = await criarClienteServidor();
+  const { data: linhas, error: erroSel } = await supabase
+    .from('tenant_tools')
+    .select('tool_nome, ativo, contratado, config')
+    .eq('tenant_id', usuario.tenantId)
+    .in('tool_nome', [TOOL_VENDAS, TOOL_TRANSFERIR]);
+  if (erroSel) return { erro: `Não foi possível carregar: ${erroSel.message}` };
+
+  const vendas = (linhas ?? []).find((l) => l.tool_nome === TOOL_VENDAS);
+  const transferir = (linhas ?? []).find((l) => l.tool_nome === TOOL_TRANSFERIR);
+  if (!vendas) return { erro: ERRO_NAO_CONTRATADA };
+
+  const validado = validarVendasCliente(fd, {
+    transferirDisponivel: Boolean(transferir?.contratado && transferir?.ativo),
+  });
+  if (!validado.ok) return { errosCampo: validado.erros };
+
+  const atual = lerConfigVendas(vendas.config);
+  const sessao = atual.notificacao.sessao;
+  // Sem sessão da agência não há por onde o WhatsApp sair; a nota no Chatwoot
+  // não depende dela e fica.
+  const canal = validado.valor.canal === 'waha' && sessao ? 'waha' : 'nenhum';
+  const novaConfig: ConfigVendas = {
+    pagamentos: validado.valor.pagamentos,
+    entrega: validado.valor.entrega,
+    eventos: validado.valor.eventos,
+    notificacao: {
+      canal,
+      ...(sessao ? { sessao } : {}),
+      ...(validado.valor.destino ? { destino: validado.valor.destino } : {}),
+      ...(validado.valor.nota_chatwoot ? { nota_chatwoot: true } : {}),
+    },
+  };
+  // chaves que não são deste formulário (ex.: horas_expirar_pagamento, da 38)
+  // sobrevivem ao save
+  const bruto = (vendas.config && typeof vendas.config === 'object' ? vendas.config : {}) as Record<string, unknown>;
+  const { error } = await supabase
+    .from('tenant_tools')
+    .update({ config: { ...bruto, ...novaConfig } })
+    .eq('tenant_id', usuario.tenantId)
+    .eq('tool_nome', TOOL_VENDAS);
+  if (error) return { erro: `Não foi possível salvar: ${error.message}` };
+
+  revalidatePath('/painel/configuracoes');
+  return { sucesso: 'Configuração de vendas salva.' };
 }
 
 

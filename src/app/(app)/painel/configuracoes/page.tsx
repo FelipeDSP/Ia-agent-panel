@@ -15,9 +15,11 @@ import {
   numeroParaExibir,
   type ConfigTransferir,
 } from '@/lib/tools/transferir-humano';
+import { TOOL_VENDAS, lerConfigVendas } from '@/lib/tools/vendas-config';
 
 import { FormularioConfig } from './formulario';
 import { FormularioTransferir } from './formulario-transferir';
+import { FormularioVendas } from './formulario-vendas';
 import { ListaModulos, SwitchModulo } from './lista-modulos';
 import { Times, type TimeDaTela } from './times';
 
@@ -55,6 +57,14 @@ export default async function PaginaConfiguracoes() {
   const times = (timesRaw ?? []) as TimeDaTela[];
   const contaChatwoot = tenant.chatwoot_account_id ? String(tenant.chatwoot_account_id) : null;
   const horarioTransferir = configTransferir.horario ?? HORARIO_PADRAO;
+
+  // Vendas (69): o card só existe para quem contratou. "Passar entrega a um
+  // atendente" depende da transferência contratada E ligada — o mesmo dado
+  // que a action confere de novo ao salvar.
+  const toolVendas = (tools ?? []).find((t) => t.tool_nome === TOOL_VENDAS) ?? null;
+  const vendasContratada = Boolean(toolVendas?.contratado);
+  const configVendas = lerConfigVendas(toolVendas?.config);
+  const transferirDisponivel = transferirContratado && Boolean(toolTransferir?.ativo);
 
   // Meus módulos: só o que o cliente PODE AGIR.
   //
@@ -168,6 +178,27 @@ export default async function PaginaConfiguracoes() {
               notificarAtual={configTransferir.notificacao?.canal === 'waha'}
               destinoNumero={numeroParaExibir(configTransferir.notificacao?.destino)}
               temSessao={Boolean(configTransferir.notificacao?.sessao)}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {vendasContratada ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Vendas</CardTitle>
+            <CardDescription>
+              Como o cliente paga, o que fazer com pedido de entrega e como você fica sabendo de
+              cada venda. Ligar e desligar o módulo é em “Meus módulos”.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FormularioVendas
+              ativo={Boolean(toolVendas?.ativo)}
+              config={configVendas}
+              destinoNumero={numeroParaExibir(configVendas.notificacao.destino)}
+              temSessao={Boolean(configVendas.notificacao.sessao)}
+              transferirDisponivel={transferirDisponivel}
             />
           </CardContent>
         </Card>

@@ -11,9 +11,11 @@ import {
 } from '@/components/ui/card';
 import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
+import { rotuloModalidade, rotuloPagamentoModo } from '@/lib/tools/vendas-config';
 import { formatarBRL } from '@/lib/vendas/dinheiro';
 
 import { StatusPedido, dataCurta } from '../componentes';
+import { MarcarPedido } from '../marcar';
 
 export default async function PaginaPedido({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,7 +27,7 @@ export default async function PaginaPedido({ params }: { params: Promise<{ id: s
   // outro cliente dá 404, não "sem permissão", que confirmaria a existência.
   const { data: pedido } = await supabase
     .from('pedidos')
-    .select('id, numero, conversation_id, status, total_centavos, metadados, criado_em, atualizado_em')
+    .select('id, numero, conversation_id, status, total_centavos, metadados, criado_em, atualizado_em, modalidade, pagamento_modo, pago_em, retirado_em')
     .eq('id', id)
     .eq('tenant_id', usuario.tenantId)
     .is('deletado_em', null)
@@ -41,7 +43,11 @@ export default async function PaginaPedido({ params }: { params: Promise<{ id: s
     .order('criado_em', { ascending: true });
 
   const metadados = (pedido.metadados ?? {}) as Record<string, unknown>;
-  const temMetadados = Object.keys(metadados).length > 0;
+  // `notificacao`/`avisos` são controle do aviso ao dono, não informação do
+  // fechamento — ficam fora da lista
+  const metadadosVisiveis = Object.entries(metadados).filter(([k]) => k !== 'notificacao' && k !== 'avisos');
+  const temMetadados = metadadosVisiveis.length > 0;
+  const fechado = pedido.status !== 'rascunho';
 
   return (
     <div className="flex flex-col gap-6">
@@ -56,13 +62,51 @@ export default async function PaginaPedido({ params }: { params: Promise<{ id: s
           <h1 className="text-2xl font-semibold tracking-tight">
             {pedido.numero ? `Pedido nº ${pedido.numero}` : 'Pedido em aberto'}
           </h1>
-          <StatusPedido status={pedido.status as string} />
+          <StatusPedido status={pedido.status as string} retiradoEm={pedido.retirado_em as string | null} />
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
           Conversa {String(pedido.conversation_id)} · aberto em{' '}
           {dataCurta(pedido.criado_em as string)}
         </p>
       </div>
+
+      {fechado ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Retirada e pagamento</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <dl className="grid gap-2 text-sm sm:grid-cols-2">
+              <div className="flex gap-2">
+                <dt className="font-medium">Modalidade:</dt>
+                <dd className="text-muted-foreground">{rotuloModalidade(pedido.modalidade as string | null)}</dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="font-medium">Pagamento:</dt>
+                <dd className="text-muted-foreground">{rotuloPagamentoModo(pedido.pagamento_modo as string | null)}</dd>
+              </div>
+              {pedido.pago_em ? (
+                <div className="flex gap-2">
+                  <dt className="font-medium">Pago em:</dt>
+                  <dd className="text-muted-foreground">{dataCurta(pedido.pago_em as string)}</dd>
+                </div>
+              ) : null}
+              {pedido.retirado_em ? (
+                <div className="flex gap-2">
+                  <dt className="font-medium">Retirado em:</dt>
+                  <dd className="text-muted-foreground">{dataCurta(pedido.retirado_em as string)}</dd>
+                </div>
+              ) : null}
+            </dl>
+            <MarcarPedido
+              pedidoId={pedido.id as string}
+              status={pedido.status as string}
+              pagamentoModo={(pedido.pagamento_modo as string | null) ?? null}
+              retiradoEm={(pedido.retirado_em as string | null) ?? null}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -120,7 +164,7 @@ export default async function PaginaPedido({ params }: { params: Promise<{ id: s
           </CardHeader>
           <CardContent>
             <dl className="flex flex-col gap-2 text-sm">
-              {Object.entries(metadados).map(([chave, valor]) => (
+              {metadadosVisiveis.map(([chave, valor]) => (
                 <div key={chave} className="flex flex-wrap gap-2">
                   <dt className="font-medium">{chave}:</dt>
                   <dd className="text-muted-foreground">

@@ -18,6 +18,7 @@ import {
   validarTransferirAgencia,
   type ConfigTransferir,
 } from '@/lib/tools/transferir-humano';
+import { TOOL_VENDAS, lerConfigVendas, validarVendasAgencia } from '@/lib/tools/vendas-config';
 
 export type EstadoAcao = {
   erro?: string;
@@ -835,6 +836,53 @@ export async function salvarTransferirHumanoAgencia(
       ? 'Tool de transferência atualizada.'
       : 'Tool de transferência habilitada (desligada — o cliente ativa no painel dele).',
   };
+}
+
+/**
+ * A parte da agência na config de vendas (69): só a sessão do WAHA por onde o
+ * aviso de venda sai. Não cria a linha — vendas é módulo contratado por
+ * `definirContratacao`; sem a linha, orienta a contratar primeiro. Preserva
+ * tudo o que é do cliente (pagamentos, entrega, eventos, destino, nota) e as
+ * chaves de outras migrações (horas_expirar_pagamento). Sem sessão o canal
+ * cai para 'nenhum', como na transferência.
+ */
+export async function salvarVendasAgencia(_estado: EstadoAcao, fd: FormData): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  if (!tenantId) return { erro: 'Tenant não informado.' };
+
+  const validado = validarVendasAgencia(fd);
+  if (!validado.ok) return { errosCampo: validado.erros };
+
+  const supabase = await criarClienteServidor();
+  const { data: linha, error: erroSel } = await supabase
+    .from('tenant_tools')
+    .select('config')
+    .eq('tenant_id', tenantId)
+    .eq('tool_nome', TOOL_VENDAS)
+    .maybeSingle();
+  if (erroSel) return { erro: `Não foi possível carregar: ${erroSel.message}` };
+  if (!linha) return { erro: 'Contrate o módulo de vendas para este cliente antes de configurar a sessão.' };
+
+  const atual = lerConfigVendas(linha.config);
+  const bruto = (linha.config && typeof linha.config === 'object' ? linha.config : {}) as Record<string, unknown>;
+  const sessao = validado.valor.sessao;
+  const notificacao = {
+    ...atual.notificacao,
+    canal: sessao ? atual.notificacao.canal : ('nenhum' as const),
+  };
+  if (sessao) notificacao.sessao = sessao; else delete notificacao.sessao;
+
+  const { error } = await supabase
+    .from('tenant_tools')
+    .update({ config: { ...bruto, notificacao } })
+    .eq('tenant_id', tenantId)
+    .eq('tool_nome', TOOL_VENDAS);
+  if (error) return { erro: `Não foi possível salvar: ${error.message}` };
+
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  return { sucesso: sessao ? 'Sessão do aviso de venda salva.' : 'Sessão removida — o aviso de venda por WhatsApp fica desligado.' };
 }
 
 /**

@@ -17,6 +17,7 @@ import { desdeJanela } from '@/lib/retencao';
 import { normalizarRuntime, roteiroDaTroca, urlsDoBot } from '@/lib/agente/runtime';
 import { definicaoTool, grupoTool } from '@/lib/tools/registro';
 import { TOOL_TRANSFERIR, type ConfigTransferir } from '@/lib/tools/transferir-humano';
+import { TOOL_VENDAS, lerConfigVendas } from '@/lib/tools/vendas-config';
 
 import {
   BotaoSuspensao,
@@ -26,6 +27,7 @@ import {
   FormConvite,
   FormRuntime,
   FormTransferirHumano,
+  FormVendasAgencia,
   GerenciarAdmins,
   GestaoModulos,
   ZonaPerigoExcluir,
@@ -63,6 +65,7 @@ export default async function PaginaDetalheTenant({
     { data: catalogo },
     { data: toolsTenant },
     { data: credAsaas },
+    { data: toolVendas },
   ] = await Promise.all([
     supabase
       .from('prompt_versoes')
@@ -97,9 +100,16 @@ export default async function PaginaDetalheTenant({
       .select('asaas_ambiente, asaas_api_key_sandbox, asaas_api_key_producao, asaas_webhook_token_sandbox, asaas_webhook_token_producao')
       .eq('tenant_id', id)
       .maybeSingle(),
+    supabase
+      .from('tenant_tools')
+      .select('ativo, contratado, config')
+      .eq('tenant_id', id)
+      .eq('tool_nome', TOOL_VENDAS)
+      .maybeSingle(),
   ]);
 
   const configTransferir = (toolTransferir?.config ?? {}) as Partial<ConfigTransferir>;
+  const configVendas = lerConfigVendas(toolVendas?.config);
 
   // Cruza o catálogo (o que existe) com o estado do tenant (o que ele tem). O
   // rótulo/resumo vêm do registry no código; o catálogo é só a lista + fallback.
@@ -348,6 +358,26 @@ export default async function PaginaDetalheTenant({
             />
           </CardContent>
         </Card>
+
+        {/* Só com vendas contratada: sem a linha não há onde gravar, e a
+            action orienta a contratar primeiro. */}
+        {toolVendas?.contratado ? (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Tool: vendas — aviso ao dono</CardTitle>
+              <CardDescription>
+                Infra do aviso de venda. O cliente escolhe formas de pagar, eventos e número em
+                Configurações → Vendas; aqui só a sessão do WAHA por onde o aviso sai.
+                {configVendas.notificacao.destino
+                  ? ` Destino do cliente: ${configVendas.notificacao.destino}.`
+                  : ' O cliente ainda não informou o número.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FormVendasAgencia tenantId={tenant.id} sessao={configVendas.notificacao.sessao ?? ''} />
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
 
       <Card>

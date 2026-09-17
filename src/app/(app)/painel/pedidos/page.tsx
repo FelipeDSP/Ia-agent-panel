@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/card';
 import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
+import { rotuloPagamentoModo } from '@/lib/tools/vendas-config';
 import { formatarBRL } from '@/lib/vendas/dinheiro';
 import { StatusPedido, dataCurta } from './componentes';
 
@@ -23,7 +24,7 @@ export default async function PaginaPedidos() {
   // um fica na página do pedido.
   const { data, error } = await supabase
     .from('pedidos')
-    .select('id, numero, conversation_id, status, total_centavos, criado_em, pedido_itens(id)')
+    .select('id, numero, conversation_id, status, total_centavos, criado_em, pagamento_modo, retirado_em, pedido_itens(id)')
     .eq('tenant_id', usuario.tenantId)
     .is('deletado_em', null)
     .order('criado_em', { ascending: false })
@@ -40,8 +41,8 @@ export default async function PaginaPedidos() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Pedidos</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          O que o agente montou nas conversas. Aqui você acompanha — quem altera o pedido é
-          o agente, junto com o cliente.
+          O que o agente montou nas conversas. Quem altera os itens é o agente, junto com o
+          cliente; aqui você marca o que foi pago no balcão e o que já foi retirado.
         </p>
       </header>
 
@@ -51,7 +52,7 @@ export default async function PaginaPedidos() {
           <CardDescription>
             <strong>Em aberto</strong> ainda está sendo montado na conversa.{' '}
             <strong>Aguardando pagamento</strong> foi fechado com o cliente e não aceita mais
-            alteração.
+            alteração — pelo link, o agente confirma sozinho; na retirada, você marca ao receber.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -82,10 +83,11 @@ export default async function PaginaPedidos() {
                         <span className="font-medium">
                           {p.numero ? `Pedido nº ${p.numero}` : 'Pedido em aberto'}
                         </span>
-                        <StatusPedido status={p.status as string} />
+                        <StatusPedido status={p.status as string} retiradoEm={p.retirado_em as string | null} />
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {itens} {itens === 1 ? 'item' : 'itens'} · conversa{' '}
+                        {itens} {itens === 1 ? 'item' : 'itens'}
+                        {p.pagamento_modo ? ` · ${rotuloPagamentoModo(p.pagamento_modo as string)}` : ''} · conversa{' '}
                         {String(p.conversation_id)} · {dataCurta(p.criado_em as string)}
                       </p>
                     </div>

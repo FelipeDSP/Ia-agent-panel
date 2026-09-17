@@ -17,6 +17,7 @@ import {
   removerAdmin,
   reenviarAcessoAdmin,
   salvarTransferirHumanoAgencia,
+  salvarVendasAgencia,
   type EstadoAcao,
 } from '../../acoes';
 import { Alert } from '@/components/ui/alert';
@@ -370,6 +371,26 @@ export function FormTransferirHumano({
 
       <div>
         <SubmitButton>{habilitada ? 'Salvar tool' : 'Habilitar tool'}</SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+/** A parte da agência em vendas (69): a sessão do WAHA do aviso de venda. */
+export function FormVendasAgencia({ tenantId, sessao }: { tenantId: string; sessao: string }) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(salvarVendasAgencia, {});
+
+  return (
+    <form action={acao} className="flex flex-col gap-4">
+      <input type="hidden" name="tenant_id" value={tenantId} />
+      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+      {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
+      <div className="flex max-w-sm flex-col gap-2">
+        <Label htmlFor="sessao_vendas">Sessão WAHA do aviso de venda (opcional)</Label>
+        <Input id="sessao_vendas" name="sessao" defaultValue={sessao} placeholder="ex.: emporio (vazio = sem aviso por WhatsApp)" />
+      </div>
+      <div>
+        <SubmitButton>Salvar sessão</SubmitButton>
       </div>
     </form>
   );
