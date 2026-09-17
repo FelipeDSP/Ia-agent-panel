@@ -184,7 +184,8 @@ conta PJ/BaaS do Asaas entrar em produção; hoje é sandbox.
   aceito até o Next soltar); #6 (cabeçalhos em `next.config.ts`, sem CSP de
   script por enquanto); #2 (migração **73**, guarda de colunas em
   `usuarios_painel`, `teste:migracao-guard-usuarios` 12/12 com sabotagem —
-  escrita, aplicar antes do deploy). Suíte 88/88 depois da atualização.
+  **APLICADA 17/09**, ledger `20260917230000`; a escalada medida agora dá
+  42501 em produção). Suíte 88/88 depois da atualização.
 
 ## Plano sugerido (ordem)
 
