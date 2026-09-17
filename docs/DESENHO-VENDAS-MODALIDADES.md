@@ -1,7 +1,7 @@
 # Desenho — modalidades de venda e aviso ao dono
 
-> Conversa de 17/09/2026. **CONSTRUÍDO em 17/09 (ver §8); migrações 69, 70 e 71 APLICADAS
-> em 17/09 (ledger até 20260917210000).** O que o Felipe decidiu está
+> Conversa de 17/09/2026. **CONSTRUÍDO em 17/09 (ver §8); migrações 69–72 APLICADAS
+> em 17/09 (ledger até 20260917220000).** O que o Felipe decidiu está
 > marcado como decisão.
 
 ## 1. O problema
@@ -156,6 +156,13 @@ Nada em aberto: o desenho está pronto para construir.
   retirada (entra em `mensagens_log`, fonte `endereco_retirada`); não é
   "localização" nativa do WhatsApp — em inbox API isso depende do integrador,
   e texto + link funciona em qualquer canal.
+- **Gaveta da entrega — o caminho, quando abrir (conversa de 17/09)**: endereço
+  da loja (já existe pela retirada) + tabela de taxa por distância (até N km →
+  R$ X; acima → não entrega); o agente pede o endereço do cliente, o serviço
+  geocodifica e mede (Google Maps Platform: Geocoding + Distance Matrix, cota
+  gratuita mensal), grava `modalidade = entrega`, endereço e taxa no pedido;
+  endereço que a API não resolve → `transferir_humano`. Felipe cogitou; não
+  decidiu. Para retirada o link do mapa continua melhor que pino.
 - **Não construído / a saber**: `pedido_cancelado` nunca dispara pela tool —
   a ação `cancelar` do modelo não passa `alvo`, então só descarta carrinho
   (venda fechada não é cancelável pelo agente hoje). O aviso existe no banco
