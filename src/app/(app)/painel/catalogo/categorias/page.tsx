@@ -15,6 +15,28 @@ import { GestaoCategorias, type CategoriaComUso } from './componentes';
  * são entrada própria e não passam por página nenhuma — as três camadas da
  * regra de superfície do CLAUDE.md.
  */
+/** Abas do Catálogo (18/09): Categorias deixou de ser item do menu e virou seção daqui. */
+function AbasCatalogo({ atual }: { atual: 'produtos' | 'categorias' }) {
+  const abas = [
+    { chave: 'produtos', href: '/painel/catalogo', rotulo: 'Produtos' },
+    { chave: 'categorias', href: '/painel/catalogo/categorias', rotulo: 'Categorias' },
+  ] as const;
+  return (
+    <nav className="flex gap-1 border-b border-border" aria-label="Seções do catálogo">
+      {abas.map((a) => (
+        <Link
+          key={a.chave}
+          href={a.href}
+          aria-current={atual === a.chave ? 'page' : undefined}
+          className={`-mb-px border-b-2 px-3 py-2 text-sm ${atual === a.chave ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+        >
+          {a.rotulo}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
 export default async function PaginaCategorias() {
   const usuario = await exigirTenantAdmin();
 
@@ -57,12 +79,13 @@ export default async function PaginaCategorias() {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Categorias</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Catálogo</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Como você agrupa o que vende. Todo produto pertence a uma categoria, e é por
           ela que o catálogo é resumido em vez de listado inteiro.
         </p>
       </header>
+      <AbasCatalogo atual="categorias" />
 
       <GestaoCategorias categoriasIniciais={categorias} />
     </div>

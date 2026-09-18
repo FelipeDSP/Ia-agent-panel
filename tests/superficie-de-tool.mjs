@@ -165,9 +165,12 @@ for (const r of ROTAS_SEMPRE_VISIVEIS) {
 // vez de citar vendas: a asserção continua valendo para a próxima tool com tela.
 for (const [nome, def] of Object.entries(REGISTRO_TOOLS)) {
   for (const r of def.rotasPainel ?? []) {
+    // `menu: false` (18/09) é seção de outra tela: declarada, guardada, sem
+    // item no menu — a ausência é de propósito e continua sendo verificada
+    // (some sem a tool, e nunca aparece com ela).
     ok(
-      menuCompleto.some((i) => i.href === r.href),
-      `${r.href}: aparece quando ${nome} está contratada`,
+      r.menu === false ? !menuCompleto.some((i) => i.href === r.href) : menuCompleto.some((i) => i.href === r.href),
+      r.menu === false ? `${r.href}: menu:false não vira item mesmo com ${nome} contratada` : `${r.href}: aparece quando ${nome} está contratada`,
     );
     ok(
       !menuVazio.some((i) => i.href === r.href),

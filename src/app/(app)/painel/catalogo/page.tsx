@@ -1,9 +1,32 @@
+import Link from 'next/link';
 import { Alert } from '@/components/ui/alert';
 import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { temToolContratada } from '@/lib/tools/contratacao';
 
 import { GestaoCatalogo, type Categoria, type Produto } from './componentes';
+
+/** Abas do Catálogo (18/09): Categorias deixou de ser item do menu e virou seção daqui. */
+function AbasCatalogo({ atual }: { atual: 'produtos' | 'categorias' }) {
+  const abas = [
+    { chave: 'produtos', href: '/painel/catalogo', rotulo: 'Produtos' },
+    { chave: 'categorias', href: '/painel/catalogo/categorias', rotulo: 'Categorias' },
+  ] as const;
+  return (
+    <nav className="flex gap-1 border-b border-border" aria-label="Seções do catálogo">
+      {abas.map((a) => (
+        <Link
+          key={a.chave}
+          href={a.href}
+          aria-current={atual === a.chave ? 'page' : undefined}
+          className={`-mb-px border-b-2 px-3 py-2 text-sm ${atual === a.chave ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+        >
+          {a.rotulo}
+        </Link>
+      ))}
+    </nav>
+  );
+}
 
 export default async function PaginaCatalogo() {
   const usuario = await exigirTenantAdmin();
@@ -91,6 +114,7 @@ export default async function PaginaCatalogo() {
           automaticamente e não muda.
         </p>
       </header>
+      <AbasCatalogo atual="produtos" />
 
       <GestaoCatalogo produtosIniciais={produtos} podeFoto={podeFoto} categorias={categorias} />
     </div>

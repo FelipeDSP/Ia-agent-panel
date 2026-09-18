@@ -36,11 +36,14 @@ import {
 
 export default async function PaginaDetalheTenant({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ aba?: string }>;
 }) {
   await exigirSuperAdmin();
   const { id } = await params;
+  const aba = (await searchParams)?.aba === 'cadastro' ? 'cadastro' : 'operacao';
 
   const supabase = await criarClienteServidor();
 
@@ -188,6 +191,29 @@ export default async function PaginaDetalheTenant({
         </div>
       </header>
 
+      {/* 18/09: a página tinha 10 cards em sequência. Duas abas, por
+          frequência de uso: OPERAÇÃO (prompt, quem atende, conversas) é o
+          dia a dia; CADASTRO (Chatwoot, Asaas, admin, módulos, configuração,
+          WAHA, situação, exclusão) é o que se mexe uma vez. Aba por query
+          string: server component, sem estado no cliente, link compartilhável. */}
+      <nav className="flex gap-1 border-b border-border" aria-label="Seções">
+        {[
+          ['operacao', 'Operação'],
+          ['cadastro', 'Cadastro'],
+        ].map(([chave, rotulo]) => (
+          <Link
+            key={chave}
+            href={`/admin/tenants/${tenant.id}${chave === 'operacao' ? '' : `?aba=${chave}`}`}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm ${aba === chave ? 'border-primary font-medium text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            aria-current={aba === chave ? 'page' : undefined}
+          >
+            {rotulo}
+          </Link>
+        ))}
+      </nav>
+
+      {aba === 'operacao' ? (
+        <>
       <Card>
         <CardHeader>
           <CardTitle>Prompt</CardTitle>
@@ -204,6 +230,88 @@ export default async function PaginaDetalheTenant({
         </CardContent>
       </Card>
 
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Quem atende</CardTitle>
+            <CardDescription>
+              {normalizarRuntime(tenant.agente_runtime) === 'codigo'
+                ? 'O serviço em código (agente/) responde esta conta.'
+                : 'O n8n responde esta conta.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const urls = urlsDoBot(process.env, tenant.chatwoot_inbox_id);
+              const atual = normalizarRuntime(tenant.agente_runtime);
+              return (
+                <FormRuntime
+                  tenantId={tenant.id}
+                  atual={atual}
+                  urls={urls}
+                  roteiroParaCodigo={roteiroDaTroca('n8n', 'codigo', urls)}
+                  roteiroParaN8n={roteiroDaTroca('codigo', 'n8n', urls)}
+                />
+              );
+            })()}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Conversas</CardTitle>
+          <CardDescription>
+            {conversas && conversas.length > 0
+              ? `${conversas.length} conversa(s) mais recente(s).`
+              : 'Nenhuma conversa ainda.'}
+          </CardDescription>
+        </CardHeader>
+        {conversas && conversas.length > 0 ? (
+          <CardContent className="flex flex-col">
+            {conversas.map((c) => (
+              <div
+                key={c.conversation_id}
+                className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 border-b border-border py-2 text-sm last:border-0"
+              >
+                <span className="min-w-0 truncate">
+                  <span className="font-medium">{c.contact_name ?? 'Sem nome'}</span>
+                  {c.phone ? <span className="ml-2 text-muted-foreground">{c.phone}</span> : null}
+                </span>
+                {/* Os turnos do agente nesta conversa (só existem para tenant em código). */}
+                <Link
+                  href={`/admin/agente?tenant=${tenant.id}&conversa=${c.conversation_id}&horas=168`}
+                  className="text-xs text-primary underline-offset-4 hover:underline"
+                >
+                  turnos
+                </Link>
+                <Badge
+                  variant={
+                    c.status_efetivo === 'pausado'
+                      ? 'warning'
+                      : c.status_efetivo === 'resolvido'
+                        ? 'secondary'
+                        : 'success'
+                  }
+                >
+                  {c.status_efetivo}
+                </Badge>
+                <span className="text-right text-xs text-muted-foreground">
+                  {c.atualizado_em
+                    ? new Date(c.atualizado_em).toLocaleString('pt-BR', {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })
+                    : '—'}
+                </span>
+              </div>
+            ))}
+          </CardContent>
+        ) : null}
+      </Card>
+        </>
+      ) : (
+        <>
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -248,31 +356,6 @@ export default async function PaginaDetalheTenant({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Quem atende</CardTitle>
-            <CardDescription>
-              {normalizarRuntime(tenant.agente_runtime) === 'codigo'
-                ? 'O serviço em código (agente/) responde esta conta.'
-                : 'O n8n responde esta conta.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {(() => {
-              const urls = urlsDoBot(process.env, tenant.chatwoot_inbox_id);
-              const atual = normalizarRuntime(tenant.agente_runtime);
-              return (
-                <FormRuntime
-                  tenantId={tenant.id}
-                  atual={atual}
-                  urls={urls}
-                  roteiroParaCodigo={roteiroDaTroca('n8n', 'codigo', urls)}
-                  roteiroParaN8n={roteiroDaTroca('codigo', 'n8n', urls)}
-                />
-              );
-            })()}
-          </CardContent>
-        </Card>
 
         <Card>
           <CardHeader>
@@ -373,58 +456,6 @@ export default async function PaginaDetalheTenant({
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Conversas</CardTitle>
-          <CardDescription>
-            {conversas && conversas.length > 0
-              ? `${conversas.length} conversa(s) mais recente(s).`
-              : 'Nenhuma conversa ainda.'}
-          </CardDescription>
-        </CardHeader>
-        {conversas && conversas.length > 0 ? (
-          <CardContent className="flex flex-col">
-            {conversas.map((c) => (
-              <div
-                key={c.conversation_id}
-                className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-4 border-b border-border py-2 text-sm last:border-0"
-              >
-                <span className="min-w-0 truncate">
-                  <span className="font-medium">{c.contact_name ?? 'Sem nome'}</span>
-                  {c.phone ? <span className="ml-2 text-muted-foreground">{c.phone}</span> : null}
-                </span>
-                {/* Os turnos do agente nesta conversa (só existem para tenant em código). */}
-                <Link
-                  href={`/admin/agente?tenant=${tenant.id}&conversa=${c.conversation_id}&horas=168`}
-                  className="text-xs text-primary underline-offset-4 hover:underline"
-                >
-                  turnos
-                </Link>
-                <Badge
-                  variant={
-                    c.status_efetivo === 'pausado'
-                      ? 'warning'
-                      : c.status_efetivo === 'resolvido'
-                        ? 'secondary'
-                        : 'success'
-                  }
-                >
-                  {c.status_efetivo}
-                </Badge>
-                <span className="text-right text-xs text-muted-foreground">
-                  {c.atualizado_em
-                    ? new Date(c.atualizado_em).toLocaleString('pt-BR', {
-                        dateStyle: 'short',
-                        timeStyle: 'short',
-                      })
-                    : '—'}
-                </span>
-              </div>
-            ))}
-          </CardContent>
-        ) : null}
-      </Card>
-
       <Card className="border-destructive/40">
         <CardHeader>
           <CardTitle className="text-destructive">Zona de perigo</CardTitle>
@@ -436,6 +467,8 @@ export default async function PaginaDetalheTenant({
           <ZonaPerigoExcluir tenantId={tenant.id} nome={tenant.nome} />
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   );
 }

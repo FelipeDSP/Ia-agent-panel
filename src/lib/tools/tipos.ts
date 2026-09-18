@@ -113,7 +113,12 @@ export type DefinicaoTool = {
    * dentro do catálogo. O campo é opcional por isso, e a regra é sobre
    * superfície, não sobre rota.
    */
-  rotasPainel?: readonly { href: string; rotulo: string; icone: string }[];
+  /**
+   * `menu: false` (18/09): a rota continua declarada — guard de rota, teste de
+   * superfície e contratação a enxergam — mas não vira item do menu lateral;
+   * é seção de outra tela (Categorias dentro do Catálogo).
+   */
+  rotasPainel?: readonly { href: string; rotulo: string; icone: string; menu?: boolean }[];
   /** Corte agência/cliente do config, quando houver. */
   corte?: CorteConfig;
 };

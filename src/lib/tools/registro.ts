@@ -60,7 +60,10 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
       // aqui porque `npm run teste:superficie` reprova rota sob `/painel/` que
       // nenhuma tool declare — e porque esquecer faz o item sumir do menu, que
       // alguém nota, em vez de vazar, que ninguém nota.
-      { href: '/painel/catalogo/categorias', rotulo: 'Categorias', icone: 'Tags' },
+      // 18/09: saiu do menu lateral (era um item ao lado de Catálogo para uma
+      // seção dele); vive como aba dentro de /painel/catalogo. A declaração
+      // fica — é ela que autoriza a rota.
+      { href: '/painel/catalogo/categorias', rotulo: 'Categorias', icone: 'Tags', menu: false },
       { href: '/painel/pedidos', rotulo: 'Pedidos', icone: 'Receipt' },
     ],
     rotulo: 'Vendas pelo agente',
@@ -334,7 +337,7 @@ export type ItemMenuPainel = { href: string; rotulo: string; icone: string };
  */
 export function menuDoPainel(contratadas: ReadonlySet<string>): ItemMenuPainel[] {
   const condicionais = Object.entries(REGISTRO_TOOLS).flatMap(([nome, def]) =>
-    contratadas.has(nome) ? [...(def.rotasPainel ?? [])] : [],
+    contratadas.has(nome) ? (def.rotasPainel ?? []).filter((r) => r.menu !== false).map(({ href, rotulo, icone }) => ({ href, rotulo, icone })) : [],
   );
 
   // Ordem: a das sempre-visíveis é curada (Visão geral primeiro, Configurações
