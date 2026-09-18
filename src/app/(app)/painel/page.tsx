@@ -44,11 +44,13 @@ export default async function PaginaPainel() {
   }
 
   const [documentos, conversas, conversasPausadas, versoesRaw] = await Promise.all([
+    // 18/09: DOCUMENTOS, não trechos — a home dizia 669 e a Base de
+    // conhecimento dizia 12; o número que o dono reconhece é o segundo.
     supabase
-      .from('kb_documentos')
+      .from('jobs_ingestao')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', usuario.tenantId)
-      .is('deletado_em', null),
+      .eq('status', 'concluido'),
     supabase
       .from('conversas')
       .select('id', { count: 'exact', head: true })

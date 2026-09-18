@@ -338,47 +338,39 @@ export default async function PaginaDetalheTenant({
           </CardContent>
         </Card>
 
+        {/* 18/09: era um card por tool, cada um pedindo "sessão WAHA". Desde a
+            migração 70 o aviso ao dono sai pela inbox do agente (Chatwoot) e a
+            sessão é legado; os dois campos ficam juntos, num card só. */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Tool: transferência para humano</CardTitle>
+            <CardTitle>Avisos por WAHA (legado)</CardTitle>
             <CardDescription>
-              Infra da tool. O cliente define horário e destino no painel dele;
-              {toolTransferir
-                ? toolTransferir.ativo
-                  ? ' está ligada por ele.'
-                  : ' ainda desligada por ele.'
-                : ' ainda não habilitada.'}
+              O cliente escolhe número e eventos em Configurações → Avisos; o aviso sai pela inbox do
+              próprio agente no Chatwoot. Só preencha uma sessão aqui se ESTE cliente ainda avisa pelo
+              WAHA — preenchida, o aviso vai por ela.
+              {configTransferir.notificacao?.destino || configVendas.notificacao.destino
+                ? ` Número do cliente: ${configVendas.notificacao.destino ?? configTransferir.notificacao?.destino}.`
+                : ' O cliente ainda não informou o número.'}
+              {toolTransferir ? (toolTransferir.ativo ? ' Transferência ligada por ele.' : ' Transferência desligada por ele.') : ' Transferência ainda não habilitada.'}
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <FormTransferirHumano
-              tenantId={tenant.id}
-              sessao={configTransferir.notificacao?.sessao ?? ''}
-              habilitada={Boolean(toolTransferir)}
-            />
+          <CardContent className="grid gap-6 md:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <p className="text-sm font-medium">Transferência para humano</p>
+              <FormTransferirHumano
+                tenantId={tenant.id}
+                sessao={configTransferir.notificacao?.sessao ?? ''}
+                habilitada={Boolean(toolTransferir)}
+              />
+            </div>
+            {toolVendas?.contratado ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-medium">Aviso de venda</p>
+                <FormVendasAgencia tenantId={tenant.id} sessao={configVendas.notificacao.sessao ?? ''} />
+              </div>
+            ) : null}
           </CardContent>
         </Card>
-
-        {/* Só com vendas contratada: sem a linha não há onde gravar, e a
-            action orienta a contratar primeiro. */}
-        {toolVendas?.contratado ? (
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Tool: vendas — aviso ao dono</CardTitle>
-              <CardDescription>
-                O cliente escolhe formas de pagar, eventos e número em Configurações → Vendas. O
-                aviso sai pela inbox do próprio agente (Chatwoot); a sessão WAHA aqui é legado —
-                preenchida, o aviso vai por ela.
-                {configVendas.notificacao.destino
-                  ? ` Destino do cliente: ${configVendas.notificacao.destino}.`
-                  : ' O cliente ainda não informou o número.'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <FormVendasAgencia tenantId={tenant.id} sessao={configVendas.notificacao.sessao ?? ''} />
-            </CardContent>
-          </Card>
-        ) : null}
       </div>
 
       <Card>

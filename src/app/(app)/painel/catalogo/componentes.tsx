@@ -242,12 +242,14 @@ function FormularioProduto({
           "SKU" saiu da interface porque não diz nada para o dono de uma padaria.
           Saiu da INTERFACE; o schema não mudou.
         */}
-        <div className="flex w-28 flex-col gap-2">
-          <Label>ID</Label>
-          <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-            {editando?.sku ?? '—'}
+        {editando ? (
+          <div className="flex w-28 flex-col gap-2">
+            <Label>ID</Label>
+            <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
+              {editando.sku ?? '—'}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="flex w-40 flex-col gap-2">
           <Label htmlFor="estoque">Estoque</Label>
@@ -318,6 +320,11 @@ export function GestaoCatalogo({
   podeFoto: boolean;
 }) {
   const [editando, setEditando] = useState<Produto | null>(null);
+  // 18/09: com catálogo cheio, o formulário de cadastro ocupava a tela inteira
+  // antes da lista. Nasce fechado quando já há produto; abre no "+ Novo
+  // produto", ao editar, ou quando o catálogo está vazio.
+  const [formAberto, setFormAberto] = useState(produtosIniciais.length === 0);
+  const mostrarForm = formAberto || editando !== null;
 
   /*
     ORDENAÇÃO: PREFERÊNCIA DE VISUALIZAÇÃO, NÃO DADO DE NEGÓCIO.
@@ -410,7 +417,8 @@ export function GestaoCatalogo({
                */
               <button
                 type="button"
-                onClick={() => document.getElementById('nome')?.focus()}
+                aria-expanded={mostrarForm}
+                onClick={() => { setFormAberto((v) => !v); setTimeout(() => document.getElementById('nome')?.focus(), 0); }}
                 className="flex items-center gap-2 rounded-md text-left transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 <Plus className="h-4 w-4" aria-hidden /> Novo produto
@@ -420,9 +428,10 @@ export function GestaoCatalogo({
           <CardDescription>
             {editando
               ? 'Altere o que precisar e salve. O preço é o que o agente vai informar ao cliente.'
-              : 'Cadastre o que você vende. Nome e preço bastam para começar.'}
+              : mostrarForm ? 'Cadastre o que você vende. Nome e preço bastam para começar.' : 'Clique em “Novo produto” para cadastrar.'}
           </CardDescription>
         </CardHeader>
+        {mostrarForm ? (
         <CardContent>
           <FormularioProduto
             key={editando?.id ?? 'novo'}
@@ -433,6 +442,7 @@ export function GestaoCatalogo({
             categorias={categorias}
           />
         </CardContent>
+        ) : null}
       </Card>
 
       <Card>

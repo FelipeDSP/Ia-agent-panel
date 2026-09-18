@@ -90,6 +90,13 @@ function dataCurta(iso: string | null): string {
  * todas" e a limpeza em massa confirmam em dois passos inline (sem window.confirm,
  * que trava a aba). Limpar memória não apaga o histórico exibido.
  */
+/** JID ("5569…@c.us") ou só dígitos no lugar do nome não é nome: o número já aparece ao lado. */
+function nomeExibivel(nome: string | null): string {
+  const n = (nome ?? '').trim();
+  if (!n || /@(c|g|s)\.us$/i.test(n) || /^\+?\d{8,}$/.test(n)) return 'Sem nome';
+  return n;
+}
+
 export function ListaConversas({ conversas }: { conversas: ConversaResumo[] }) {
   const [selecao, setSelecao] = useState<Set<number>>(new Set());
   const [confirmando, setConfirmando] = useState<null | 'selecao' | 'todas'>(null);
@@ -217,7 +224,7 @@ export function ListaConversas({ conversas }: { conversas: ConversaResumo[] }) {
             className="flex min-w-0 flex-1 items-center gap-4"
           >
             <span className="min-w-0 flex-1 truncate">
-              <span className="font-medium">{c.contact_name ?? 'Sem nome'}</span>
+              <span className="font-medium">{nomeExibivel(c.contact_name)}</span>
               {c.phone ? <span className="ml-2 text-muted-foreground">{c.phone}</span> : null}
             </span>
             <span className="w-20">
