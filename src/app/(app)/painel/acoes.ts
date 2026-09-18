@@ -257,15 +257,17 @@ export async function salvarVendas(_estado: EstadoConfig, fd: FormData): Promise
     .from('tenant_tools')
     .select('tool_nome, ativo, contratado, config')
     .eq('tenant_id', usuario.tenantId)
-    .in('tool_nome', [TOOL_VENDAS, TOOL_TRANSFERIR]);
+    .in('tool_nome', [TOOL_VENDAS, TOOL_TRANSFERIR, 'pagamento']);
   if (erroSel) return { erro: `Não foi possível carregar: ${erroSel.message}` };
 
   const vendas = (linhas ?? []).find((l) => l.tool_nome === TOOL_VENDAS);
   const transferir = (linhas ?? []).find((l) => l.tool_nome === TOOL_TRANSFERIR);
+  const pagamento = (linhas ?? []).find((l) => l.tool_nome === 'pagamento');
   if (!vendas) return { erro: ERRO_NAO_CONTRATADA };
 
   const validado = validarVendasCliente(fd, {
     transferirDisponivel: Boolean(transferir?.contratado && transferir?.ativo),
+    linkDisponivel: Boolean(pagamento?.contratado),
   });
   if (!validado.ok) return { errosCampo: validado.erros };
 

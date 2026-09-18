@@ -71,6 +71,16 @@ console.log('\n== canalDerivado (70): o cliente diz SE; o caminho é derivado da
   chk('lerConfigVendas aceita canal chatwoot', lerConfigVendas({ notificacao: { canal: 'chatwoot', destino: '55@c.us' } }).notificacao.canal === 'chatwoot');
 }
 
+console.log('\n== 18/09: sem o módulo de pagamento, "por link" não vale ==\n');
+{
+  const r = validarVendasCliente(form({ pagamento_link: 'on', entrega: 'nao' }), { transferirDisponivel: false, linkDisponivel: false });
+  chk('link marcado sem o módulo -> erro em pagamentos', !r.ok && /Asaas/.test(r.erros.pagamentos ?? ''));
+  const r2 = validarVendasCliente(form({ pagamento_na_retirada: 'on', entrega: 'nao' }), { transferirDisponivel: false, linkDisponivel: false });
+  chk('só na retirada sem o módulo -> ok', r2.ok && r2.valor.pagamentos.join() === 'na_retirada');
+  const r3 = validarVendasCliente(form({ pagamento_link: 'on', entrega: 'nao' }), { transferirDisponivel: false });
+  chk('linkDisponivel omitido = disponível (compatível)', r3.ok);
+}
+
 console.log('\n== 72: nome de quem retira e endereço ==\n');
 {
   const base = { pagamento_link: 'on', entrega: 'nao' };

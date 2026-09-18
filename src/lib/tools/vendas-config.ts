@@ -138,7 +138,7 @@ type Resultado<T> = { ok: true; valor: T } | { ok: false; erros: Record<string, 
  */
 export function validarVendasCliente(
   fd: FormData,
-  { transferirDisponivel }: { transferirDisponivel: boolean },
+  { transferirDisponivel, linkDisponivel = true }: { transferirDisponivel: boolean; linkDisponivel?: boolean },
 ): Resultado<{
   pagamentos: Pagamento[];
   entrega: 'atendente' | 'nao';
@@ -160,6 +160,10 @@ export function validarVendasCliente(
 
   const pagamentos = PAGAMENTOS.map((p) => p.valor).filter((v) => fd.get(`pagamento_${v}`) === 'on');
   if (pagamentos.length === 0) erros['pagamentos'] = 'Marque ao menos uma forma de pagamento.';
+  // 18/09: sem o módulo de pagamento (Asaas) contratado, "por link" não existe
+  // no agente — aceitar aqui deixaria o pedido preso em "aguardando pagamento"
+  // por 24 h sem ninguém cobrar. Esconder não é o mesmo que não poder.
+  if (!linkDisponivel && pagamentos.includes('link')) erros['pagamentos'] = 'Pagamento por link exige o módulo de pagamento (Asaas), que esta conta não tem.';
 
   const entregaBruta = String(fd.get('entrega') ?? 'nao');
   let entrega: 'atendente' | 'nao' = entregaBruta === 'atendente' ? 'atendente' : 'nao';

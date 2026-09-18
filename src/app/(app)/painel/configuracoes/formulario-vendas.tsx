@@ -28,11 +28,14 @@ export function FormularioVendas({
   config,
   destinoNumero,
   transferirDisponivel,
+  linkDisponivel,
 }: {
   ativo: boolean;
   config: ConfigVendas;
   destinoNumero: string;
   transferirDisponivel: boolean;
+  /** módulo `pagamento` (Asaas) contratado — sem ele "por link" nem existe no agente */
+  linkDisponivel: boolean;
 }) {
   const [estado, acao] = useActionState<EstadoConfig, FormData>(salvarVendas, {});
   const [notificar, setNotificar] = useState(config.notificacao.canal !== 'nenhum');
@@ -48,20 +51,29 @@ export function FormularioVendas({
 
       <fieldset className="flex flex-col gap-3 rounded-xl border border-border p-4">
         <legend className="px-1 text-sm font-medium">Como o cliente pode pagar</legend>
-        {PAGAMENTOS.map((p) => (
-          <label key={p.valor} className="flex items-start gap-3">
-            <input
-              type="checkbox"
-              name={`pagamento_${p.valor}`}
-              defaultChecked={config.pagamentos.includes(p.valor)}
-              className={`${CHECK} mt-0.5`}
-            />
-            <span className="flex flex-col">
-              <span className="text-sm">{p.rotulo}</span>
-              <span className="text-xs text-muted-foreground">{p.resumo}</span>
-            </span>
-          </label>
-        ))}
+        {PAGAMENTOS.map((p) => {
+          const indisponivel = p.valor === 'link' && !linkDisponivel;
+          // sem o módulo de pagamento, o padrão do banco ("link") não faz sentido: a
+          // tela propõe "na retirada" marcado, e o cliente salva o que vale
+          const marcado = indisponivel ? false : (!linkDisponivel && p.valor === 'na_retirada' ? true : config.pagamentos.includes(p.valor));
+          return (
+            <label key={p.valor} className={`flex items-start gap-3 ${indisponivel ? 'text-muted-foreground' : ''}`}>
+              <input
+                type="checkbox"
+                name={`pagamento_${p.valor}`}
+                defaultChecked={marcado}
+                disabled={indisponivel}
+                className={`${CHECK} mt-0.5`}
+              />
+              <span className="flex flex-col">
+                <span className="text-sm">{p.rotulo}</span>
+                <span className="text-xs text-muted-foreground">
+                  {indisponivel ? 'Exige o módulo de pagamento (Asaas) — fale com a agência.' : p.resumo}
+                </span>
+              </span>
+            </label>
+          );
+        })}
         <ErroCampo msg={estado.errosCampo?.['pagamentos']} />
         <p className="text-xs text-muted-foreground">
           Com as duas marcadas, o agente pergunta ao cliente qual prefere antes de fechar.

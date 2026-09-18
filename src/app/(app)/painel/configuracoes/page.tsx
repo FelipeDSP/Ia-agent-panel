@@ -67,6 +67,7 @@ export default async function PaginaConfiguracoes() {
   const vendasContratada = Boolean(toolVendas?.contratado);
   const configVendas = lerConfigVendas(toolVendas?.config);
   const transferirDisponivel = transferirContratado && Boolean(toolTransferir?.ativo);
+  const linkDisponivel = Boolean((tools ?? []).find((t) => t.tool_nome === 'pagamento')?.contratado);
 
   // Meus módulos: só o que o cliente PODE AGIR.
   //
@@ -212,6 +213,7 @@ export default async function PaginaConfiguracoes() {
               config={configVendas}
               destinoNumero={numeroParaExibir(configVendas.notificacao.destino)}
               transferirDisponivel={transferirDisponivel}
+              linkDisponivel={linkDisponivel}
             />
           </CardContent>
         </Card>

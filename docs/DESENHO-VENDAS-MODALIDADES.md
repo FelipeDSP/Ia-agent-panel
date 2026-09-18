@@ -163,6 +163,13 @@ Nada em aberto: o desenho está pronto para construir.
   gratuita mensal), grava `modalidade = entrega`, endereço e taxa no pedido;
   endereço que a API não resolve → `transferir_humano`. Felipe cogitou; não
   decidiu. Para retirada o link do mapa continua melhor que pino.
+- **Sem BaaS, sem link (Felipe, 18/09)**: enquanto a conta do Asaas não for
+  BaaS, nenhum cliente novo recebe o módulo `pagamento`; Empório/CEEJAAR ficam
+  em "na retirada" (fecha, avisa o dono, o dono marca pago). Na tela, "por
+  link" só é marcável com o módulo contratado; sem ele o padrão proposto é
+  "na retirada". O default do banco (`['link']` quando a config está vazia)
+  ficou como está — é o que o n8n congelado espera — e por isso a config do
+  Empório precisa ser SALVA antes de ele migrar.
 - **Não construído / a saber**: `pedido_cancelado` nunca dispara pela tool —
   a ação `cancelar` do modelo não passa `alvo`, então só descarta carrinho
   (venda fechada não é cancelável pelo agente hoje). O aviso existe no banco
