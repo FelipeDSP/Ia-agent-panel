@@ -37,7 +37,7 @@ export interface Recebido {
 
 export interface Deps { db: Db; waha: Waha | null; n8nJsDir: string }
 
-export async function receber(deps: Deps, inboxDaUrl: number, body: WebhookChatwoot): Promise<Recebido> {
+export async function receber(deps: Deps, inboxDaUrl: number | null, body: WebhookChatwoot): Promise<Recebido> {
   const evento = classificar(body);
   if (evento === 'descartar') return { evento, resultado: 'descartada', motivo: 'evento_nao_roteado' };
 
@@ -47,7 +47,7 @@ export async function receber(deps: Deps, inboxDaUrl: number, body: WebhookChatw
   }
 
   const ex = extrair(deps.n8nJsDir, body);
-  if (ex.chatwoot_inbox_id !== inboxDaUrl) {
+  if (inboxDaUrl !== null && ex.chatwoot_inbox_id !== inboxDaUrl) {
     return { evento, resultado: 'caixa_divergente', motivo: `url=${inboxDaUrl} corpo=${ex.chatwoot_inbox_id}`, extraido: ex };
   }
   const res = await resolverTenant(deps.db, ex.chatwoot_account_id, ex.chatwoot_inbox_id);

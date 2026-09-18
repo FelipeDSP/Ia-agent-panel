@@ -274,6 +274,9 @@ try {
     chk('cliente de A (codigo) -> enfileirada', r.resultado === 'enfileirada', JSON.stringify(r));
     chk('cliente de B (n8n) -> runtime_n8n, fila vazia', (await receber(deps, PAR.b[1], webhook({ account: PAR.b[0], inbox: PAR.b[1], conv: 100 }))).motivo === 'runtime_n8n' && (await um(`select count(*)::int n from public.agente_fila where tenant_id=$1`, [T.b])).n === 0);
     chk('caixa divergente -> caixa_divergente', (await receber(deps, PAR.a[1], webhook({ account: PAR.c[0], inbox: PAR.c[1], conv: 100 }))).resultado === 'caixa_divergente');
+    // 18/09: URL sem inbox — a caixa vem do corpo, e o tenant resolve pelo par de lá
+    chk('URL sem inbox (null): resolve o tenant pelo corpo — C enfileira', (await receber(deps, null, webhook({ account: PAR.c[0], inbox: PAR.c[1], conv: 101 }))).resultado === 'enfileirada');
+    await c.query(`delete from public.agente_fila where tenant_id=$1 and conversation_id=101`, [T.c]);   // não deixa o item consumir o roteiro da §5
     chk('grupo -> ignorada/grupo', (await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 101, sender: { type: 'contact', name: 'G', identifier: '1@g.us' } }))).motivo === 'grupo');
     const rh = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 100, tipo: 'outgoing', content: 'Oi', sender: { type: 'user' } }));
     chk('humano assumiu -> pausou, conversa pausada, pendente descartada', rh.resultado === 'pausou' && (await um(`select status from public.conversas where tenant_id=$1 and conversation_id=100`, [T.a])).status === 'pausado' && (await um(`select estado from public.agente_fila where id=$1`, [r.filaId])).estado === 'descartada');

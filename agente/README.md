@@ -26,7 +26,7 @@ ponta a ponta em transação abortada: `npm run teste:agente-fatia1`.
 | variável | obrigatória | o que é |
 |---|---|---|
 | `AGENTE_DB_URL` | sim | conexão do role **`n8n_agent`** (a credencial "Agent ia Supabase" do n8n). O processo **recusa** subir com `postgres@` |
-| `WEBHOOK_TOKEN` | sim | segredo na URL do webhook: `POST /chatwoot/<token>/<inbox>`. Token errado → 404 |
+| `WEBHOOK_TOKEN` | sim | segredo na URL do webhook: `POST /chatwoot/<token>` (18/09: UMA URL para todos; `/<inbox>` no fim é opcional e, se vier, tem de bater com o corpo). Token errado → 404 |
 | `LIMPEZA_SECRET` | sim | o `x-limpeza-secret` que o painel manda em `POST /limpar-memoria`. No Coolify do **painel**: `AGENTE_LIMPEZA_URL=https://<domínio>/limpar-memoria` e `AGENTE_LIMPEZA_SECRET=<este valor>`; o painel escolhe entre n8n e aqui por `tenants.agente_runtime` (`src/lib/limpeza-memoria-destino.ts`) |
 | `OPENAI_API_KEY` | sim | o modelo (Responses API), os embeddings da base (`text-embedding-3-small`) e a transcrição (`whisper-1`) |
 | `FOTO_SECRET` | não | o `x-foto-secret` da Edge Function `foto-produto`; sem ele a tool de foto responde ao modelo que não pôde enviar |
@@ -56,7 +56,7 @@ estar contratado em Módulos para a tool existir.
 | | |
 |---|---|
 | `GET /saude` | 200 se o worker passou há menos de ~15 s; senão 503 (healthcheck do Coolify) |
-| `POST /chatwoot/<token>/<inbox>` | o webhook do Agent Bot da conta. Responde **200 sempre** que o token bate — descartes inclusive (o Chatwoot não reenvia) |
+| `POST /chatwoot/<token>[/<inbox>]` | o webhook do Agent Bot da conta. Responde **200 sempre** que o token bate — descartes inclusive (o Chatwoot não reenvia) |
 | `POST /asaas` | o webhook do Asaas (`PAYMENT_RECEIVED` / `PAYMENT_CONFIRMED`). Sem segredo na URL: o token vem no header `asaas-access-token` e é validado **por tenant** no banco (`api_n8n_pagamento_webhook`, a única função que escreve `pago`). Responde **200 sempre** com só o estado; token errado = `reconhecido:false`, sem efeito. Quando aplica: mensagem "Pagamento confirmado!" ao cliente pelo bot + registro em `mensagens_log` (o agente passa a saber) |
 | `POST /limpar-memoria` | mesmo contrato do webhook do n8n: header `x-limpeza-secret`, body `{ tenant_id, escopo: 'conversa' \| 'todas', conversation_ids? }`. Nada é apagado: é o **corte** (`conversas.memoria_cortada_em`) |
 
@@ -72,7 +72,7 @@ de `N8N_LIMPEZA_URL`). À mão, o roteiro é o de sempre:
 1. migrações 62 e 63 aplicadas; `tenants.agente_runtime = 'codigo'` para o tenant
    (como super_admin — `tenant_admin` leva 42501);
 2. no Chatwoot, o Agent Bot da conta → `outgoing_url =
-   https://<domínio>/chatwoot/<WEBHOOK_TOKEN>/<inbox>`;
+   https://<domínio>/chatwoot/<WEBHOOK_TOKEN>` (uma URL para todas as contas; a inbox vem do corpo);
 3. uma mensagem na caixa → resposta da fatia 1 + turno em `agente_turnos`.
 
 Voltar: a URL antiga no bot + `agente_runtime = 'n8n'`. A memória está em

@@ -30,7 +30,7 @@ export interface UrlsDoBot { codigo: string | null; n8n: string | null }
 
 /**
  * A URL que o bot da conta precisa ter no Chatwoot para cada runtime.
- * - código: `<AGENTE_URL>/chatwoot/<AGENTE_WEBHOOK_TOKEN>/<inbox>` — sem o
+ * - código: `<AGENTE_URL>/chatwoot/<AGENTE_WEBHOOK_TOKEN>` (18/09: sem inbox; a forma com `/<inbox>` segue aceita) — sem o
  *   token no ambiente do painel, devolve a URL com `<WEBHOOK_TOKEN>` no lugar
  *   (a agência completa à mão; o token é o do Coolify do agente);
  * - n8n: `<N8N_WEBHOOK_BASE>/<path>`; `path` é o do workflow principal, e a
@@ -39,7 +39,9 @@ export interface UrlsDoBot { codigo: string | null; n8n: string | null }
 export function urlsDoBot(env: Record<string, string | undefined>, inbox: number | null, pathN8n = 'agente-lavanderia-chatwoot-teste-teste'): UrlsDoBot {
   const base = (env.AGENTE_URL?.trim() || origemDe(env.AGENTE_LIMPEZA_URL))?.replace(/\/+$/, '') ?? null;
   const token = env.AGENTE_WEBHOOK_TOKEN?.trim() || '<WEBHOOK_TOKEN>';
-  const codigo = base && inbox ? `${base}/chatwoot/${token}/${inbox}` : null;
+  // 18/09: uma URL só para todos os clientes — conta e inbox vêm do corpo do
+  // webhook. A forma com `/<inbox>` no fim continua aceita pelo serviço.
+  const codigo = base ? `${base}/chatwoot/${token}` : null;
   const baseN8n = (env.N8N_WEBHOOK_BASE?.trim() || (origemDe(env.N8N_LIMPEZA_URL) ? `${origemDe(env.N8N_LIMPEZA_URL)}/webhook` : null))?.replace(/\/+$/, '') ?? null;
   const n8n = baseN8n ? `${baseN8n}/${pathN8n}` : null;
   return { codigo, n8n };

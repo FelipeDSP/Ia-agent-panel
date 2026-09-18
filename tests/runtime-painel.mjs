@@ -24,11 +24,11 @@ const chk = (nome, cond, det = '') => {
 console.log('\n== 1. URLs do bot ==\n');
 {
   const u = urlsDoBot({ AGENTE_URL: 'https://hercules.chatyou.chat', AGENTE_WEBHOOK_TOKEN: 'tok123', N8N_WEBHOOK_BASE: 'https://webhook.chatyou.chat/webhook' }, 282);
-  chk('código: <AGENTE_URL>/chatwoot/<token>/<inbox>', u.codigo === 'https://hercules.chatyou.chat/chatwoot/tok123/282', u.codigo);
+  chk('código: <AGENTE_URL>/chatwoot/<token> — UMA URL para todos (18/09), sem inbox', u.codigo === 'https://hercules.chatyou.chat/chatwoot/tok123', u.codigo);
   chk('n8n: <base>/<path do principal>', u.n8n === 'https://webhook.chatyou.chat/webhook/agente-lavanderia-chatwoot-teste-teste', u.n8n);
   const d = urlsDoBot({ AGENTE_LIMPEZA_URL: 'https://hercules.chatyou.chat/limpar-memoria', N8N_LIMPEZA_URL: 'https://webhook.chatyou.chat/webhook/limpar-memoria' }, 279, 'principal');
-  chk('sem AGENTE_URL/N8N_WEBHOOK_BASE, deriva das URLs de limpeza; sem token, marca <WEBHOOK_TOKEN>', d.codigo === 'https://hercules.chatyou.chat/chatwoot/<WEBHOOK_TOKEN>/279' && d.n8n === 'https://webhook.chatyou.chat/webhook/principal', JSON.stringify(d));
-  chk('sem caixa, a URL do código é null (o roteamento é por caixa)', urlsDoBot({ AGENTE_URL: 'https://x' }, null).codigo === null);
+  chk('sem AGENTE_URL/N8N_WEBHOOK_BASE, deriva das URLs de limpeza; sem token, marca <WEBHOOK_TOKEN>', d.codigo === 'https://hercules.chatyou.chat/chatwoot/<WEBHOOK_TOKEN>' && d.n8n === 'https://webhook.chatyou.chat/webhook/principal', JSON.stringify(d));
+  chk('sem caixa a URL do código existe do mesmo jeito (a caixa vem do corpo do webhook)', urlsDoBot({ AGENTE_URL: 'https://x' }, null).codigo === 'https://x/chatwoot/<WEBHOOK_TOKEN>');
   chk('sem nada no ambiente, as duas são null (a tela diz o que falta)', JSON.stringify(urlsDoBot({}, 1)) === JSON.stringify({ codigo: null, n8n: null }));
 }
 

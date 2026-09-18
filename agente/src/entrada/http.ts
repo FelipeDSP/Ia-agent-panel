@@ -61,10 +61,15 @@ export function criarServidor(deps: DepsHttp): http.Server {
       return responder(res, viva ? 200 : 503, { ok: viva, fila: viva ? 'viva' : 'parada', versao: deps.versaoCodigo ?? 'dev' });
     }
 
+    // 18/09: `/chatwoot/<token>` é a forma principal — UMA URL para todos os
+    // clientes; conta e inbox vêm do corpo, que é como o tenant sempre foi
+    // resolvido. `/chatwoot/<token>/<inbox>` continua aceita e, nela, a inbox
+    // do corpo tem de bater (foi essa checagem que deixou o CEEJAAR mudo hoje
+    // com a URL copiada do sendbox: melhor não exigir o número).
     if (req.method === 'POST' && partes[0] === 'chatwoot') {
       const [, token, inboxTxt] = partes;
-      const inbox = Number(inboxTxt);
-      if (token !== deps.webhookToken || !Number.isInteger(inbox)) return responder(res, 404);
+      const inbox = inboxTxt === undefined || inboxTxt === '' ? null : Number(inboxTxt);
+      if (token !== deps.webhookToken || (inbox !== null && !Number.isInteger(inbox))) return responder(res, 404);
       let body: unknown;
       try { body = JSON.parse(await lerCorpo(req)); } catch { return responder(res, 200, { ok: false, motivo: 'corpo_invalido' }); }
       try {
