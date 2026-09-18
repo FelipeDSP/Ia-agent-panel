@@ -169,8 +169,19 @@ const RE_CONSUMADO = new RegExp(
 // lida como efeito consumado — e ela e o oposto: e o agente pedindo permissao.
 const RE_NAO_CONSUMADO = /(\?|quer que|posso |gostaria|deseja|vou |irei |se voc[eê]|caso |quando voc[eê]|prefere)/i;
 
+// 18/09 (conversa 39 do Emporio, e o teste que a reproduziu): "Anotei 20 bolos
+// no pedido, pode confirmar?" passava — a afirmacao e a pergunta moravam na
+// MESMA frase, e o `?` de `RE_NAO_CONSUMADO` desfazia o "anotei". A virgula
+// antes de um rabo interrogativo curto (pode confirmar? / ta certo? / ok? /
+// quer fechar?) vira quebra de frase: a afirmacao fica sozinha e e julgada
+// como tal; "Quer que eu anote no seu pedido?" continua sendo UMA frase e
+// continua sendo pergunta.
+const RE_RABO_PERGUNTA = /,\s+(?=(pode|posso|quer|deseja|confirma|t[aá] certo|certo|ok|fecho|fechamos|correto|pode ser)\b[^.!?\n]{0,40}\?)/i;
 function frases(txt) {
-  return String(txt).split(/(?<=[.!?\n])\s*/).filter((f) => f.trim() !== '');
+  return String(txt)
+    .split(/(?<=[.!?\n])\s*/)
+    .flatMap((f) => f.split(RE_RABO_PERGUNTA))
+    .filter((f) => f && f.trim() !== '');
 }
 
 // CONTEXTO DE PEDIDO. Sem isto a regra 1 barra mensagem que nao e sobre venda

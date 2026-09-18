@@ -61,6 +61,11 @@ export function lerOferta(config: unknown): Oferta {
  */
 export function secaoOferta(o: Oferta): string {
   const linhas: string[] = ['## Como esta loja vende (regras desta conta)'];
+  // 18/09, conversa 39 do Empório: o cliente disse "são 20", o modelo AFIRMOU
+  // "registrado 20" sem chamar ferramenta, o portão barrou três vezes e a venda
+  // se perdeu. `adicionar` do mesmo item DEFINE a quantidade (não soma) — o
+  // que faltava era o modelo saber disso.
+  linhas.push('- Para MUDAR a quantidade de um item que já está no pedido ("são 20", "faz 5 em vez de 3"), chame gerenciar_pedido com acao=adicionar, o mesmo produto_id e a quantidade TOTAL nova — ela substitui a anterior. Nunca diga que alterou, anotou ou registrou sem o retorno da ferramenta mostrando a quantidade nova.');
   linhas.push('- Só RETIRADA no local. Nunca pergunte endereço, nunca prometa entrega, nunca invente taxa.');
   if (o.entrega === 'atendente') {
     linhas.push('- Se o cliente quiser ENTREGA: monte o pedido normalmente (adicionar/ver) e, quando ele confirmar os itens, NÃO chame fechar — chame transferir_humano com o resumo "cliente quer entrega" + os itens e o total. Um atendente combina a entrega e o valor.');

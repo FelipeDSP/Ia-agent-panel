@@ -180,6 +180,17 @@ chk('08/09 turno 2 ("seu pedido ficou:") barra', t2._portao.veredito === 'barrad
 chk('08/09 turno 3 ("pedido está confirmado") barra', t3._portao.veredito === 'barrado_regra_1');
 chk('08/09 turno 2 e o que NENHUM dos quatro detectores pegava', t2._portao.veredito.startsWith('barrado'));
 
+// 18/09: afirmacao + pergunta na MESMA frase ("..., pode confirmar?"). O `?`
+// desfazia o "anotei"; a virgula antes do rabo interrogativo passa a separar.
+const rabo = rodar(FONTE_TXT, { texto: 'Pronto, anotei 20 bolos no pedido, pode confirmar?', estado: rascunho(40000, [item('Bolo', 10, 4000)]) });
+chk('18/09 "anotei 20 no pedido, pode confirmar?" (sem escrita) BARRA', rabo._portao.veredito === 'barrado_regra_1', rabo._portao.veredito);
+const rabo2 = rodar(FONTE_TXT, { texto: 'Seu pedido ficou com 20 bolos, tá certo?', estado: rascunho(40000, [item('Bolo', 10, 4000)]) });
+chk('18/09 "seu pedido ficou com 20, ta certo?" (sem escrita) BARRA', rabo2._portao.veredito === 'barrado_regra_1', rabo2._portao.veredito);
+const ofertaRabo = rodar(FONTE_TXT, { texto: 'Quer que eu anote 20 bolos no seu pedido, ou prefere 10?', estado: rascunho(40000, [item('Bolo', 10, 4000)]) });
+chk('18/09 oferta "quer que eu anote..., ou prefere?" continua PASSANDO', ofertaRabo._portao.veredito === 'passou', ofertaRabo._portao.veredito);
+const rabo3 = rodar(FONTE_TXT, { texto: 'Anotei 20 bolos no pedido, pode confirmar?', estado: rascunho(80000, [item('Bolo', 20, 4000)], true) });
+chk('18/09 a mesma frase COM escrita neste turno PASSA', rabo3._portao.veredito === 'passou', rabo3._portao.veredito);
+
 // ============================================================================
 console.log('\n== 3. O que NAO pode ser barrado ==\n');
 // ============================================================================
@@ -208,7 +219,7 @@ const oferta = rodar(FONTE_TXT, {
   estado: semPedido,
 });
 chk('"Quer que eu ja coloque..." NAO e efeito consumado', oferta._portao.afirmou_efeito_consumado === false);
-chk('oferta passa', oferta._portao.veredito === 'passou', oferta._portao.veredito);
+chk('oferta passa', ofertaRabo._portao.veredito === 'passou', ofertaRabo._portao.veredito);
 
 // Falso positivo conhecido da D1: lista de vacinas do `fortalize`, tenant sem venda.
 const vacina = rodar(FONTE_TXT, {

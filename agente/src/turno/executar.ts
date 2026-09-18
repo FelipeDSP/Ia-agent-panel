@@ -31,6 +31,7 @@ import { resolverPerfil } from '../perfil.ts';
 import { montarSystemMessage, versaoDasPartes } from '../agente/prompt.ts';
 import type { Modelo, MensagemHistorico } from '../agente/modelo.ts';
 import { ferramentasDoPerfil, temPagamento } from '../tools/index.ts';
+import { transferirHumano } from '../tools/transferir-humano.ts';
 import type { Asaas } from '../pagamento/asaas.ts';
 import type { Embeddings } from '../tools/contexto.ts';
 import { transcreverAnexo, type Anexo, type Transcritor } from '../midia/transcrever.ts';
@@ -118,6 +119,9 @@ export async function narrarEstadoDoSistema(db: Db, tenantId: string, conversati
 
 /** Sem texto nenhum utilizável (só avisos de mídia): o que dizer. */
 const AVISO_PADRAO_MIDIA = 'Ainda não consigo ouvir áudio por aqui. Pode escrever?';
+
+/** O que o cliente lê quando o portão barra duas vezes seguidas e a transferência entrou. */
+export const TEXTO_PORTAO_TRANSFERIU = 'Não consegui registrar isso direitinho por aqui 😕 Já chamei um atendente para cuidar do seu pedido com você — só um instante que alguém te responde.';
 
 export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversationId: number; filaIds: string[]; mensagens: MensagemDaFila[] }): Promise<ResultadoTurno> {
   const { db, tenant } = { db: deps.db, tenant: p.tenant };
@@ -281,15 +285,32 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       () => aplicarPortao({ db, n8nJsDir: deps.n8nJsDir, tenantId: tenant.tenant_id, conversationId, perfil, textoModelo: limpa.texto, componentes }),
       (s) => ({ veredito: s.veredito, transferir: s.transferir, bruto: s.portao.bruto ?? null }));
 
-    // ---- envia; nota privada se o portão pediu ----
+    // ---- duas barradas seguidas: transfere DE VERDADE ----
+    // Até 18/09 o portão só deixava a nota privada e a substituta repetia o
+    // carrinho — na conversa 39 do Empório foram três "Deixa eu confirmar seu
+    // pedido" seguidos e a venda se perdeu. Agora, quando a transferência está
+    // ligada e no horário, a conversa é pausada, o dono avisado e o cliente
+    // ouve que um atendente assume; a divergência (banco × modelo) vai na nota
+    // do resumo. Fora do horário, ou com a transferência desligada, fica como
+    // era: substituta + nota, e o agente segue tentando.
+    let saidaFinal = portao.output;
+    if (portao.transferir && portao.notaPrivada) {
+      const tr = await turno.medir('tool', 'transferir_humano:portao', { conversationId },
+        () => transferirHumano(ctx, `Portão de venda: duas respostas barradas seguidas — o agente afirmou algo que o banco não confirma.\n\n${portao.notaPrivada}`),
+        (r) => ({ pausou: r.pausou, notificou: r.notificou, disponivel: r.disponivel }));
+      if (tr.pausou) saidaFinal = TEXTO_PORTAO_TRANSFERIU;
+      else {
+        try {
+          await turno.medir('envio', 'chatwoot.nota_privada_portao', { conversationId },
+            () => deps.chatwoot.enviar({ tenantId: tenant.tenant_id, conversationId, content: portao.notaPrivada!, privada: true }));
+        } catch { /* a nota falhar não derruba o turno */ }
+      }
+    }
+    portao.output = saidaFinal;
+
+    // ---- envia ----
     await turno.medir('envio', 'chatwoot.messages', { conversationId, chars: portao.output.length },
       () => deps.chatwoot.enviar({ tenantId: tenant.tenant_id, conversationId, content: portao.output }));
-    if (portao.transferir && portao.notaPrivada) {
-      try {
-        await turno.medir('envio', 'chatwoot.nota_privada_portao', { conversationId },
-          () => deps.chatwoot.enviar({ tenantId: tenant.tenant_id, conversationId, content: portao.notaPrivada!, privada: true }));
-      } catch { /* a nota falhar não derruba o turno — a resposta já saiu */ }
-    }
 
     // ---- Registra Mensagem: NÃO é continue — falhar aqui é falhar o turno ----
     const ids = await turno.medir('registro', 'api_n8n_registrar_mensagem', { conversationId },

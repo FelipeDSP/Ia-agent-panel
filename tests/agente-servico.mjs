@@ -711,6 +711,34 @@ try {
       enderecoMsg && /maps\.app\.goo\.gl\/x1/.test(enderecoMsg.content) && pfs2[2]?.saida?.diagnostico?.endereco === 'enviado' && /já foi enviado ao cliente/.test(pfs2[2]?.saida?.texto ?? '')
       && (await um(`select count(*)::int n from public.mensagens_log where tenant_id=$1 and conversation_id=507 and direcao='saida' and conteudo like '📍%'`, [T.a])).n === 1, JSON.stringify({ e: enderecoMsg?.content, d: pfs2[2]?.saida?.diagnostico }));
     chk('72: o aviso ao dono traz "🙋 Retira: Maria Souza"', /🙋 Retira: Maria Souza/.test(chamadasNumero.at(-1)?.texto ?? ''), chamadasNumero.at(-1)?.texto?.slice(0, 200));
+
+    // 18/09 (conversa 39 do Empório): o modelo AFIRMA quantidade sem chamar a
+    // tool; o portão barra; na SEGUNDA barrada seguida a conversa é transferida
+    // de verdade — pausa, aviso ao dono, e o cliente ouve que um atendente assume.
+    roteiro.push({ tool: 'gerenciar_pedido', args: { acao: 'adicionar', produto_id: PROD, quantidade: 10, observacao: null, metadados: null, pagamento: null, nome_retirada: null } },
+                  { texto: 'Anotei 10 bolos para você. Quer fechar?' });
+    await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 508, content: 'quero 10 bolos' }));
+    await vencer(); await umCiclo(depsWorker);
+    chk('prompt (69/18-09): ensina a MUDAR quantidade com adicionar + total novo', /quantidade TOTAL nova/.test(vistoPeloModelo.at(-1).systemMessage));
+    roteiro.push({ texto: 'Pronto, anotei 20 bolos no seu pedido! Quer fechar?' });   // sem tool: afirmou o que o banco não tem
+    const f9i = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 508, content: 'são 20' }));
+    await vencer(); await umCiclo(depsWorker);
+    const t9i = await turnoDaFila(f9i.filaId);
+    chk('1ª barrada: regra 1, substituta mostra o carrinho (10), conversa segue ativa', t9i.portao_veredito === 'barrado_regra_1' && /Deixa eu confirmar seu pedido/.test(chamadasChatwoot.at(-1).content)
+      && (await um(`select status from public.conversas where tenant_id=$1 and conversation_id=508`, [T.a])).status !== 'pausado', JSON.stringify({ v: t9i.portao_veredito, c: chamadasChatwoot.at(-1).content.slice(0, 60) }));
+    roteiro.push({ texto: 'Pronto, anotei 20 bolos no pedido, pode confirmar?' });   // de novo sem tool
+    const nAntes3 = chamadasNumero.length;
+    const f9j = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 508, content: 'não, são 20' }));
+    await vencer(); await umCiclo(depsWorker);
+    const t9j = await turnoDaFila(f9j.filaId);
+    const passos9j = await passosDe(t9j.id);
+    chk('2ª barrada seguida: TRANSFERIU — cliente lê "chamei um atendente", conversa pausada, dono avisado, nota com a divergência',
+      t9j.portao_veredito === 'barrado_regra_1' && /chamei um atendente/.test(chamadasChatwoot.at(-1).content)
+      && (await um(`select status from public.conversas where tenant_id=$1 and conversation_id=508`, [T.a])).status === 'pausado'
+      && chamadasNumero.length === nAntes3 + 1 && /Novo atendimento/.test(chamadasNumero.at(-1).texto)
+      && chamadasChatwoot.some((x) => x.privada === true && /duas respostas barradas seguidas/.test(x.content) && /20 bolos/.test(x.content))
+      && passos9j.some((p) => p.nome === 'transferir_humano:portao' && p.saida?.pausou === true), JSON.stringify({ v: t9j.portao_veredito, c: chamadasChatwoot.at(-1).content.slice(0, 60), st: passos9j.find((p) => p.nome === 'transferir_humano:portao')?.saida }));
+    chk('a memória guarda o que o cliente LEU (a transferência), não o texto barrado', (await um(`select conteudo from public.mensagens_log where tenant_id=$1 and conversation_id=508 and direcao='saida' order by criado_em desc limit 1`, [T.a])).conteudo.includes('chamei um atendente'));
   }
 
   // =========================================================================

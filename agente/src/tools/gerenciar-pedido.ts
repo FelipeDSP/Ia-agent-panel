@@ -97,7 +97,7 @@ export function ferramentaGerenciarPedido(ctx: ContextoTool): FerramentaDoModelo
       properties: {
         acao: { type: 'string', enum: ACOES.map((a) => a.acao), description: dicaFromAI() },
         produto_id: { type: ['string', 'null'], description: 'id do produto vindo de consultar_catalogo; null quando acao=ver, fechar ou cancelar' },
-        quantidade: { type: ['integer', 'null'], description: 'quantas unidades; 1 se o cliente nao disser; null fora de adicionar' },
+        quantidade: { type: ['integer', 'null'], description: 'quantas unidades — o TOTAL desejado do item. Para mudar a quantidade de um item que ja esta no pedido, chame adicionar de novo com o mesmo produto_id e o novo total (substitui, nao soma). 1 se o cliente nao disser; null fora de adicionar' },
         observacao: { type: ['string', 'null'], description: 'observacao do cliente sobre o item, ex: sem cebola. null se nao houver' },
         metadados: { type: ['string', 'null'], description: 'json com observacao geral do pedido, ex: {"observacao":"retirar as 7h"}; null se nao houver' },
         pagamento: { type: ['string', 'null'], enum: ['link', 'na_retirada', null], description: 'so em acao=fechar: como o cliente vai pagar — "link" (Pix/cartao agora) ou "na_retirada" (paga quando buscar). Se a loja oferece os dois, pergunte antes. null fora de fechar' },
