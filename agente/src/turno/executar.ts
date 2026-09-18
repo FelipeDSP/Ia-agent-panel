@@ -32,6 +32,7 @@ import { montarSystemMessage, versaoDasPartes } from '../agente/prompt.ts';
 import type { Modelo, MensagemHistorico } from '../agente/modelo.ts';
 import { ferramentasDoPerfil, temPagamento } from '../tools/index.ts';
 import { transferirHumano } from '../tools/transferir-humano.ts';
+import { enviarFotoComLegenda } from '../tools/enviar-foto.ts';
 import { linhaDoPromptFechado, situacao, textoDoAviso } from '../tenant/horario.ts';
 import { lerHorarioDoAgente } from '../tenant/horario-db.ts';
 import type { Asaas } from '../pagamento/asaas.ts';
@@ -41,7 +42,7 @@ import { saidaLimpa } from './saida.ts';
 import { estimarComoN8n, desvioPct } from './estimativa.ts';
 import { aplicarPortao } from './portao.ts';
 import { digitosDe, lerOferta, secaoOferta } from '../pedido/oferta.ts';
-import type { ConfigTool } from '../tools/contexto.ts';
+import type { ConfigTool, FotoPendente } from '../tools/contexto.ts';
 
 /** Os números que recebem aviso nesta conta (vendas e transferência), em dígitos. */
 export async function destinosDeAviso(db: Db, tenantId: string): Promise<string[]> {
@@ -277,7 +278,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     if (estadoDoSistema) await turno.passo('registro', 'estado_do_sistema', { saida: { texto: estadoDoSistema } });
 
     // ---- o modelo ----
-    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas, aceitaLink: oferta?.pagamentos.includes('link') ?? true, ...(deps.agora ? { agora: deps.agora } : {}) };
+    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas, aceitaLink: oferta?.pagamentos.includes('link') ?? true, ...(deps.agora ? { agora: deps.agora } : {}), fotoPendente: null as FotoPendente | null };
     const ferramentas = ferramentasDoPerfil(ctx, perfil, toolsAtivas);
     const r = await deps.modelo.responder({
       modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto, estadoDoSistema,
@@ -347,9 +348,15 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     }
     portao.output = saidaFinal;
 
-    // ---- envia ----
-    await turno.medir('envio', 'chatwoot.messages', { conversationId, chars: portao.output.length },
-      () => deps.chatwoot.enviar({ tenantId: tenant.tenant_id, conversationId, content: portao.output }));
+    // ---- envia: com foto preparada, UMA mensagem (foto + resposta como legenda) ----
+    if (ctx.fotoPendente) {
+      const foto = ctx.fotoPendente;
+      await turno.medir('envio', 'chatwoot.messages+foto', { conversationId, chars: portao.output.length, produto: foto.produtoNome, bytes: foto.bytes.byteLength },
+        () => enviarFotoComLegenda(ctx, foto, portao.output));
+    } else {
+      await turno.medir('envio', 'chatwoot.messages', { conversationId, chars: portao.output.length },
+        () => deps.chatwoot.enviar({ tenantId: tenant.tenant_id, conversationId, content: portao.output }));
+    }
 
     // ---- Registra Mensagem: NÃO é continue — falhar aqui é falhar o turno ----
     const ids = await turno.medir('registro', 'api_n8n_registrar_mensagem', { conversationId },

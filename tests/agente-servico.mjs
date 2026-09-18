@@ -811,6 +811,37 @@ try {
   }
 
   // =========================================================================
+  console.log('\n== 7⅞. FOTO NUMA MENSAGEM SÓ (18/09): a resposta do modelo vira a legenda ==\n');
+  // =========================================================================
+  {
+    await c.query(`insert into public.tenant_tools (tenant_id, tool_nome, ativo, contratado) values ($1, 'foto_produto', true, true) on conflict (tenant_id, tool_nome) do update set ativo = true, contratado = true`, [T.a]);
+    await c.query(`update public.produtos set foto_path = $2 where id = $1`, [PROD, `${T.a}/bolo.jpg`]);
+    const chamadasFoto = [];
+    const fetchComFoto = async (u, init) => {
+      const url = String(u);
+      if (url.includes('/functions/v1/foto-produto')) return new Response(JSON.stringify({ url: 'https://storage.teste/assinada/bolo.jpg' }), { status: 200 });
+      if (url.includes('storage.teste/assinada')) return new Response(new Uint8Array([255, 216, 255]), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+      if (url.includes('/conversations/') && url.endsWith('/messages') && init?.body instanceof FormData) {
+        chamadasFoto.push({ url, content: init.body.get('content'), anexos: init.body.getAll('attachments[]').length });
+        return new Response(JSON.stringify({ id: 777 }), { status: 200 });
+      }
+      return fetchFalso(u);
+    };
+    roteiro.push({ tool: 'consultar_catalogo', args: { termo: 'bolo' } }, { tool: 'enviar_foto_produto', args: { produto_id: PROD } }, { texto: 'Aqui está o bolo de cenoura, R$ 40,00. Quer que eu anote?' });
+    const cwAntesF = chamadasChatwoot.length;
+    const f9k = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 509, content: 'me manda a foto do bolo' }));
+    await vencer(); await umCiclo({ ...depsWorker, fotoSecret: 'segredo-foto-teste', fetchFn: fetchComFoto });
+    const t9k = await turnoDaFila(f9k.filaId); const p9k = await passosDe(t9k.id);
+    const tf = p9k.find((p) => p.tipo === 'tool' && p.nome === 'enviar_foto_produto');
+    chk('a tool PREPARA a foto (diagnóstico preparada) e manda o modelo escrever a legenda', tf?.saida?.diagnostico?.preparada === true && /legenda/.test(tf?.saida?.texto ?? ''), JSON.stringify(tf?.saida).slice(0, 160));
+    chk('o prompt por conta diz que a foto vai junto com a resposta', /vai JUNTO com a sua resposta/.test(vistoPeloModelo.at(-1).systemMessage));
+    chk('UMA mensagem ao Chatwoot: multipart com 1 anexo e a resposta do modelo como legenda; nenhuma mensagem de texto separada',
+      chamadasFoto.length === 1 && chamadasFoto[0].anexos === 1 && chamadasFoto[0].content === 'Aqui está o bolo de cenoura, R$ 40,00. Quer que eu anote?' && chamadasChatwoot.length === cwAntesF
+      && p9k.some((p) => p.nome === 'chatwoot.messages+foto'), JSON.stringify({ f: chamadasFoto, textos: chamadasChatwoot.length - cwAntesF }));
+    chk('turno ok; a saída registrada na memória é a legenda', t9k.status === 'ok' && (await um(`select conteudo from public.mensagens_log where tenant_id=$1 and conversation_id=509 and direcao='saida'`, [T.a])).conteudo.startsWith('Aqui está o bolo'));
+  }
+
+  // =========================================================================
   console.log('\n== 8. SABOTAGEM (nos módulos, com md5) ==\n');
   // =========================================================================
   {

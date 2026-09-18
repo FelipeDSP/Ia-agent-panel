@@ -35,6 +35,20 @@ export interface ContextoTool {
   aceitaLink?: boolean;
   /** Relógio injetável (testes); ausente = `new Date()`. */
   agora?: () => Date;
+  /**
+   * 18/09: a foto do produto vai JUNTO com a resposta do modelo, numa mensagem
+   * só (a resposta vira a legenda). A tool prepara aqui; o turno envia no fim.
+   */
+  fotoPendente?: FotoPendente | null;
+}
+
+export interface FotoPendente {
+  bytes: Uint8Array;
+  tipo: string;
+  nomeArquivo: string;
+  produtoNome: string;
+  chatwootUrl: string;
+  chatwootToken: string;
 }
 
 /** `api_n8n_config_tool(tenant, tool)` — a primeira coisa de toda tool, como no n8n. */

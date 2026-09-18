@@ -78,6 +78,10 @@ export function secaoOferta(o: Oferta): string {
   if (o.retirada.endereco) {
     linhas.push('- O endereço de retirada é enviado ao cliente automaticamente, em mensagem própria, assim que o pedido fecha — não o repita nem invente outro.');
   }
+  // 18/09: a foto vai junto com a resposta (uma mensagem só); a frase do
+  // modelo é a legenda. Mora aqui, e não no wrapper fixo, porque o wrapper é
+  // byte a byte o do n8n (teste:agente-servico §2).
+  linhas.push('- Foto de produto (enviar_foto_produto): a foto vai JUNTO com a sua resposta, numa mensagem só — a sua frase vira a legenda. Depois de chamar a ferramenta, escreva só uma frase curta sobre o item; não diga "enviei a foto" à parte.');
   const soLink = o.pagamentos.length === 1 && o.pagamentos[0] === 'link';
   const soRetirada = o.pagamentos.length === 1 && o.pagamentos[0] === 'na_retirada';
   if (soLink) {
