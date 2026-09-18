@@ -124,7 +124,9 @@
     "teste:migracao-retencao": "node --env-file=.env.local tests/migracao-retencao.mjs",
     "teste:migracao-tokens-cache": "node --env-file=.env.local tests/migracao-tokens-cache.mjs",
     "teste:migracao-vendas-modalidades": "node --env-file=.env.local tests/migracao-vendas-modalidades.mjs",
-    "teste:migracao-guard-usuarios": "node --env-file=.env.local tests/migracao-guard-usuarios.mjs"
+    "teste:migracao-guard-usuarios": "node --env-file=.env.local tests/migracao-guard-usuarios.mjs",
+    "teste:migracao-horario-agente": "node --env-file=.env.local tests/migracao-horario-agente.mjs",
+    "teste:horario-agente": "node --import ./tests/lib/ts.mjs tests/horario-agente.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

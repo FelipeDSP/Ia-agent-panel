@@ -6,6 +6,7 @@ import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarEdicaoTenantAdmin } from '@/lib/tenants/schema';
+import { validarHorarioAgente } from '@/lib/tenants/horario-agente';
 import { clientePodeDesligar } from '@/lib/tools/registro';
 import { MAX_DESCRICAO_TOTAL, validarTime } from '@/lib/tools/times-chatwoot';
 import { verificarTime } from '@/lib/tools/times-chatwoot.server';
@@ -212,6 +213,28 @@ export async function salvarTransferirHumano(
 
   revalidatePath('/painel/configuracoes');
   return { sucesso: 'Configuração de transferência salva.' };
+}
+
+/**
+ * Cliente salva o horário de atendimento do agente (74). `tenants.horario_agente`
+ * está na whitelist do guard, então a sessão do próprio cliente grava; a RLS
+ * escopa por tenant e o filtro explícito é a segunda camada (regra 6).
+ * Desligado = NULL = sempre aberto.
+ */
+export async function salvarHorarioAgente(_estado: EstadoConfig, fd: FormData): Promise<EstadoConfig> {
+  const usuario = await exigirTenantAdmin();
+  const validado = validarHorarioAgente(fd);
+  if (!validado.ok) return { errosCampo: validado.erros };
+
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase
+    .from('tenants')
+    .update({ horario_agente: validado.valor })
+    .eq('id', usuario.tenantId);
+  if (error) return { erro: `Não foi possível salvar: ${error.message}` };
+
+  revalidatePath('/painel/configuracoes');
+  return { sucesso: validado.valor ? 'Horário de atendimento salvo.' : 'Horário desligado: o agente atende a qualquer hora.' };
 }
 
 /**

@@ -16,10 +16,12 @@ import {
   type ConfigTransferir,
 } from '@/lib/tools/transferir-humano';
 import { TOOL_VENDAS, lerConfigVendas } from '@/lib/tools/vendas-config';
+import { lerHorarioAgente } from '@/lib/tenants/horario-agente';
 
 import { FormularioConfig } from './formulario';
 import { FormularioTransferir } from './formulario-transferir';
 import { FormularioVendas } from './formulario-vendas';
+import { FormularioHorario } from './formulario-horario';
 import { ListaModulos, SwitchModulo } from './lista-modulos';
 import { Times, type TimeDaTela } from './times';
 
@@ -30,7 +32,7 @@ export default async function PaginaConfiguracoes() {
   const [{ data: tenant }, { data: tools }, { data: timesRaw }] = await Promise.all([
     supabase
       .from('tenants')
-      .select('agente_ativo, debounce_segundos, msg_midia_nao_suportada, msg_fora_escopo, chatwoot_account_id')
+      .select('agente_ativo, debounce_segundos, msg_midia_nao_suportada, msg_fora_escopo, chatwoot_account_id, horario_agente')
       .eq('id', usuario.tenantId)
       .maybeSingle(),
     supabase
@@ -107,6 +109,19 @@ export default async function PaginaConfiguracoes() {
             msgMidia={tenant.msg_midia_nao_suportada}
             msgForaEscopo={tenant.msg_fora_escopo}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Horário de atendimento</CardTitle>
+          <CardDescription>
+            Quando a loja atende. Fora disso o agente avisa que está fechado, fica em silêncio ou
+            atende sabendo que está fechado — você escolhe. Sem horário, atende sempre.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FormularioHorario horario={lerHorarioAgente(tenant.horario_agente)} />
         </CardContent>
       </Card>
 

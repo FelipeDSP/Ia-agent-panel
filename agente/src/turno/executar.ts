@@ -32,6 +32,7 @@ import { montarSystemMessage, versaoDasPartes } from '../agente/prompt.ts';
 import type { Modelo, MensagemHistorico } from '../agente/modelo.ts';
 import { ferramentasDoPerfil, temPagamento } from '../tools/index.ts';
 import { transferirHumano } from '../tools/transferir-humano.ts';
+import { lerHorarioAgente, linhaDoPromptFechado, situacao, textoDoAviso, type HorarioAgente } from '../tenant/horario.ts';
 import type { Asaas } from '../pagamento/asaas.ts';
 import type { Embeddings } from '../tools/contexto.ts';
 import { transcreverAnexo, type Anexo, type Transcritor } from '../midia/transcrever.ts';
@@ -40,6 +41,12 @@ import { estimarComoN8n, desvioPct } from './estimativa.ts';
 import { aplicarPortao } from './portao.ts';
 import { digitosDe, lerOferta, secaoOferta } from '../pedido/oferta.ts';
 import type { ConfigTool } from '../tools/contexto.ts';
+
+/** `tenants.horario_agente` (74) — null sem a migração ou sem configuração = sempre aberto. */
+export async function lerHorarioDoAgente(db: Db, tenantId: string): Promise<HorarioAgente | null> {
+  try { return lerHorarioAgente(await fnValor<unknown>(db, 'api_agente_horario', [tenantId])); }
+  catch { return null; }
+}
 
 /** Os números que recebem aviso nesta conta (vendas e transferência), em dígitos. */
 export async function destinosDeAviso(db: Db, tenantId: string): Promise<string[]> {
@@ -67,6 +74,8 @@ export interface MensagemDaFila {
 }
 
 export interface Deps {
+  /** Relógio injetável (74): os testes de horário não afirmam o relógio de parede. */
+  agora?: () => Date;
   db: Db; chatwoot: Chatwoot; waha: Waha | null; modelo: Modelo;
   embeddings: Embeddings | null; transcritor: Transcritor | null;
   n8nJsDir: string; versaoCodigo: string; fotoSecret: string | null; fetchFn: typeof fetch;
@@ -171,6 +180,40 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       return { status: 'descartado', turnoId: turno.id, motivo: 'pausada_no_turno' };
     }
 
+    // ---- 74: horário de atendimento do agente ----
+    // NULL = sempre aberto (como antes). Fechado: `silencio` registra a entrada
+    // (a memória guarda o que o cliente disse) e não responde; `aviso` manda UM
+    // "estamos fechados" por conversa por período (claim no banco) e depois
+    // silencia; `atender` segue o turno normal com o modelo avisado. Áudio
+    // fechado não é transcrito nos dois primeiros — custo sem resposta.
+    const horario = await lerHorarioDoAgente(db, tenant.tenant_id);
+    const sit = situacao(horario, (deps.agora ?? (() => new Date()))());
+    let promptFechado = '';
+    if (!sit.aberto && horario) {
+      await turno.passo('portao', 'horario_agente', { saida: { motivo: sit.motivo, postura: horario.foraHorario, proxima: sit.proximaAbertura } });
+      if (horario.foraHorario === 'atender') {
+        promptFechado = linhaDoPromptFechado(sit);
+      } else {
+        const textoEntrada = mensagens.map((m) => m.mensagem ?? (m.acao === 'midia' ? '[áudio]' : '')).filter(Boolean).join('\n');
+        const avisa = horario.foraHorario === 'aviso'
+          && await turno.medir('registro', 'api_agente_aviso_fora_horario', { conversationId }, () => fnValor<boolean>(db, 'api_agente_aviso_fora_horario', [tenant.tenant_id, conversationId, 12]));
+        if (avisa) {
+          const aviso = textoDoAviso(horario, sit);
+          await turno.medir('envio', 'chatwoot.messages', { conversationId, chars: aviso.length },
+            () => deps.chatwoot.enviar({ tenantId: tenant.tenant_id, conversationId, content: aviso }));
+          const ids = await turno.medir('registro', 'api_n8n_registrar_mensagem', { conversationId },
+            () => registrar(textoEntrada, aviso, { entrada: 0, saida: 0 }, null, { fonte: 'fora_horario', chamadas: 0 }));
+          await turno.fechar({ status: 'ok', usageEntrada: 0, usageSaida: 0, chamadasModelo: 0, toolsChamadas: 0, mensagensLogSaidaId: ids.saidaId });
+          return { status: 'ok', turnoId: turno.id, resposta: aviso };
+        }
+        // silêncio (ou aviso já dado neste período): só a entrada vai para a memória
+        await turno.medir('registro', 'api_n8n_registrar_mensagem', { conversationId },
+          () => fnValor<string>(db, 'api_n8n_registrar_mensagem', [tenant.tenant_id, conversationId, 'entrada', textoEntrada, 0, 0, tenant.modelo, null, turno.id, null]));
+        await turno.fechar({ status: 'descartado', erro: `fora_horario:${sit.motivo}` });
+        return { status: 'descartado', turnoId: turno.id, motivo: 'fora_horario' };
+      }
+    }
+
     // ---- mídia: transcreve o que for áudio; junta os avisos do que não deu ----
     const textos: string[] = [];
     const avisos: string[] = [];
@@ -216,7 +259,8 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       ? lerOferta((await fnUma<ConfigTool>(db, 'api_n8n_config_tool', [tenant.tenant_id, 'vendas']))?.config)
       : null;
     const secoesExtras = perfil === 'vendas' && temPagamento(toolsAtivas) && deps.asaas && (oferta?.pagamentos.includes('link') ?? true) ? ['gerar_link_pagamento'] : [];
-    const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt, secoesExtras, ...(oferta ? { secaoDinamica: secaoOferta(oferta) } : {}) });
+    const secaoDinamica = (oferta ? secaoOferta(oferta) : '') + promptFechado;
+    const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt, secoesExtras, ...(secaoDinamica ? { secaoDinamica } : {}) });
     await fnValor(db, 'api_agente_prompt_registrar', [tenant.tenant_id, prompt.hash, prompt.texto, `${deps.versaoCodigo}/partes:${versaoDasPartes()}`]);
     await turno.prompt(perfil, prompt.hash);
     // 66: silêncio da memória e formas de pagamento são do tenant (agência-only).

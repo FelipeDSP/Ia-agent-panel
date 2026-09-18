@@ -70,6 +70,8 @@ const M71 = leia('20260917210000_71_pagamento_confirmado_tem_fim.sql');
 const R71 = leia('20260917210000_71_pagamento_confirmado_tem_fim_rollback.sql');
 const M72 = leia('20260917220000_72_nome_de_quem_retira.sql');
 const R72 = leia('20260917220000_72_nome_de_quem_retira_rollback.sql');
+const M74 = leia('20260918120000_74_horario_do_agente.sql');
+const R74 = leia('20260918120000_74_horario_do_agente_rollback.sql');
 const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
@@ -171,6 +173,7 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R74));
   await c.query(semTx(R72));
   await c.query(semTx(R71));
   await c.query(semTx(R70));
@@ -191,6 +194,7 @@ try {
   await c.query(semTx(M70));
   await c.query(semTx(M71));
   await c.query(semTx(M72));
+  await c.query(semTx(M74));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -739,6 +743,54 @@ try {
       && chamadasChatwoot.some((x) => x.privada === true && /duas respostas barradas seguidas/.test(x.content) && /20 bolos/.test(x.content))
       && passos9j.some((p) => p.nome === 'transferir_humano:portao' && p.saida?.pausou === true), JSON.stringify({ v: t9j.portao_veredito, c: chamadasChatwoot.at(-1).content.slice(0, 60), st: passos9j.find((p) => p.nome === 'transferir_humano:portao')?.saida }));
     chk('a memória guarda o que o cliente LEU (a transferência), não o texto barrado', (await um(`select conteudo from public.mensagens_log where tenant_id=$1 and conversation_id=508 and direcao='saida' order by criado_em desc limit 1`, [T.a])).conteudo.includes('chamei um atendente'));
+  }
+
+  // =========================================================================
+  console.log('\n== 7¾. HORÁRIO DO AGENTE (74): fechado às segundas — aviso único, silêncio, atender ==\n');
+  // =========================================================================
+  {
+    // A fecha às segundas (Empório). O relógio é injetado: segunda 14/09/2026, 15h em Rondônia (19:00Z).
+    const SEGUNDA = () => new Date('2026-09-14T19:00:00Z');
+    const TERCA = () => new Date('2026-09-15T13:00:00Z');   // terça 9h em Porto Velho
+    await c.query(`update public.tenants set horario_agente = '{"timezone":"America/Porto_Velho","dias_semana":[2,3,4,5,6],"hora_inicio":8,"hora_fim":18,"fora_horario":"aviso"}'::jsonb where id=$1`, [T.a]);
+    const depsSegunda = { ...depsWorker, agora: SEGUNDA };
+    const cwAntesH = chamadasChatwoot.length; const vistosH = vistoPeloModelo.length;
+    const fh1 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 600, content: 'tem pão de queijo?' }));
+    await vencer(); const ch1 = await umCiclo(depsSegunda);
+    const th1 = await turnoDaFila(fh1.filaId);
+    chk('segunda, postura aviso: UMA mensagem "estamos fechados" com a próxima abertura (amanhã às 08h), sem modelo, turno ok',
+      ch1.respondidas === 1 && vistoPeloModelo.length === vistosH && chamadasChatwoot.length === cwAntesH + 1 && /estamos fechados/i.test(chamadasChatwoot.at(-1).content) && /amanhã às 08h/.test(chamadasChatwoot.at(-1).content)
+      && th1.status === 'ok' && th1.chamadas_modelo === 0 && (await passosDe(th1.id)).some((p) => p.nome === 'horario_agente' && p.saida?.motivo === 'dia_fechado'), JSON.stringify({ ch1, c: chamadasChatwoot.at(-1).content, s: th1.status }));
+    chk('o aviso e a pergunta entraram em mensagens_log (fonte fora_horario)', (await um(`select count(*)::int n from public.mensagens_log where tenant_id=$1 and conversation_id=600`, [T.a])).n === 2
+      && (await um(`select fonte_tokens f from public.mensagens_log where tenant_id=$1 and conversation_id=600 and direcao='saida'`, [T.a])).f === 'fora_horario');
+    const fh2 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 600, content: 'alô?' }));
+    await vencer(); const ch2 = await umCiclo(depsSegunda);
+    const th2 = await turnoDaFila(fh2.filaId);
+    chk('segunda mensagem no mesmo período: silêncio (turno descartado fora_horario), nada enviado, entrada na memória',
+      ch2.respondidas === 0 && chamadasChatwoot.length === cwAntesH + 1 && th2.status === 'descartado' && /fora_horario/.test(th2.erro ?? '')
+      && (await um(`select count(*)::int n from public.mensagens_log where tenant_id=$1 and conversation_id=600 and direcao='entrada'`, [T.a])).n === 2, JSON.stringify({ ch2, s: th2.status, e: th2.erro }));
+    // terça de manhã: aberto, turno normal com o modelo
+    roteiro.push({ texto: 'Bom dia! Tem sim, pão de queijo a R$ 1,50.' });
+    const fh3 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 600, content: 'e agora?' }));
+    await vencer(); await umCiclo({ ...depsWorker, agora: TERCA });
+    const vh3 = vistoPeloModelo.at(-1);
+    chk('terça 9h: aberto — o modelo responde e a memória traz o que o cliente disse enquanto fechado ("tem pão de queijo?", "alô?")',
+      vistoPeloModelo.length === vistosH + 1 && vh3.historico.some((h) => h.papel === 'human' && /alô\?/.test(h.texto)) && !/FECHADA/.test(vh3.systemMessage), JSON.stringify(vh3.historico.map((h) => h.texto.slice(0, 20))));
+    // postura silencio: nem o aviso
+    await c.query(`update public.tenants set horario_agente = horario_agente || '{"fora_horario":"silencio"}'::jsonb where id=$1`, [T.a]);
+    const cwAntesS = chamadasChatwoot.length;
+    const fh4 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 601, content: 'oi' }));
+    await vencer(); await umCiclo(depsSegunda);
+    chk('postura silencio: conversa nova fechada -> nada enviado, descartado', chamadasChatwoot.length === cwAntesS && (await turnoDaFila(fh4.filaId)).status === 'descartado');
+    // postura atender: o modelo é chamado com a loja FECHADA no prompt
+    await c.query(`update public.tenants set horario_agente = horario_agente || '{"fora_horario":"atender","fechados":["2026-09-15"]}'::jsonb where id=$1`, [T.a]);
+    roteiro.push({ texto: 'Oi! Hoje estamos fechados, mas posso anotar seu pedido para amanhã.' });
+    const fh5 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 602, content: 'oi, tem bolo?' }));
+    await vencer(); await umCiclo(depsSegunda);
+    const vh5 = vistoPeloModelo.at(-1); const th5 = await turnoDaFila(fh5.filaId);
+    chk('postura atender: modelo chamado, prompt diz "a loja está FECHADA" e a próxima abertura pula a terça FECHADA (quarta 16/09)',
+      th5.status === 'ok' && th5.chamadas_modelo === 1 && /a loja está FECHADA agora/.test(vh5.systemMessage) && /quarta \(16\/09\) às 08h/.test(vh5.systemMessage), vh5.systemMessage.slice(-300));
+    await c.query(`update public.tenants set horario_agente = null where id=$1`, [T.a]);
   }
 
   // =========================================================================
