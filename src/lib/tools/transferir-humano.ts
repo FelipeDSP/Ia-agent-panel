@@ -35,6 +35,8 @@ export type Notificacao = {
 export type ConfigTransferir = {
   horario: Horario;
   notificacao: Notificacao;
+  /** 18/09: "há atendente" segue o horário de atendimento da loja (`tenants.horario_agente`); `horario` fica como reserva. */
+  horario_da_loja?: boolean;
 };
 
 /** Fusos brasileiros — o cliente escolhe o dele para o horário bater. */
@@ -122,11 +124,15 @@ function inteiro(fd: FormData, campo: string): number | null {
  * módulos", que é o único escritor daquela coluna. Ver `alternarModulo`.
  */
 export function validarTransferirCliente(fd: FormData): Resultado<{
-  horario: Horario;
-  canal: 'waha' | 'nenhum';
-  destino?: string;
+  horario_da_loja: boolean;
+  /** só quando `horario_da_loja` é falso (horário próprio) */
+  horario?: Horario;
 }> {
   const erros: Record<string, string> = {};
+
+  // 18/09: a notificação saiu daqui (mora em "Avisos para você"); o horário
+  // pode ser o da loja, e aí os campos abaixo nem são lidos.
+  if ((fd.get('quando') ?? 'loja') === 'loja') return { ok: true, valor: { horario_da_loja: true } };
 
   const timezone = String(fd.get('timezone') ?? '').trim();
   if (!(TIMEZONES_BR as readonly string[]).includes(timezone)) {
@@ -158,32 +164,18 @@ export function validarTransferirCliente(fd: FormData): Resultado<{
     erros['hora_fim'] = 'A hora de fim precisa ser maior que a de início.';
   }
 
-  const notificar = fd.get('notificar') === 'on' || fd.get('notificar') === 'true';
-  const destinoBruto = String(fd.get('destino') ?? '').trim();
-  let destino: string | undefined;
-  if (destinoBruto) {
-    const jid = formatarDestino(destinoBruto);
-    if (!jid) {
-      erros['destino'] =
-        'Informe o número com o código do país (ex.: 556993666645) ou cole o ID (…@c.us).';
-    } else destino = jid;
-  } else if (notificar) {
-    erros['destino'] = 'Para avisar no WhatsApp, informe o número.';
-  }
-
   if (Object.keys(erros).length > 0) return { ok: false, erros };
 
   return {
     ok: true,
     valor: {
+      horario_da_loja: false,
       horario: {
         timezone,
         dias_semana,
         hora_inicio: hora_inicio as number,
         hora_fim: hora_fim as number,
       },
-      canal: notificar ? 'waha' : 'nenhum',
-      destino,
     },
   };
 }

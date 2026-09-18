@@ -33,6 +33,8 @@ export interface ContextoTool {
   pagamentoFormas?: string[];
   /** 69: a conta aceita pagamento por link (`vendas.config.pagamentos`)? Ausente = sim. */
   aceitaLink?: boolean;
+  /** Relógio injetável (testes); ausente = `new Date()`. */
+  agora?: () => Date;
 }
 
 /** `api_n8n_config_tool(tenant, tool)` — a primeira coisa de toda tool, como no n8n. */

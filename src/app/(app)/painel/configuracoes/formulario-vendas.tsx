@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState } from 'react';
 
 import { salvarVendas, type EstadoConfig } from '../acoes';
 import { Alert } from '@/components/ui/alert';
@@ -19,26 +19,23 @@ const CHECK =
   'h-4 w-4 accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
 /**
- * O que o cliente decide sobre vendas (migração 69). Espelha o formulário da
- * transferência. O aviso por WhatsApp sai pela inbox do próprio agente (70),
- * então não depende de sessão nenhuma — só do número.
+ * O que o cliente decide sobre vendas (migração 69): formas de pagar,
+ * retirada e entrega. O aviso ao dono saiu daqui em 18/09 — mora em "Avisos
+ * para você", junto com o da transferência.
  */
 export function FormularioVendas({
   ativo,
   config,
-  destinoNumero,
   transferirDisponivel,
   linkDisponivel,
 }: {
   ativo: boolean;
   config: ConfigVendas;
-  destinoNumero: string;
   transferirDisponivel: boolean;
   /** módulo `pagamento` (Asaas) contratado — sem ele "por link" nem existe no agente */
   linkDisponivel: boolean;
 }) {
   const [estado, acao] = useActionState<EstadoConfig, FormData>(salvarVendas, {});
-  const [notificar, setNotificar] = useState(config.notificacao.canal !== 'nenhum');
 
   return (
     <form action={acao} className="flex flex-col gap-5">
@@ -132,47 +129,6 @@ export function FormularioVendas({
           </p>
         ) : null}
         <ErroCampo msg={estado.errosCampo?.['entrega']} />
-      </fieldset>
-
-      <fieldset className="flex flex-col gap-3 rounded-xl border border-border p-4">
-        <legend className="px-1 text-sm font-medium">Aviso de venda</legend>
-
-        <div className="flex flex-col gap-2">
-          <span className="text-sm">Quando avisar</span>
-          <div className="flex flex-wrap gap-4">
-            {EVENTOS.map((e) => (
-              <label key={e.valor} className="flex items-center gap-1.5 text-sm">
-                <input type="checkbox" name={`evento_${e.valor}`} defaultChecked={config.eventos.includes(e.valor)} className={CHECK} />
-                {e.rotulo}
-              </label>
-            ))}
-          </div>
-          <ErroCampo msg={estado.errosCampo?.['eventos']} />
-        </div>
-
-        <label className="flex items-center gap-3">
-          <input type="checkbox" name="nota_chatwoot" defaultChecked={config.notificacao.nota_chatwoot === true} className={CHECK} />
-          <span className="text-sm">Deixar uma nota privada na conversa do Chatwoot</span>
-        </label>
-
-        <label className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            name="notificar"
-            checked={notificar}
-            onChange={(e) => setNotificar(e.target.checked)}
-            className={CHECK}
-          />
-          <span className="text-sm">Me avisar no WhatsApp</span>
-        </label>
-        <div className="flex max-w-xs flex-col gap-2">
-          <Label htmlFor="destino_vendas">WhatsApp para aviso</Label>
-          <Input id="destino_vendas" name="destino" placeholder="Ex.: 556993666645" defaultValue={destinoNumero} disabled={!notificar} />
-          <p className="text-xs text-muted-foreground">
-            O aviso chega pelo mesmo WhatsApp que atende seus clientes. Se não chegar, tente sem o 9 depois do DDD.
-          </p>
-          <ErroCampo msg={estado.errosCampo?.['destino']} />
-        </div>
       </fieldset>
 
       <div>

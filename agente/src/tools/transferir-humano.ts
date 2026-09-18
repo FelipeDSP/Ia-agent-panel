@@ -12,6 +12,8 @@
  */
 import { fnUma, fnValor } from '../db.ts';
 import { mandarAoDono } from '../pedido/aviso.ts';
+import { situacao } from '../tenant/horario.ts';
+import { lerHorarioDoAgente } from '../tenant/horario-db.ts';
 import type { FerramentaDoModelo } from '../agente/modelo.ts';
 import type { ConfigTool, ContextoTool } from './contexto.ts';
 
@@ -21,6 +23,7 @@ export const TEXTO_FORA_DO_HORARIO = 'FORA_DO_HORARIO: não há atendente dispon
 
 interface Horario { timezone?: string; dias_semana?: number[]; hora_inicio?: number; hora_fim?: number }
 interface Notificacao { canal?: string; sessao?: string; destino?: string }
+/** 18/09: `horario_da_loja` = "há atendente" segue o horário de atendimento da loja (74); sem loja com horário, sempre. */
 
 export function disponivelAgora(horario: Horario | undefined, agora = new Date()): { disponivel: boolean; debug: Record<string, unknown> } {
   const h = horario ?? {};
@@ -39,8 +42,10 @@ export function disponivelAgora(horario: Horario | undefined, agora = new Date()
 
 export async function transferirHumano(ctx: ContextoTool, resumo: string): Promise<{ resultado: string; disponivel: boolean; notificou: 'waha' | 'chatwoot' | 'nenhum' | 'falhou'; pausou: boolean | null }> {
   const cfg = await fnUma<ConfigTool>(ctx.db, 'api_n8n_config_tool', [ctx.tenant.tenant_id, 'transferir_humano']);
-  const config = (cfg?.config ?? {}) as { horario?: Horario; notificacao?: Notificacao };
-  const { disponivel } = disponivelAgora(config.horario);
+  const config = (cfg?.config ?? {}) as { horario?: Horario; notificacao?: Notificacao; horario_da_loja?: boolean };
+  const disponivel = config.horario_da_loja === true
+    ? situacao(await lerHorarioDoAgente(ctx.db, ctx.tenant.tenant_id), ctx.agora?.() ?? new Date()).aberto
+    : disponivelAgora(config.horario, ctx.agora?.() ?? new Date()).disponivel;
   const ativa = cfg?.tool_ativa !== false;
   if (!(ativa && disponivel)) return { resultado: TEXTO_FORA_DO_HORARIO, disponivel, notificou: 'nenhum', pausou: null };
 

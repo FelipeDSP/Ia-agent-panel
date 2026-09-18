@@ -793,6 +793,20 @@ try {
     const vh5 = vistoPeloModelo.at(-1); const th5 = await turnoDaFila(fh5.filaId);
     chk('postura atender: modelo chamado, prompt diz "a loja está FECHADA" e a próxima abertura pula a terça FECHADA (quarta 16/09)',
       th5.status === 'ok' && th5.chamadas_modelo === 1 && /a loja está FECHADA agora/.test(vh5.systemMessage) && /quarta \(16\/09\) às 08h/.test(vh5.systemMessage), vh5.systemMessage.slice(-300));
+    // 18/09: transferência com "horário da loja" — segunda (loja fechada) não há atendente; terça há.
+    await c.query(`update public.tenants set horario_agente = '{"timezone":"America/Porto_Velho","dias_semana":[2,3,4,5,6],"hora_inicio":8,"hora_fim":18,"fora_horario":"atender"}'::jsonb where id=$1`, [T.a]);
+    await c.query(`update public.tenant_tools set config = config || '{"horario_da_loja":true}'::jsonb where tenant_id=$1 and tool_nome='transferir_humano'`, [T.a]);
+    roteiro.push({ tool: 'transferir_humano', args: { resumo: 'Quer falar com alguém' } }, { texto: 'Nossa equipe atende de terça a sábado, das 8h às 18h.' });
+    const fh6 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 603, content: 'quero falar com uma pessoa' }));
+    await vencer(); await umCiclo(depsSegunda);
+    const pt6 = (await passosDe((await turnoDaFila(fh6.filaId)).id)).find((p) => p.tipo === 'tool' && p.nome === 'transferir_humano');
+    chk('transferência com horário da loja: segunda (loja fechada) -> FORA_DO_HORARIO, não pausou', /^FORA_DO_HORARIO/.test(pt6?.saida?.texto ?? '') && pt6?.saida?.diagnostico?.pausou === null, JSON.stringify(pt6?.saida?.diagnostico));
+    roteiro.push({ tool: 'transferir_humano', args: { resumo: 'Quer falar com alguém' } }, { texto: 'Vou te passar para um atendente.' });
+    const fh7 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 604, content: 'quero falar com uma pessoa' }));
+    await vencer(); await umCiclo({ ...depsWorker, agora: TERCA });
+    const pt7 = (await passosDe((await turnoDaFila(fh7.filaId)).id)).find((p) => p.tipo === 'tool' && p.nome === 'transferir_humano');
+    chk('…terça 9h (loja aberta) -> TRANSFERIDO, pausou', /^TRANSFERIDO/.test(pt7?.saida?.texto ?? '') && pt7?.saida?.diagnostico?.pausou === true, JSON.stringify(pt7?.saida?.diagnostico));
+    await c.query(`update public.tenant_tools set config = config - 'horario_da_loja' where tenant_id=$1 and tool_nome='transferir_humano'`, [T.a]);
     await c.query(`update public.tenants set horario_agente = null where id=$1`, [T.a]);
   }
 

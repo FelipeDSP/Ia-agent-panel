@@ -12,13 +12,14 @@ import { definicaoTool, grupoTool } from '@/lib/tools/registro';
 import {
   HORARIO_PADRAO,
   TOOL_TRANSFERIR,
-  numeroParaExibir,
   type ConfigTransferir,
 } from '@/lib/tools/transferir-humano';
 import { TOOL_VENDAS, lerConfigVendas } from '@/lib/tools/vendas-config';
+import { lerAvisos } from '@/lib/tools/avisos';
 import { lerHorarioAgente } from '@/lib/tenants/horario-agente';
 
 import { FormularioConfig } from './formulario';
+import { FormularioAvisos } from './formulario-avisos';
 import { FormularioTransferir } from './formulario-transferir';
 import { FormularioVendas } from './formulario-vendas';
 import { FormularioHorario } from './formulario-horario';
@@ -68,6 +69,9 @@ export default async function PaginaConfiguracoes() {
   const configVendas = lerConfigVendas(toolVendas?.config);
   const transferirDisponivel = transferirContratado && Boolean(toolTransferir?.ativo);
   const linkDisponivel = Boolean((tools ?? []).find((t) => t.tool_nome === 'pagamento')?.contratado);
+  const horarioAgente = lerHorarioAgente(tenant.horario_agente);
+  // 18/09: um número, uma lista do que avisar — lido das duas configs
+  const avisos = lerAvisos(transferirContratado ? configTransferir : null, vendasContratada ? (toolVendas?.config ?? {}) : null, vendasContratada);
 
   // Meus módulos: só o que o cliente PODE AGIR.
   //
@@ -97,8 +101,14 @@ export default async function PaginaConfiguracoes() {
     <div className="flex flex-col gap-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Cada bloco salva sozinho.</p>
       </header>
 
+      {/* 18/09: a tela foi reorganizada. Antes o número do WhatsApp era pedido
+          duas vezes (transferência e vendas) e "Fuso horário / Dias / Abre às"
+          aparecia duas vezes (horário da loja e horário do atendente). Agora:
+          Agente → Módulos → Horário (um só) → Avisos (um só) → Atendimento
+          humano → Vendas. */}
       <Card>
         <CardHeader>
           <CardTitle>Agente e mensagens</CardTitle>
@@ -113,27 +123,13 @@ export default async function PaginaConfiguracoes() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Horário de atendimento</CardTitle>
-          <CardDescription>
-            Quando a loja atende. Fora disso o agente avisa que está fechado, fica em silêncio ou
-            atende sabendo que está fechado — você escolhe. Sem horário, atende sempre.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <FormularioHorario horario={lerHorarioAgente(tenant.horario_agente)} />
-        </CardContent>
-      </Card>
-
-      {/* O card inteiro some quando não há módulo opcional. Lista vazia com
-          "nenhum módulo contratado ainda" é ruído: não há nada a fazer ali, e
-          hoje é o caso de 3 dos 4 clientes, que só têm o padrão do produto. */}
+      {/* O card inteiro some quando não há módulo opcional: lista vazia com
+          "nenhum módulo contratado ainda" é ruído. */}
       {modulos.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>Meus módulos</CardTitle>
-            <CardDescription>Para contratar outro, fale com a agência.</CardDescription>
+            <CardDescription>Ligue e desligue o que contratou. Para contratar outro, fale com a agência.</CardDescription>
           </CardHeader>
           <CardContent>
             <ListaModulos modulos={modulos} />
@@ -141,42 +137,68 @@ export default async function PaginaConfiguracoes() {
         </Card>
       ) : null}
 
-      {/* Não contratado = o card não existe. O texto "fale com a agência para
-          ativar" que ficava aqui mostrava ao cliente uma configuração que ele
-          não tem — a confusão que a regra elimina. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Horário de atendimento</CardTitle>
+          <CardDescription>
+            Quando a loja atende. Fora disso o agente avisa que está fechado, fica em silêncio ou
+            atende sabendo que está fechado — você escolhe. Sem horário, atende sempre. A transferência
+            para humano usa este mesmo horário, salvo se você definir outro lá.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FormularioHorario horario={horarioAgente} />
+        </CardContent>
+      </Card>
+
+      {transferirContratado || vendasContratada ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Avisos para você</CardTitle>
+            <CardDescription>
+              Um número, e o que você quer que chegue nele: pedidos de atendimento humano
+              {vendasContratada ? ' e as vendas' : ''}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FormularioAvisos avisos={avisos} temTransferencia={transferirContratado} temVendas={vendasContratada} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Não contratado = o card não existe. */}
       {transferirContratado ? (
         <Card>
           <CardHeader>
-            <CardTitle>Transferência para atendimento humano</CardTitle>
+            <CardTitle>Atendimento humano</CardTitle>
+            <CardDescription>
+              Quando alguém pede para falar com uma pessoa, o agente pausa a conversa e ela fica marcada
+              no Chatwoot. Aqui você diz quando há alguém para atender e para qual time vai.
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             {/* O switch vive AQUI, e não na lista de "Meus módulos": este card já
-                é o lugar do módulo, com nome e explicação. Um item genérico na
-                lista mais um card de config embaixo seria a mesma coisa dita
-                duas vezes. O escritor de `ativo` continua sendo um só
+                é o lugar do módulo. O escritor de `ativo` continua sendo um só
                 (`alternarModulo`, via SwitchModulo). */}
             <SwitchModulo
               toolNome={TOOL_TRANSFERIR}
               rotulo="Transferir para humano"
               ativo={Boolean(toolTransferir?.ativo)}
-              /*
-               * O aviso agora aparece só com o módulo DESLIGADO, e por isso está
-               * no presente: descreve o estado em que a pessoa está, não uma
-               * hipótese. Ligado, o switch verde já diz tudo e o parágrafo era
-               * texto permanente sobre algo que não estava acontecendo.
-               */
               aviso={
                 'Quem pedir para falar com uma pessoa continua conversando com o agente, e a ' +
                 'conversa não é pausada sozinha — você pausa em Conversas ou no Chatwoot.'
               }
             />
 
-            {/*
-              Os times moram DENTRO do card da transferência, e não em rota
-              própria: é configuração da mesma tool, e rota nova exigiria
-              declaração no registry para uma seção que só faz sentido ao lado
-              do horário e do aviso.
-            */}
+            <FormularioTransferir
+              ativo={Boolean(toolTransferir?.ativo)}
+              horario={horarioTransferir}
+              horarioDaLoja={configTransferir.horario_da_loja === true}
+              lojaTemHorario={horarioAgente !== null}
+            />
+
+            {/* Os times moram DENTRO do card da transferência: é configuração da
+                mesma tool, e rota nova exigiria declaração no registry. */}
             <div className="flex flex-col gap-3 border-t border-border pt-5">
               <div>
                 <h3 className="text-sm font-medium">Times do Chatwoot</h3>
@@ -187,13 +209,6 @@ export default async function PaginaConfiguracoes() {
               </div>
               <Times times={times} contaChatwoot={contaChatwoot} />
             </div>
-
-            <FormularioTransferir
-              ativo={Boolean(toolTransferir?.ativo)}
-              horario={horarioTransferir}
-              notificarAtual={(configTransferir.notificacao?.canal ?? 'nenhum') !== 'nenhum'}
-              destinoNumero={numeroParaExibir(configTransferir.notificacao?.destino)}
-            />
           </CardContent>
         </Card>
       ) : null}
@@ -203,15 +218,14 @@ export default async function PaginaConfiguracoes() {
           <CardHeader>
             <CardTitle>Vendas</CardTitle>
             <CardDescription>
-              Como o cliente paga, o que fazer com pedido de entrega e como você fica sabendo de
-              cada venda. Ligar e desligar o módulo é em “Meus módulos”.
+              Como o cliente paga, retirada e o que fazer com pedido de entrega. Os avisos de venda
+              estão em “Avisos para você”; ligar e desligar o módulo é em “Meus módulos”.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <FormularioVendas
               ativo={Boolean(toolVendas?.ativo)}
               config={configVendas}
-              destinoNumero={numeroParaExibir(configVendas.notificacao.destino)}
               transferirDisponivel={transferirDisponivel}
               linkDisponivel={linkDisponivel}
             />

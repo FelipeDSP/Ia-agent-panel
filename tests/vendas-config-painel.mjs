@@ -5,9 +5,8 @@
  * Propriedades: a leitura preenche defaults iguais aos de `vendas_oferta()` no
  * banco (ausente = ['link'], entrega 'nao', todos os eventos); valor inválido
  * é descartado, não vira erro; o formulário exige ao menos uma forma de pagar;
- * `entrega = atendente` só com a transferência disponível; WhatsApp exige
- * número válido; sem evento marcado com aviso ligado é erro; a lista de
- * eventos gravada nunca é vazia (vazio no banco = todos).
+ * `entrega = atendente` só com a transferência disponível. A notificação e os
+ * eventos saíram deste validador em 18/09 (ver tests/avisos-painel.mjs).
  *
  *   node --import ./tests/lib/ts.mjs tests/vendas-config-painel.mjs
  */
@@ -42,7 +41,7 @@ console.log('\n== validarVendasCliente ==\n');
 {
   const base = { pagamento_link: 'on', pagamento_na_retirada: 'on', entrega: 'nao', evento_pedido_fechado: 'on' };
   const r = validarVendasCliente(form(base), { transferirDisponivel: false });
-  chk('duas formas, entrega nao, um evento -> ok', r.ok && r.valor.pagamentos.join() === 'link,na_retirada' && r.valor.entrega === 'nao' && r.valor.eventos.join() === 'pedido_fechado' && r.valor.notificar === false && r.valor.nota_chatwoot === false, JSON.stringify(r));
+  chk('duas formas, entrega nao -> ok (18/09: eventos e notificação não são mais deste validador)', r.ok && r.valor.pagamentos.join() === 'link,na_retirada' && r.valor.entrega === 'nao' && !('eventos' in r.valor) && !('notificar' in r.valor), JSON.stringify(r));
   const r2 = validarVendasCliente(form({ entrega: 'nao' }), { transferirDisponivel: false });
   chk('nenhuma forma -> erro em pagamentos', !r2.ok && 'pagamentos' in r2.erros);
   const r3 = validarVendasCliente(form({ ...base, entrega: 'atendente' }), { transferirDisponivel: false });
@@ -50,17 +49,6 @@ console.log('\n== validarVendasCliente ==\n');
   const r4 = validarVendasCliente(form({ ...base, entrega: 'atendente' }), { transferirDisponivel: true });
   chk('atendente com transferência -> ok', r4.ok && r4.valor.entrega === 'atendente');
   const r5 = validarVendasCliente(form({ pagamento_link: 'on', entrega: 'nao' }), { transferirDisponivel: false });
-  chk('sem evento marcado e sem aviso -> ok, eventos = todos (vazio no banco seria "todos")', r5.ok && r5.valor.eventos.join() === TODOS);
-  const r6 = validarVendasCliente(form({ pagamento_link: 'on', entrega: 'nao', nota_chatwoot: 'on' }), { transferirDisponivel: false });
-  chk('nota ligada sem evento -> erro em eventos', !r6.ok && 'eventos' in r6.erros);
-  const r7 = validarVendasCliente(form({ ...base, notificar: 'on' }), { transferirDisponivel: false });
-  chk('WhatsApp ligado sem número -> erro em destino', !r7.ok && 'destino' in r7.erros);
-  const r8 = validarVendasCliente(form({ ...base, notificar: 'on', destino: '69993666645' }), { transferirDisponivel: false });
-  chk('número sem país (11 dígitos) -> erro em destino', !r8.ok && 'destino' in r8.erros);
-  const r9 = validarVendasCliente(form({ ...base, notificar: 'on', destino: '556993666645', nota_chatwoot: 'on' }), { transferirDisponivel: false });
-  chk('número com país -> notificar, destino @c.us, nota true', r9.ok && r9.valor.notificar === true && r9.valor.destino === '556993666645@c.us' && r9.valor.nota_chatwoot === true, JSON.stringify(r9));
-  const r10 = validarVendasCliente(form({ ...base, destino: '556993666645' }), { transferirDisponivel: false });
-  chk('número informado com aviso desligado -> guarda o número, notificar false', r10.ok && r10.valor.notificar === false && r10.valor.destino === '556993666645@c.us');
 }
 
 console.log('\n== canalDerivado (70): o cliente diz SE; o caminho é derivado da sessão ==\n');

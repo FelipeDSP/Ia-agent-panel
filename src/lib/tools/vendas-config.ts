@@ -31,7 +31,7 @@
  *
  * Puro (sem server-only): importado pelos componentes de formulário.
  */
-import { formatarDestino } from './transferir-humano';
+
 
 export const TOOL_VENDAS = 'vendas';
 
@@ -142,10 +142,6 @@ export function validarVendasCliente(
 ): Resultado<{
   pagamentos: Pagamento[];
   entrega: 'atendente' | 'nao';
-  eventos: Evento[];
-  notificar: boolean;
-  destino?: string;
-  nota_chatwoot: boolean;
   pedir_nome: boolean;
   retirada: Retirada;
 }> {
@@ -172,36 +168,14 @@ export function validarVendasCliente(
     entrega = 'nao';
   }
 
-  const eventos = EVENTOS.map((e) => e.valor).filter((v) => fd.get(`evento_${v}`) === 'on');
-  const notificar = fd.get('notificar') === 'on' || fd.get('notificar') === 'true';
-  const nota_chatwoot = fd.get('nota_chatwoot') === 'on' || fd.get('nota_chatwoot') === 'true';
-  if ((notificar || nota_chatwoot) && eventos.length === 0) {
-    erros['eventos'] = 'Marque ao menos um evento para ser avisado.';
-  }
-
-  const destinoBruto = String(fd.get('destino') ?? '').trim();
-  let destino: string | undefined;
-  if (destinoBruto) {
-    const jid = formatarDestino(destinoBruto);
-    if (!jid) {
-      erros['destino'] = 'Informe o número com o código do país (ex.: 556993666645) ou cole o ID (…@c.us).';
-    } else destino = jid;
-  } else if (notificar) {
-    erros['destino'] = 'Para avisar no WhatsApp, informe o número.';
-  }
-
+  // 18/09: eventos e notificação saíram daqui — moram em "Avisos para você"
+  // (src/lib/tools/avisos.ts), que escreve nas duas configs de uma vez.
   if (Object.keys(erros).length > 0) return { ok: false, erros };
   return {
     ok: true,
     valor: {
       pagamentos,
       entrega,
-      // lista vazia = todos (é como o banco lê a ausência); gravar vazio
-      // seria "nenhum" na tela e "todos" no banco
-      eventos: eventos.length > 0 ? eventos : VENDAS_PADRAO.eventos,
-      notificar,
-      destino,
-      nota_chatwoot,
       pedir_nome,
       retirada: { ...(endereco ? { endereco } : {}), ...(mapa_url ? { mapa_url } : {}) },
     },

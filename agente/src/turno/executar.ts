@@ -32,7 +32,8 @@ import { montarSystemMessage, versaoDasPartes } from '../agente/prompt.ts';
 import type { Modelo, MensagemHistorico } from '../agente/modelo.ts';
 import { ferramentasDoPerfil, temPagamento } from '../tools/index.ts';
 import { transferirHumano } from '../tools/transferir-humano.ts';
-import { lerHorarioAgente, linhaDoPromptFechado, situacao, textoDoAviso, type HorarioAgente } from '../tenant/horario.ts';
+import { linhaDoPromptFechado, situacao, textoDoAviso } from '../tenant/horario.ts';
+import { lerHorarioDoAgente } from '../tenant/horario-db.ts';
 import type { Asaas } from '../pagamento/asaas.ts';
 import type { Embeddings } from '../tools/contexto.ts';
 import { transcreverAnexo, type Anexo, type Transcritor } from '../midia/transcrever.ts';
@@ -41,12 +42,6 @@ import { estimarComoN8n, desvioPct } from './estimativa.ts';
 import { aplicarPortao } from './portao.ts';
 import { digitosDe, lerOferta, secaoOferta } from '../pedido/oferta.ts';
 import type { ConfigTool } from '../tools/contexto.ts';
-
-/** `tenants.horario_agente` (74) — null sem a migração ou sem configuração = sempre aberto. */
-export async function lerHorarioDoAgente(db: Db, tenantId: string): Promise<HorarioAgente | null> {
-  try { return lerHorarioAgente(await fnValor<unknown>(db, 'api_agente_horario', [tenantId])); }
-  catch { return null; }
-}
 
 /** Os números que recebem aviso nesta conta (vendas e transferência), em dígitos. */
 export async function destinosDeAviso(db: Db, tenantId: string): Promise<string[]> {
@@ -282,7 +277,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     if (estadoDoSistema) await turno.passo('registro', 'estado_do_sistema', { saida: { texto: estadoDoSistema } });
 
     // ---- o modelo ----
-    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas, aceitaLink: oferta?.pagamentos.includes('link') ?? true };
+    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas, aceitaLink: oferta?.pagamentos.includes('link') ?? true, ...(deps.agora ? { agora: deps.agora } : {}) };
     const ferramentas = ferramentasDoPerfil(ctx, perfil, toolsAtivas);
     const r = await deps.modelo.responder({
       modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto, estadoDoSistema,

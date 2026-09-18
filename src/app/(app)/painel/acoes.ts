@@ -12,11 +12,13 @@ import { MAX_DESCRICAO_TOTAL, validarTime } from '@/lib/tools/times-chatwoot';
 import { verificarTime } from '@/lib/tools/times-chatwoot.server';
 import { ERRO_NAO_CONTRATADA, temToolContratada } from '@/lib/tools/contratacao';
 import {
+  HORARIO_PADRAO,
   TOOL_TRANSFERIR,
   validarTransferirCliente,
   type ConfigTransferir,
 } from '@/lib/tools/transferir-humano';
-import { TOOL_VENDAS, canalDerivado, lerConfigVendas, validarVendasCliente, type ConfigVendas } from '@/lib/tools/vendas-config';
+import { TOOL_VENDAS, lerConfigVendas, validarVendasCliente } from '@/lib/tools/vendas-config';
+import { aplicarAvisos, validarAvisos } from '@/lib/tools/avisos';
 
 export type EstadoConfig = {
   erro?: string;
@@ -188,19 +190,13 @@ export async function salvarTransferirHumano(
   }
 
   const atual = (linha.config ?? {}) as Partial<ConfigTransferir>;
-  const sessao = atual.notificacao?.sessao;
 
-  // 70: com sessão da agência o aviso vai pelo WAHA; sem sessão, pela inbox
-  // do próprio agente (`chatwoot`). O cliente só escolhe SE quer e o número.
-  const canal = canalDerivado(validado.valor.canal === 'waha', sessao);
-
+  // 18/09: a notificação é preservada (mora em "Avisos para você"); aqui só o
+  // horário — o da loja, ou um próprio.
   const novaConfig: ConfigTransferir = {
-    horario: validado.valor.horario,
-    notificacao: {
-      canal,
-      ...(sessao ? { sessao } : {}),
-      ...(validado.valor.destino ? { destino: validado.valor.destino } : {}),
-    },
+    horario: validado.valor.horario ?? atual.horario ?? HORARIO_PADRAO,
+    horario_da_loja: validado.valor.horario_da_loja,
+    notificacao: atual.notificacao ?? { canal: 'nenhum' },
   };
 
   const { error } = await supabase
@@ -213,6 +209,41 @@ export async function salvarTransferirHumano(
 
   revalidatePath('/painel/configuracoes');
   return { sucesso: 'Configuração de transferência salva.' };
+}
+
+/**
+ * "Avisos para você" (18/09): um número e uma lista do que avisar, gravados
+ * nas DUAS configs (transferência e vendas) de uma vez. A parte de vendas só é
+ * tocada com o módulo contratado (superfície de tool). `sessao` de cada uma é
+ * preservada.
+ */
+export async function salvarAvisos(_estado: EstadoConfig, fd: FormData): Promise<EstadoConfig> {
+  const usuario = await exigirTenantAdmin();
+  const supabase = await criarClienteServidor();
+  const { data: linhas, error: erroSel } = await supabase
+    .from('tenant_tools')
+    .select('tool_nome, contratado, config')
+    .eq('tenant_id', usuario.tenantId)
+    .in('tool_nome', [TOOL_TRANSFERIR, TOOL_VENDAS]);
+  if (erroSel) return { erro: `Não foi possível carregar: ${erroSel.message}` };
+  const transferir = (linhas ?? []).find((l) => l.tool_nome === TOOL_TRANSFERIR && l.contratado) ?? null;
+  const vendas = (linhas ?? []).find((l) => l.tool_nome === TOOL_VENDAS && l.contratado) ?? null;
+  const vendasContratada = vendas !== null && (await temToolContratada(usuario.tenantId, TOOL_VENDAS));
+
+  const validado = validarAvisos(fd, { vendasContratada });
+  if (!validado.ok) return { errosCampo: validado.erros };
+
+  const novo = aplicarAvisos(validado.valor, transferir ? ((transferir.config ?? {}) as Partial<ConfigTransferir>) : null, vendasContratada ? (vendas!.config ?? {}) : null);
+  if (novo.transferir) {
+    const { error } = await supabase.from('tenant_tools').update({ config: novo.transferir }).eq('tenant_id', usuario.tenantId).eq('tool_nome', TOOL_TRANSFERIR);
+    if (error) return { erro: `Não foi possível salvar: ${error.message}` };
+  }
+  if (novo.vendas) {
+    const { error } = await supabase.from('tenant_tools').update({ config: novo.vendas }).eq('tenant_id', usuario.tenantId).eq('tool_nome', TOOL_VENDAS);
+    if (error) return { erro: `Não foi possível salvar: ${error.message}` };
+  }
+  revalidatePath('/painel/configuracoes');
+  return { sucesso: 'Avisos salvos.' };
 }
 
 /**
@@ -272,25 +303,18 @@ export async function salvarVendas(_estado: EstadoConfig, fd: FormData): Promise
   if (!validado.ok) return { errosCampo: validado.erros };
 
   const atual = lerConfigVendas(vendas.config);
-  const sessao = atual.notificacao.sessao;
-  // 70: sessão da agência → WAHA; sem sessão → inbox do agente (`chatwoot`).
-  const canal = canalDerivado(validado.valor.notificar, sessao);
-  const novaConfig: ConfigVendas = {
-    pagamentos: validado.valor.pagamentos,
-    entrega: validado.valor.entrega,
-    eventos: validado.valor.eventos,
-    pedir_nome: validado.valor.pedir_nome,
-    retirada: validado.valor.retirada,
-    notificacao: {
-      canal,
-      ...(sessao ? { sessao } : {}),
-      ...(validado.valor.destino ? { destino: validado.valor.destino } : {}),
-      ...(validado.valor.nota_chatwoot ? { nota_chatwoot: true } : {}),
-    },
-  };
+  // 18/09: eventos e notificação são preservados (moram em "Avisos para você");
   // chaves que não são deste formulário (ex.: horas_expirar_pagamento, da 38)
   // sobrevivem ao save
   const bruto = (vendas.config && typeof vendas.config === 'object' ? vendas.config : {}) as Record<string, unknown>;
+  const novaConfig = {
+    pagamentos: validado.valor.pagamentos,
+    entrega: validado.valor.entrega,
+    pedir_nome: validado.valor.pedir_nome,
+    retirada: validado.valor.retirada,
+    eventos: atual.eventos,
+    notificacao: atual.notificacao,
+  };
   const { error } = await supabase
     .from('tenant_tools')
     .update({ config: { ...bruto, ...novaConfig } })
