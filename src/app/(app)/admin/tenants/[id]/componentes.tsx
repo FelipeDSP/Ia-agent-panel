@@ -911,6 +911,27 @@ export function FormAsaas({
  * painel. A confirmação é obrigatória porque o painel não consegue conferir
  * a URL do bot no Chatwoot.
  */
+/** URL do bot com botão de copiar (18/09): a linha é longa e mono; selecionar à mão errava o fim. */
+function LinhaUrl({ rotulo, url, falta }: { rotulo: string; url: string | null; falta: string }) {
+  const [copiado, setCopiado] = useState(false);
+  return (
+    <div className="flex flex-wrap items-start gap-2">
+      <dt className="w-14 text-muted-foreground">{rotulo}</dt>
+      <dd className="min-w-0 flex-1 break-all font-mono">{url ?? falta}</dd>
+      {url ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => { void navigator.clipboard.writeText(url); setCopiado(true); setTimeout(() => setCopiado(false), 2000); }}
+        >
+          {copiado ? 'Copiado' : 'Copiar'}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function FormRuntime({
   tenantId,
   atual,
@@ -943,8 +964,8 @@ export function FormRuntime({
       <div className="rounded-md border bg-muted/40 p-3 text-sm">
         <p className="font-medium">URLs do Agent Bot desta conta</p>
         <dl className="mt-2 grid gap-1 text-xs">
-          <div className="flex flex-wrap gap-2"><dt className="w-14 text-muted-foreground">código</dt><dd className="break-all font-mono">{urls.codigo ?? 'defina AGENTE_URL (e AGENTE_WEBHOOK_TOKEN) no painel'}</dd></div>
-          <div className="flex flex-wrap gap-2"><dt className="w-14 text-muted-foreground">n8n</dt><dd className="break-all font-mono">{urls.n8n ?? 'defina N8N_WEBHOOK_BASE no painel'}</dd></div>
+          <LinhaUrl rotulo="código" url={urls.codigo} falta="defina AGENTE_URL e AGENTE_WEBHOOK_TOKEN no Coolify do painel" />
+          <LinhaUrl rotulo="n8n" url={urls.n8n} falta="defina N8N_WEBHOOK_BASE no painel" />
         </dl>
       </div>
 
