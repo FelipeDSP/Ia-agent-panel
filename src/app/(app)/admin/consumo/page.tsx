@@ -189,11 +189,11 @@ function CardCliente({ card, mesAnterior }: { card: CardConsumo; mesAnterior: st
         ) : null}
       </dl>
       {/*
-        DE ONDE VEM O NÚMERO. O consumo conta de 21/09/2026 (migração 76
+        DE ONDE VEM O NÚMERO. O consumo conta de 21/09/2026 19:45 UTC (migrações 76+77
         zerou os tokens anteriores — eram mistos: estimativa do agente antigo
         e usage). Desde então toda resposta traz tokens reais (usage da
         OpenAI); a legenda de "estimadas" só aparece se alguma linha antiga
-        escapar, e é sinal de que a 76 não rodou.
+        escapar, e é sinal de que a 76/77 não rodou.
       */}
       {card.mensagensReais + card.mensagensEstimadas > 0 ? (
         <p className="mt-2 text-xs text-muted-foreground">

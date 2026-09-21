@@ -128,6 +128,7 @@
     "teste:migracao-horario-agente": "node --env-file=.env.local tests/migracao-horario-agente.mjs",
     "teste:migracao-codigo-default": "node --env-file=.env.local tests/migracao-codigo-default.mjs",
     "teste:migracao-consumo-zera": "node --env-file=.env.local tests/migracao-consumo-zera.mjs",
+    "teste:migracao-consumo-zera-tudo": "node --env-file=.env.local tests/migracao-consumo-zera-tudo.mjs",
     "teste:horario-agente": "node --import ./tests/lib/ts.mjs tests/horario-agente.mjs",
     "teste:avisos-painel": "node --import ./tests/lib/ts.mjs tests/avisos-painel.mjs"
   },

@@ -62,14 +62,14 @@ O que ainda cita n8n neste repositório, e por quê:
 Chatwoot é o único passo. Cliente novo nasce em `codigo` (explícito no insert
 do painel e default da coluna pela 75).
 
-Migrações aplicadas até aqui: **62–76** (fila/trace/runtime, prompt no turno,
+Migrações aplicadas até aqui: **62–77** (fila/trace/runtime, prompt no turno,
 encerramento do link Asaas, conversa resolvida reabre, config por tenant,
 retenção de dados, tokens em cache, vendas por modalidade, aviso pelo
 Chatwoot, pagamento confirmado com fim, nome de quem retira, guard de
-usuários, horário do agente, default `codigo`, consumo zerado antes de
-21/09). A **76** é a primeira SEM rollback: zerou as colunas de token de
-`mensagens_log` anteriores a 21/09 (linhas ficam — é memória); o consumo
-conta de 21/09/2026. Pagamento por link (Asaas) funciona no sandbox;
+usuários, horário do agente, default `codigo`, consumo zerado). A **76** e
+a **77** são as primeiras SEM rollback: zeraram as colunas de token de
+`mensagens_log` (linhas ficam — é memória) e de `uso_ingestao`; o consumo
+conta de **21/09/2026 19:45 UTC** — a aba nasceu vazia nesse instante. Pagamento por link (Asaas) funciona no sandbox;
 BaaS/subcontas depende da conta PJ da estud.you (não é código).
 
 Regras do serviço que não se "consertam":
