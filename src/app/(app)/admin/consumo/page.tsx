@@ -189,18 +189,19 @@ function CardCliente({ card, mesAnterior }: { card: CardConsumo; mesAnterior: st
         ) : null}
       </dl>
       {/*
-        DE ONDE VEM O NÚMERO. Enquanto n8n e código coexistem, um cliente tem
-        tokens reais (usage da OpenAI) e outro tem estimativa (fórmula do nó),
-        e o card mostra os dois com a mesma cara. A estimativa superestima
-        23–29% (diff:custo, 16/09) — quem olha precisa saber qual é qual.
+        DE ONDE VEM O NÚMERO. Desde 18/09 toda resposta traz tokens reais
+        (usage da OpenAI). Antes disso (o agente anterior, desligado em 21/09)
+        era estimativa por fórmula, que superestima 23–29% (diff:custo, 16/09).
+        Setembro é o único mês misto; a legenda diz qual é qual enquanto ele
+        estiver na tela.
       */}
       {card.mensagensReais + card.mensagensEstimadas > 0 ? (
         <p className="mt-2 text-xs text-muted-foreground">
           {card.mensagensEstimadas === 0
             ? `${num.format(card.mensagensReais)} respostas, tokens reais`
             : card.mensagensReais === 0
-              ? `${num.format(card.mensagensEstimadas)} respostas, tokens estimados (n8n)`
-              : `${num.format(card.mensagensReais)} respostas reais · ${num.format(card.mensagensEstimadas)} estimadas (n8n)`}
+              ? `${num.format(card.mensagensEstimadas)} respostas, tokens estimados (antes de 18/09)`
+              : `${num.format(card.mensagensReais)} respostas reais · ${num.format(card.mensagensEstimadas)} estimadas (antes de 18/09)`}
         </p>
       ) : null}
 

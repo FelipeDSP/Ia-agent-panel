@@ -60,23 +60,21 @@ estar contratado em Módulos para a tool existir.
 | `POST /asaas` | o webhook do Asaas (`PAYMENT_RECEIVED` / `PAYMENT_CONFIRMED`). Sem segredo na URL: o token vem no header `asaas-access-token` e é validado **por tenant** no banco (`api_n8n_pagamento_webhook`, a única função que escreve `pago`). Responde **200 sempre** com só o estado; token errado = `reconhecido:false`, sem efeito. Quando aplica: mensagem "Pagamento confirmado!" ao cliente pelo bot + registro em `mensagens_log` (o agente passa a saber) |
 | `POST /limpar-memoria` | mesmo contrato do webhook do n8n: header `x-limpeza-secret`, body `{ tenant_id, escopo: 'conversa' \| 'todas', conversation_ids? }`. Nada é apagado: é o **corte** (`conversas.memoria_cortada_em`) |
 
-## Apontar uma conta para cá (por conta, reversível)
+## Apontar uma conta para cá
 
-**Pelo painel (desde 16/09):** *Clientes → cliente → Quem atende*. O card mostra
-a URL do bot para cada runtime e troca a coluna na ordem certa, exigindo a
-confirmação de quem apontou o bot. O painel precisa de `AGENTE_URL` (ou deriva de
-`AGENTE_LIMPEZA_URL`), `AGENTE_WEBHOOK_TOKEN` (= o `WEBHOOK_TOKEN` daqui; sem ele a
-URL sai com `<WEBHOOK_TOKEN>` para completar à mão) e `N8N_WEBHOOK_BASE` (ou deriva
-de `N8N_LIMPEZA_URL`). À mão, o roteiro é o de sempre:
+**Pelo painel:** *Clientes → cliente → Agent Bot* mostra a URL (com botão de
+copiar). O painel precisa de `AGENTE_URL` (ou deriva de `AGENTE_LIMPEZA_URL`) e
+`AGENTE_WEBHOOK_TOKEN` (= o `WEBHOOK_TOKEN` daqui; sem ele a URL sai com
+`<WEBHOOK_TOKEN>` para completar à mão). Desde 21/09 não há outro lado: o n8n
+foi desligado e todo tenant nasce em `codigo` (migração 75).
 
-1. migrações 62 e 63 aplicadas; `tenants.agente_runtime = 'codigo'` para o tenant
-   (como super_admin — `tenant_admin` leva 42501);
-2. no Chatwoot, o Agent Bot da conta → `outgoing_url =
+1. no Chatwoot, o Agent Bot da conta → `outgoing_url =
    https://<domínio>/chatwoot/<WEBHOOK_TOKEN>` (uma URL para todas as contas; a inbox vem do corpo);
-3. uma mensagem na caixa → resposta da fatia 1 + turno em `agente_turnos`.
+2. uma mensagem na caixa → resposta + turno em `agente_turnos` (*Agente* no painel).
 
-Voltar: a URL antiga no bot + `agente_runtime = 'n8n'`. A memória está em
-`mensagens_log`, que os dois lados escrevem — voltar não perde contexto.
+`tenants.agente_runtime` continua existindo: o serviço descarta com 200 o
+webhook de tenant fora de `codigo`. Se um cliente ficar mudo, é a primeira
+coisa a conferir (como super_admin — `tenant_admin` leva 42501).
 
 ## Docker
 

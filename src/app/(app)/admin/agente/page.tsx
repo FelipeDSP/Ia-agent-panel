@@ -28,7 +28,7 @@ import { criarClienteServidor } from '@/lib/supabase/server';
 import { cn } from '@/lib/utils';
 
 /**
- * Os turnos do agente em código — a tela que o n8n tinha ("execuções") e o
+ * Os turnos do agente — a tela de "execuções" e o
  * código não tinha até aqui. Cada linha é uma resposta; clicar abre os passos.
  *
  * Só super_admin: a agência olha todos os tenants para diagnosticar. O que a
@@ -61,10 +61,10 @@ export default async function PaginaAgenteAdmin({
 
   const [{ data: turnosRaw, error }, { data: tenantsRaw }] = await Promise.all([
     q,
-    supabase.from('tenants').select('id, nome, slug, agente_runtime').is('deletado_em', null).order('nome'),
+    supabase.from('tenants').select('id, nome, slug').is('deletado_em', null).order('nome'),
   ]);
   const turnos = (turnosRaw ?? []) as TurnoLinha[];
-  const tenants = (tenantsRaw ?? []) as Array<{ id: string; nome: string; slug: string; agente_runtime: string | null }>;
+  const tenants = (tenantsRaw ?? []) as Array<{ id: string; nome: string; slug: string }>;
   const nomeDoTenant = new Map(tenants.map((t) => [t.id, t.slug]));
 
   // As tools por turno, numa query só (os passos `tool` dos turnos listados).
@@ -120,7 +120,7 @@ export default async function PaginaAgenteAdmin({
           <Link href={link({ tenant: null })} className={chip(filtros.tenantId === null)}>todos</Link>
           {tenants.map((t) => (
             <Link key={t.id} href={link({ tenant: t.id })} className={chip(filtros.tenantId === t.id)} title={t.nome}>
-              {t.slug}{t.agente_runtime === 'codigo' ? '' : ' (n8n)'}
+              {t.slug}
             </Link>
           ))}
         </div>

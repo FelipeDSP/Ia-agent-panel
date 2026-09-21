@@ -85,7 +85,7 @@ function dataCurta(iso: string | null): string {
 }
 
 /**
- * Lista de conversas com seleção para limpar memória (Redis, via n8n) de uma,
+ * Lista de conversas com seleção para limpar memória (corte, via o serviço) de uma,
  * várias ou todas. O checkbox não navega — só o resto da linha é link. "Limpar
  * todas" e a limpeza em massa confirmam em dois passos inline (sem window.confirm,
  * que trava a aba). Limpar memória não apaga o histórico exibido.

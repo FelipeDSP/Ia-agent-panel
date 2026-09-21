@@ -1,17 +1,18 @@
 /**
- * "Quem atende" no painel — a regra da troca de runtime e as URLs do bot.
+ * A URL do Agent Bot no painel (21/09: sem "quem atende" — o n8n foi
+ * desligado e todo cliente é atendido pelo serviço).
  *
- * Propriedades: a troca exige confirmação (o painel não consegue conferir o
- * Chatwoot); trocar para o mesmo lado é recusado; as URLs vêm do ambiente e
- * nunca do form; sem token do serviço a URL sai com o marcador, não vazia; a
- * ordem do roteiro é a ensaiada em 16/09 (ida: bot antes; volta: coluna antes).
+ * Propriedades: a URL vem do ambiente e nunca do form; sem token sai com o
+ * marcador, não vazia; a tela não expõe `agente_runtime` nem oferece troca;
+ * cliente novo nasce explicitamente em `codigo` (o serviço descarta o resto);
+ * e nada em src/ lê variável N8N_* nem mostra "n8n" em texto de tela.
  *
  *   node --import ./tests/lib/ts.mjs tests/runtime-painel.mjs
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizarRuntime, urlsDoBot, roteiroDaTroca, podeTrocar } from '../src/lib/agente/runtime.ts';
+import { urlDoBot } from '../src/lib/agente/runtime.ts';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let ok = 0;
@@ -21,43 +22,51 @@ const chk = (nome, cond, det = '') => {
   else { falhas.push(nome); console.log(`  FALHA ${nome}${det ? ` — ${det}` : ''}`); }
 };
 
-console.log('\n== 1. URLs do bot ==\n');
+console.log('\n== 1. URL do bot ==\n');
 {
-  const u = urlsDoBot({ AGENTE_URL: 'https://hercules.chatyou.chat', AGENTE_WEBHOOK_TOKEN: 'tok123', N8N_WEBHOOK_BASE: 'https://webhook.chatyou.chat/webhook' }, 282);
-  chk('código: <AGENTE_URL>/chatwoot/<token> — UMA URL para todos (18/09), sem inbox', u.codigo === 'https://hercules.chatyou.chat/chatwoot/tok123', u.codigo);
-  chk('n8n: <base>/<path do principal>', u.n8n === 'https://webhook.chatyou.chat/webhook/agente-lavanderia-chatwoot-teste-teste', u.n8n);
-  const d = urlsDoBot({ AGENTE_LIMPEZA_URL: 'https://hercules.chatyou.chat/limpar-memoria', N8N_LIMPEZA_URL: 'https://webhook.chatyou.chat/webhook/limpar-memoria' }, 279, 'principal');
-  chk('sem AGENTE_URL/N8N_WEBHOOK_BASE, deriva das URLs de limpeza; sem token, marca <WEBHOOK_TOKEN>', d.codigo === 'https://hercules.chatyou.chat/chatwoot/<WEBHOOK_TOKEN>' && d.n8n === 'https://webhook.chatyou.chat/webhook/principal', JSON.stringify(d));
-  chk('sem caixa a URL do código existe do mesmo jeito (a caixa vem do corpo do webhook)', urlsDoBot({ AGENTE_URL: 'https://x' }, null).codigo === 'https://x/chatwoot/<WEBHOOK_TOKEN>');
-  chk('sem nada no ambiente, as duas são null (a tela diz o que falta)', JSON.stringify(urlsDoBot({}, 1)) === JSON.stringify({ codigo: null, n8n: null }));
+  const u = urlDoBot({ AGENTE_URL: 'https://hercules.chatyou.chat', AGENTE_WEBHOOK_TOKEN: 'tok123' });
+  chk('<AGENTE_URL>/chatwoot/<token> — UMA URL para todos (18/09), sem inbox', u === 'https://hercules.chatyou.chat/chatwoot/tok123', u);
+  const d = urlDoBot({ AGENTE_LIMPEZA_URL: 'https://hercules.chatyou.chat/limpar-memoria' });
+  chk('sem AGENTE_URL, deriva da origem de AGENTE_LIMPEZA_URL; sem token, marca <WEBHOOK_TOKEN>', d === 'https://hercules.chatyou.chat/chatwoot/<WEBHOOK_TOKEN>', d);
+  chk('barra final da base não duplica', urlDoBot({ AGENTE_URL: 'https://x/', AGENTE_WEBHOOK_TOKEN: 't' }) === 'https://x/chatwoot/t');
+  chk('sem nada no ambiente, null (a tela diz o que falta)', urlDoBot({}) === null);
+  chk('N8N_WEBHOOK_BASE sozinho não produz URL nenhuma', urlDoBot({ N8N_WEBHOOK_BASE: 'https://n8n/webhook' }) === null);
 }
 
-console.log('\n== 2. A ordem da troca ==\n');
-{
-  const urls = { codigo: 'https://svc/chatwoot/t/1', n8n: 'https://n8n/webhook/p' };
-  const ida = roteiroDaTroca('n8n', 'codigo', urls);
-  chk('ida: o PRIMEIRO passo é apontar o bot para o serviço; a coluna só depois', /outgoing_url/.test(ida[0]) && /https:\/\/svc\/chatwoot\/t\/1/.test(ida[0]) && /Só depois confirme/.test(ida[1]));
-  const volta = roteiroDaTroca('codigo', 'n8n', urls);
-  chk('volta: o PRIMEIRO passo é confirmar aqui; a URL do n8n só depois', /Confirme aqui primeiro/.test(volta[0]) && /https:\/\/n8n\/webhook\/p/.test(volta[1]));
-  chk('mesmo lado: roteiro vazio', roteiroDaTroca('codigo', 'codigo', urls).length === 0);
-}
-
-console.log('\n== 3. A regra da ação ==\n');
-{
-  chk('n8n -> codigo sem confirmar: recusado, citando mudo', !podeTrocar('n8n', 'codigo', false).ok && /mudo/.test(podeTrocar('n8n', 'codigo', false).motivo));
-  chk('n8n -> codigo confirmando: ok', podeTrocar('n8n', 'codigo', true).ok === true);
-  chk('codigo -> codigo: recusado (já está)', !podeTrocar('codigo', 'codigo', true).ok);
-  chk('normalizarRuntime: null/lixo -> n8n; codigo -> codigo', normalizarRuntime(null) === 'n8n' && normalizarRuntime('x') === 'n8n' && normalizarRuntime('codigo') === 'codigo');
-}
-
-console.log('\n== 4. A tela ==\n');
+console.log('\n== 2. A tela ==\n');
 {
   const lista = fs.readFileSync(path.join(RAIZ, 'src/app/(app)/admin/tenants/page.tsx'), 'utf8');
   const pagina = fs.readFileSync(path.join(RAIZ, 'src/app/(app)/admin/tenants/[id]/page.tsx'), 'utf8');
+  const comps = fs.readFileSync(path.join(RAIZ, 'src/app/(app)/admin/tenants/[id]/componentes.tsx'), 'utf8');
   const acoes = fs.readFileSync(path.join(RAIZ, 'src/app/(app)/admin/acoes.ts'), 'utf8');
-  chk('a lista de clientes lê e mostra agente_runtime', /agente_runtime/.test(lista) && /<TableHead>Agente<\/TableHead>/.test(lista));
-  chk('a página do cliente monta o card com urlsDoBot(process.env, …) — nunca do form', /urlsDoBot\(process\.env, tenant\.chatwoot_inbox_id\)/.test(pagina) && /<FormRuntime/.test(pagina));
-  chk('a ação exige super_admin e passa por podeTrocar', /export async function definirRuntimeTenant[\s\S]{0,200}?await exigirSuperAdmin\(\)/.test(acoes) && /podeTrocar\(de, para, confirmou\)/.test(acoes));
+  chk('a lista de clientes não mostra mais agente_runtime', !/agente_runtime/.test(lista));
+  chk('a página do cliente monta a URL com urlDoBot(process.env) — nunca do form', /urlDoBot\(process\.env\)/.test(pagina) && /<UrlDoBot/.test(pagina));
+  chk('não há mais ação de troca de runtime nem form dela', !/definirRuntimeTenant/.test(acoes) && !/FormRuntime/.test(comps));
+  chk('cliente novo nasce em codigo, explícito no insert', /\.from\('tenants'\)[\s\S]{0,600}?agente_runtime: 'codigo'/.test(acoes));
+}
+
+console.log('\n== 3. Nada do painel remete ao n8n como coisa viva ==\n');
+{
+  // Comentários de "por quê" (a forma de um jsonb, o nome de uma função) podem
+  // citar a origem; o que não pode é TEXTO DE TELA ou variável N8N_* em src/.
+  const arquivos = [];
+  const varrer = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) varrer(p);
+      else if (/\.(ts|tsx)$/.test(e.name)) arquivos.push(p);
+    }
+  };
+  varrer(path.join(RAIZ, 'src'));
+  chk('varredura não está vazia (lista vazia aprovaria qualquer coisa)', arquivos.length > 50, String(arquivos.length));
+  const comN8nEnv = arquivos.filter((a) => /N8N_/.test(fs.readFileSync(a, 'utf8')));
+  chk('nenhum arquivo de src/ lê variável N8N_*', comN8nEnv.length === 0, comN8nEnv.map((a) => path.relative(RAIZ, a)).join(', '));
+  // Texto de tela: "n8n" numa string ou entre tags JSX, fora de comentário.
+  // Nomes `api_n8n_*` são identificadores de função do banco, não texto — ficam.
+  const semComentario = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '').replace(/api_n8n_\w+/g, 'api_fn');
+  // `}` também abre texto: `{t.slug} (n8n)` é texto JSX depois de uma expressão.
+  const comTexto = arquivos.filter((a) => /(['"`>}])[^'"`<\r\n]*\bn8n\b/i.test(semComentario(fs.readFileSync(a, 'utf8'))));
+  chk('nenhum texto de tela cita n8n', comTexto.length === 0, comTexto.map((a) => path.relative(RAIZ, a)).join(', '));
 }
 
 console.log(`\n${ok} passaram, ${falhas.length} falharam\n`);

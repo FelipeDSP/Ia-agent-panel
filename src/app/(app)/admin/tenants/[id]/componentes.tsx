@@ -9,7 +9,6 @@ import {
   definirContratacao,
   desconectarChatwoot,
   editarNomeAdmin,
-  definirRuntimeTenant,
   editarTenantSuper,
   registrarWebhookAsaas,
   salvarAsaasTenant,
@@ -365,7 +364,7 @@ export function FormTransferirHumano({
           id="sessao"
           name="sessao"
           defaultValue={sessao}
-          placeholder="vazio = sai pela inbox do agente (Chatwoot); só o n8n exige"
+          placeholder="vazio = sai pela inbox do agente (Chatwoot)"
         />
       </div>
 
@@ -903,13 +902,12 @@ export function FormAsaas({
   );
 }
 
-// --- Quem atende (agente_runtime) --------------------------------------------
+// --- URL do Agent Bot -------------------------------------------------------
 
 /**
- * Trocar quem atende o cliente: n8n ou o serviço em código. A ordem dos
- * passos vem de `src/lib/agente/runtime.ts`; a URL do bot vem do ambiente do
- * painel. A confirmação é obrigatória porque o painel não consegue conferir
- * a URL do bot no Chatwoot.
+ * A URL que o Agent Bot da conta precisa ter no Chatwoot. Vem do ambiente do
+ * painel (`urlDoBot`), nunca do form. Até 21/09 este card era "Quem atende"
+ * e trocava n8n × código; com o n8n desligado sobrou a URL.
  */
 /** URL do bot com botão de copiar (18/09): a linha é longa e mono; selecionar à mão errava o fim. */
 function LinhaUrl({ rotulo, url, falta }: { rotulo: string; url: string | null; falta: string }) {
@@ -932,60 +930,16 @@ function LinhaUrl({ rotulo, url, falta }: { rotulo: string; url: string | null; 
   );
 }
 
-export function FormRuntime({
-  tenantId,
-  atual,
-  urls,
-  roteiroParaCodigo,
-  roteiroParaN8n,
-}: {
-  tenantId: string;
-  atual: 'n8n' | 'codigo';
-  urls: { codigo: string | null; n8n: string | null };
-  roteiroParaCodigo: string[];
-  roteiroParaN8n: string[];
-}) {
-  const [estado, acao] = useActionState<EstadoAcao, FormData>(definirRuntimeTenant, {});
-  const para = atual === 'codigo' ? 'n8n' : 'codigo';
-  const roteiro = para === 'codigo' ? roteiroParaCodigo : roteiroParaN8n;
-
+export function UrlDoBot({ url }: { url: string | null }) {
   return (
-    <form action={acao} className="flex flex-col gap-4">
-      <input type="hidden" name="tenant_id" value={tenantId} />
-      <input type="hidden" name="runtime" value={para} />
-      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
-      {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
-
-      <div className="flex items-center gap-2 text-sm">
-        <span className="text-muted-foreground">Hoje:</span>
-        <Badge variant={atual === 'codigo' ? 'success' : 'secondary'}>{atual === 'codigo' ? 'código (agente/)' : 'n8n'}</Badge>
-      </div>
-
-      <div className="rounded-md border bg-muted/40 p-3 text-sm">
-        <p className="font-medium">URLs do Agent Bot desta conta</p>
-        <dl className="mt-2 grid gap-1 text-xs">
-          <LinhaUrl rotulo="código" url={urls.codigo} falta="defina AGENTE_URL e AGENTE_WEBHOOK_TOKEN no Coolify do painel" />
-          <LinhaUrl rotulo="n8n" url={urls.n8n} falta="defina N8N_WEBHOOK_BASE no painel" />
-        </dl>
-      </div>
-
-      <div className="text-sm">
-        <p className="font-medium">Para passar para {para === 'codigo' ? 'o código' : 'o n8n'}:</p>
-        <ol className="mt-1 list-decimal space-y-1 pl-5 text-muted-foreground">
-          {roteiro.map((passo, i) => <li key={i}>{passo}</li>)}
-        </ol>
-      </div>
-
-      <label className="flex items-start gap-2 text-sm">
-        <input type="checkbox" name="confirmou" className="mt-1 h-4 w-4" />
-        <span>{para === 'codigo' ? 'Já apontei o bot para a URL do serviço.' : 'Vou apontar o bot para o n8n logo depois de confirmar.'}</span>
-      </label>
-
-      <div>
-        <SubmitButton variant={para === 'n8n' ? 'outline' : undefined}>
-          Passar para {para === 'codigo' ? 'o código' : 'o n8n'}
-        </SubmitButton>
-      </div>
-    </form>
+    <div className="rounded-md border bg-muted/40 p-3 text-sm">
+      <p className="font-medium">URL do Agent Bot desta conta</p>
+      <dl className="mt-2 grid gap-1 text-xs">
+        <LinhaUrl rotulo="bot" url={url} falta="defina AGENTE_URL e AGENTE_WEBHOOK_TOKEN no Coolify do painel" />
+      </dl>
+      <p className="mt-2 text-xs text-muted-foreground">
+        No Chatwoot: Configurações → Bots → o bot da conta → <span className="font-mono">outgoing_url</span>. A mesma URL serve para todos os clientes; conta e caixa vêm do corpo do webhook.
+      </p>
+    </div>
   );
 }

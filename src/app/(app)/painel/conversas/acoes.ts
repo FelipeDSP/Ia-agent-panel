@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { exigirTenantAdmin } from '@/lib/auth';
-import { invocarLimparMemoria } from '@/lib/n8n';
+import { invocarLimparMemoria } from '@/lib/limpar-memoria';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 export type EstadoConversa = { erro?: string; sucesso?: string };
@@ -15,8 +15,8 @@ const STATUS_VALIDOS = new Set(['ativo', 'pausado', 'resolvido']);
  * cliente do servidor — RLS garante que só alcança conversa do próprio tenant.
  * Não passa pela api_n8n_* (aquela é a superfície do role n8n).
  *
- * O workflow do n8n já respeita status = 'pausado' (lê no conversa_sync), então
- * mudar aqui pausa o agente naquela conversa sem tocar no n8n.
+ * O serviço respeita status = 'pausado' (lê no conversa_sync), então mudar
+ * aqui pausa o agente naquela conversa sem tocar nele.
  *
  * tenant_id vem do JWT (exigirTenantAdmin), nunca do request — e ainda filtramos
  * explícito por ele além do RLS (regra 6).
@@ -75,7 +75,7 @@ export async function definirStatusConversa(
 }
 
 /**
- * Limpa a memória conversacional do agente (Redis, via n8n) para uma, várias ou
+ * Limpa a memória conversacional do agente (corte, via o serviço) para uma, várias ou
  * TODAS as conversas do tenant. Serve para que, depois de atualizar a base de
  * conhecimento, o agente não responda a partir do que "lembrou" e volte a
  * consultar a base.
@@ -94,27 +94,11 @@ export async function limparMemoriaConversas(
   const usuario = await exigirTenantAdmin();
   const supabase = await criarClienteServidor();
 
-  // Quem atende este tenant decide para ONDE vai o pedido (n8n ou o serviço
-  // em código — `src/lib/limpeza-memoria-destino.ts`). Lido do banco, escopado
-  // pelo tenant do JWT; a coluna é agência-only para escrita, mas o tenant lê
-  // a própria linha. Falha na leitura FECHA: sem runtime, nenhum lado é acionado.
-  const rt = await supabase
-    .from('tenants')
-    .select('agente_runtime')
-    .eq('id', usuario.tenantId)
-    .maybeSingle();
-  if (rt.error || !rt.data) {
-    return { erro: `Não foi possível saber qual agente atende esta conta: ${rt.error?.message ?? 'tenant não encontrado'}` };
-  }
-  const runtime = rt.data.agente_runtime as unknown;
-
-  // 'todas': o n8n varre tenant_<uuid>_* — pega até buffers de conversas que já
-  // saíram da tabela; o serviço corta todas as conversas do tenant. Não precisa
+  // 'todas': o serviço corta todas as conversas do tenant. Não precisa
   // enumerar ids; o tenant_id já escopa.
   if (alvo === 'todas') {
     const r = await invocarLimparMemoria({
       tenantId: usuario.tenantId,
-      runtime,
       escopo: 'todas',
       conversationIds: [],
     });
@@ -142,7 +126,6 @@ export async function limparMemoriaConversas(
 
   const r = await invocarLimparMemoria({
     tenantId: usuario.tenantId,
-    runtime,
     escopo: 'conversas',
     conversationIds: ids,
   });

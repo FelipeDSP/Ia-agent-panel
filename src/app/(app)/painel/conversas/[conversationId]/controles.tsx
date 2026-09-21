@@ -12,7 +12,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
 /**
- * Botão de pausar/retomar o agente na conversa. Pausado, o workflow do n8n não
+ * Botão de pausar/retomar o agente na conversa. Pausado, o serviço não
  * responde esta conversa (ele lê o status). O estado inicial vem do servidor;
  * atualizamos otimista após a ação e o revalidatePath sincroniza.
  */
@@ -68,7 +68,7 @@ export function ControlePausa({
 }
 
 /**
- * Limpa a memória (Redis, via n8n) desta conversa. Confirmação em dois passos
+ * Limpa a memória (corte, via o serviço) desta conversa. Confirmação em dois passos
  * inline — sem window.confirm (dialog nativo trava e é feio). Não apaga o
  * histórico exibido, só o contexto que o agente carrega.
  */

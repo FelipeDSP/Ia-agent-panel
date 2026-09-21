@@ -18,18 +18,20 @@ Toda a documentação vive em `docs/` (veja `docs/README.md` para o índice).
 - Deploy no **Coolify**, em dois projetos: o painel (`Dockerfile` da raiz) e o
   agente em código (`agente/Dockerfile`, contexto = raiz). Não é Vercel.
 
-## ESTADO ATUAL — leia antes de qualquer coisa (atualizado 17/09/2026)
+## ESTADO ATUAL — leia antes de qualquer coisa (atualizado 21/09/2026)
 
 **O agente É CÓDIGO: `agente/` (Node 24, TypeScript, sem framework, sem Redis),
 rodando no Coolify em `https://hercules.chatyou.chat`.** Desenho em
 `docs/DESENHO-AGENTE-EM-CODIGO.md`, roteiro operacional em `agente/README.md`,
 estado vivo em `docs/DESENHO-AGENTE-EM-CODIGO.md` §5 (os oito critérios).
 
-**O n8n é LEGADO.** Está congelado desde 15/09/2026 (decisão do Felipe): nada
-entra nele — nem import, nem conserto, nem experimento, nem "melhoria". Ele
-ainda **atende** `emporio` e `ceejaar` só porque esses dois ainda não foram
-apontados para o serviço; o dia em que forem, o n8n desliga. **Nunca proponha
-mexer em workflow do n8n. Toda funcionalidade nova é no código.**
+**O n8n está DESLIGADO.** Congelado em 15/09/2026, não atende ninguém desde
+18/09 (`emporio` e `ceejaar` apontados para o serviço) e foi abandonado em
+21/09 (decisão do Felipe): o painel não tem mais nada que remeta a ele — sem
+"quem atende", sem URL alternativa, sem `N8N_*` no ambiente (pode tirar do
+Coolify do painel: `N8N_LIMPEZA_URL`, `N8N_LIMPEZA_SECRET`, `N8N_WEBHOOK_BASE`).
+**Nunca proponha mexer em workflow do n8n. Toda funcionalidade nova é no
+código.**
 
 O que ainda cita n8n neste repositório, e por quê:
 
@@ -43,22 +45,29 @@ O que ainda cita n8n neste repositório, e por quê:
   conecta como `agente_codigo` (membro de `n8n_agent`) e só fala com o banco por
   `api_n8n_*` e `api_agente_*` (`teste:grants-n8n` varre as duas). Nunca a URL
   de `postgres` — `config.ts` recusa;
-- `src/lib/n8n.ts` e o ramo `n8n` de `limpeza-memoria-destino.ts` — o painel
-  ainda sabe mandar "limpar memória" ao n8n para os dois tenants que restam;
+- `tenants.agente_runtime` (`n8n` | `codigo`) — a coluna FICA: o serviço
+  descarta com 200 o webhook de tenant fora de `codigo`, e é essa guarda que
+  impede resposta dupla se algo for religado por engano. Desde a migração 75
+  o default é `codigo` e o painel não a expõe; `n8n` sobrevive no CHECK só
+  como arranjo de teste (`teste:agente-servico` prova o descarte com ele);
+- `teste:runtime-painel` §3 reprova texto de tela ou variável `N8N_*` em
+  `src/` — comentário de "por quê" pode citar a origem; tela não;
 - `docs/PENDENCIA-*`, `docs/ENTREGA-*` antigos e as seções deste arquivo
   sobre o gerador do workflow — **história**. Valem para entender por que o
   código é como é, não para orientar trabalho novo.
 
-**Quem atende cada tenant é `tenants.agente_runtime`** (`n8n` | `codigo`,
-migração 62, agência-only; trocar é pelo painel: *Clientes → cliente → Quem
-atende*, que mostra a URL do bot para cada lado e exige a ordem certa). O
-serviço descarta com 200 webhook de tenant que não esteja em `codigo` — é o
-que impede resposta dupla. A memória vem de `mensagens_log` (os dois lados
-escrevem), então trocar de lado não perde contexto.
+**Todo cliente é atendido pelo serviço.** O painel mostra a URL do Agent Bot
+(*Clientes → cliente → Agent Bot*, uma URL para todas as contas:
+`https://hercules.chatyou.chat/chatwoot/<WEBHOOK_TOKEN>`); apontar o bot no
+Chatwoot é o único passo. Cliente novo nasce em `codigo` (explícito no insert
+do painel e default da coluna pela 75).
 
-Migrações aplicadas até aqui: **62–68** (fila/trace/runtime, prompt no turno,
+Migrações aplicadas até aqui: **62–74** (fila/trace/runtime, prompt no turno,
 encerramento do link Asaas, conversa resolvida reabre, config por tenant,
-retenção de dados, tokens em cache). Pagamento por link (Asaas) funciona no
+retenção de dados, tokens em cache, vendas por modalidade, aviso pelo
+Chatwoot, pagamento confirmado com fim, nome de quem retira, guard de
+usuários, horário do agente). A **75** (default `codigo`) está escrita e
+testada; aplicar só com autorização. Pagamento por link (Asaas) funciona no
 sandbox; BaaS/subcontas depende da conta PJ da estud.you (não é código).
 
 Regras do serviço que não se "consertam":
@@ -75,16 +84,17 @@ Regras do serviço que não se "consertam":
 ## Contexto crítico
 
 **Existem clientes reais em produção.** `emporio` e `ceejaar` (mesmo dono,
-ciente do período de teste) — atendidos pelo n8n congelado até migrarem — e o
-`estudyou-sendbox` no código. Acqua Lavanderia (`chatwoot_account_id = 56`) está
-sem tráfego desde julho. Qualquer migração de schema precisa manter os dois
-lados funcionando — não é ambiente limpo.
+ciente do período de teste) e o `estudyou-sendbox`, todos no serviço desde
+18/09; `fortalize` conectada e sem tráfego. Acqua Lavanderia
+(`chatwoot_account_id = 56`) está sem tráfego desde julho. Qualquer migração
+de schema roda com cliente respondendo — não é ambiente limpo.
 
-**O banco tem DOIS consumidores além do painel: o serviço `agente/` e o n8n
-congelado.** Os dois chamam as mesmas funções `api_n8n_*`. Toda mudança de
-assinatura ou de tipo de retorno afeta os dois — e o n8n não pode ser ajustado.
-Regra prática: mudança de comportamento entra por função NOVA ou por chave nova
-no jsonb, nunca trocando a assinatura de função viva.
+**O banco tem UM consumidor além do painel: o serviço `agente/`**, que chama
+as funções `api_n8n_*` e `api_agente_*` e é deployado separado do painel
+(Coolify). Uma migração que troca assinatura de função viva quebra o serviço
+no ar até o próximo deploy dele. Regra prática, que continua valendo: mudança
+de comportamento entra por função NOVA ou por chave nova no jsonb, nunca
+trocando a assinatura de função viva.
 
 ## Regras de multi-tenancy
 

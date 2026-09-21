@@ -14,7 +14,7 @@ import { exigirSuperAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { urlDoWebhookNoAgente } from '@/lib/pagamento/asaas-tenant';
 import { desdeJanela } from '@/lib/retencao';
-import { normalizarRuntime, roteiroDaTroca, urlsDoBot } from '@/lib/agente/runtime';
+import { urlDoBot } from '@/lib/agente/runtime';
 import { definicaoTool, grupoTool } from '@/lib/tools/registro';
 import { TOOL_TRANSFERIR, type ConfigTransferir } from '@/lib/tools/transferir-humano';
 import { TOOL_VENDAS, lerConfigVendas } from '@/lib/tools/vendas-config';
@@ -25,7 +25,7 @@ import {
   FormChatwoot,
   FormConfigSuper,
   FormConvite,
-  FormRuntime,
+  UrlDoBot,
   FormTransferirHumano,
   FormVendasAgencia,
   GerenciarAdmins,
@@ -50,7 +50,7 @@ export default async function PaginaDetalheTenant({
   const { data: tenant } = await supabase
     .from('tenants')
     .select(
-      'id, nome, slug, ativo, agente_ativo, agente_runtime, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, system_prompt, modelo, temperatura, debounce_segundos, memoria_silencio_minutos, pagamento_formas',
+      'id, nome, slug, ativo, agente_ativo, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, system_prompt, modelo, temperatura, debounce_segundos, memoria_silencio_minutos, pagamento_formas',
     )
     .eq('id', id)
     .is('deletado_em', null)
@@ -233,27 +233,13 @@ export default async function PaginaDetalheTenant({
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Quem atende</CardTitle>
+            <CardTitle>Agent Bot</CardTitle>
             <CardDescription>
-              {normalizarRuntime(tenant.agente_runtime) === 'codigo'
-                ? 'O serviço em código (agente/) responde esta conta.'
-                : 'O n8n responde esta conta.'}
+              O serviço em código (agente/) responde esta conta. Aponte o bot do Chatwoot para esta URL.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {(() => {
-              const urls = urlsDoBot(process.env, tenant.chatwoot_inbox_id);
-              const atual = normalizarRuntime(tenant.agente_runtime);
-              return (
-                <FormRuntime
-                  tenantId={tenant.id}
-                  atual={atual}
-                  urls={urls}
-                  roteiroParaCodigo={roteiroDaTroca('n8n', 'codigo', urls)}
-                  roteiroParaN8n={roteiroDaTroca('codigo', 'n8n', urls)}
-                />
-              );
-            })()}
+            <UrlDoBot url={urlDoBot(process.env)} />
           </CardContent>
         </Card>
       </div>
