@@ -31,7 +31,7 @@ import { resolverPerfil } from '../perfil.ts';
 import { montarSystemMessage, versaoDasPartes } from '../agente/prompt.ts';
 import type { Modelo, MensagemHistorico } from '../agente/modelo.ts';
 import { ferramentasDoPerfil, temPagamento } from '../tools/index.ts';
-import { transferirHumano } from '../tools/transferir-humano.ts';
+import { lerTimes, secaoTimes, transferirHumano } from '../tools/transferir-humano.ts';
 import { enviarFotoComLegenda } from '../tools/enviar-foto.ts';
 import { linhaDoPromptFechado, situacao, textoDoAviso } from '../tenant/horario.ts';
 import { lerHorarioDoAgente } from '../tenant/horario-db.ts';
@@ -255,7 +255,10 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       ? lerOferta((await fnUma<ConfigTool>(db, 'api_n8n_config_tool', [tenant.tenant_id, 'vendas']))?.config)
       : null;
     const secoesExtras = perfil === 'vendas' && temPagamento(toolsAtivas) && deps.asaas && (oferta?.pagamentos.includes('link') ?? true) ? ['gerar_link_pagamento'] : [];
-    const secaoDinamica = (oferta ? secaoOferta(oferta) : '') + promptFechado;
+    // 21/09: os times do Chatwoot que o cliente cadastrou (só os verificados)
+    // entram como seção — o modelo escolhe pelo assunto; sem times, nada.
+    const times = toolsAtivas.includes('transferir_humano') ? await lerTimes(db, tenant.tenant_id).catch(() => []) : [];
+    const secaoDinamica = (oferta ? secaoOferta(oferta) : '') + secaoTimes(times) + promptFechado;
     const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt, secoesExtras, ...(secaoDinamica ? { secaoDinamica } : {}) });
     await fnValor(db, 'api_agente_prompt_registrar', [tenant.tenant_id, prompt.hash, prompt.texto, `${deps.versaoCodigo}/partes:${versaoDasPartes()}`]);
     await turno.prompt(perfil, prompt.hash);
@@ -337,7 +340,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     if (portao.transferir && portao.notaPrivada) {
       const tr = await turno.medir('tool', 'transferir_humano:portao', { conversationId },
         () => transferirHumano(ctx, `Portão de venda: duas respostas barradas seguidas — o agente afirmou algo que o banco não confirma.\n\n${portao.notaPrivada}`),
-        (r) => ({ pausou: r.pausou, notificou: r.notificou, disponivel: r.disponivel }));
+        (r) => ({ pausou: r.pausou, notificou: r.notificou, disponivel: r.disponivel, atribuiu: r.atribuiu }));
       if (tr.pausou) saidaFinal = TEXTO_PORTAO_TRANSFERIU;
       else {
         try {

@@ -46,6 +46,7 @@ const { criarServidor } = await importar('entrada/http.ts');
 const { montarSystemMessage } = await importar('agente/prompt.ts');
 const { limparVazamento } = await importar('turno/saida.ts');
 const { MAX_ITERACOES, TEXTO_TETO } = await importar('agente/modelo.ts');
+const { escolherTime, secaoTimes } = await importar('tools/transferir-humano.ts');
 
 const DIR = path.join(RAIZ, 'supabase', 'migrations');
 const leia = (n) => fs.readFileSync(path.join(DIR, n), 'utf8').replace(/\r\n/g, '\n');
@@ -105,7 +106,11 @@ const chatwoot = {
   async enviar(p) { if (chatwootFalha) throw new Error('Chatwoot messages -> HTTP 500'); chamadasChatwoot.push(p); return { mensagemId: 4242 }; },
   temTokenDaAgencia: () => tokenAgencia,
   async enviarParaNumero(p) { if (!tokenAgencia) throw new Error('sem token'); chamadasNumero.push(p); return { conversationId: 9000 + chamadasNumero.length, mensagemId: 1, contatoId: 1 }; },
+  // 21/09: atribuição a time. `atribuirFalha` simula o Chatwoot fora; id 404 simula o 200-com-null.
+  async atribuirTime(p) { if (atribuirFalha) throw new Error('Chatwoot assignments -> HTTP 500'); chamadasAtribuir.push(p); return { time: p.teamId === 404 ? null : { id: p.teamId, nome: `time-${p.teamId}` } }; },
 };
+const chamadasAtribuir = [];
+let atribuirFalha = false;
 const chamadasWaha = [];
 const waha = { async enviarTexto(s, d, t) { chamadasWaha.push({ s, d, t }); } };
 const roteiro = [];
@@ -436,6 +441,54 @@ try {
     if (fk2.resultado === 'enfileirada') { await vencer(); await umCiclo(depsWorker); }
     chk('mensagem seguinte na conversa pausada: NENHUMA resposta, NENHUMA chamada ao modelo (descarte silencioso)',
       chamadasChatwoot.length === antesCw && vistoPeloModelo.length === antesModeloK, JSON.stringify({ r: fk2.resultado, cw: chamadasChatwoot.length - antesCw }));
+
+    // 5k½ (21/09). TIMES DO CHATWOOT: com times verificados cadastrados, o prompt lista
+    // os times, o modelo escolhe pelo nome e a tool ATRIBUI depois da nota privada.
+    // Só o verificado chega (migração 45); sem times, nada muda.
+    {
+      chk('escolherTime: vazio -> null', escolherTime([], 'x') === null);
+      const TS = [{ team_id: 20, nome: 'Suporte', descricao: 'problemas', padrao: true }, { team_id: 21, nome: 'Financeiro', descricao: 'boletos', padrao: false }];
+      chk('escolherTime: nome bate sem acento/caixa', escolherTime(TS, 'financeiro')?.team_id === 21 && escolherTime(TS, 'FINANCEIRO ')?.team_id === 21);
+      chk('escolherTime: nome desconhecido ou vazio -> o padrão', escolherTime(TS, 'vendas')?.team_id === 20 && escolherTime(TS, null)?.team_id === 20);
+      chk('escolherTime: sem padrão e vários -> null (nunca chuta); sem padrão e um só -> ele', escolherTime(TS.map((t) => ({ ...t, padrao: false })), '') === null && escolherTime([TS[1]], '')?.team_id === 21);
+      chk('secaoTimes: vazio -> ""; com times, lista nome, (padrão) e descrição', secaoTimes([]) === '' && /"Suporte" \(padrão\): problemas/.test(secaoTimes(TS)) && /"Financeiro": boletos/.test(secaoTimes(TS)));
+
+      await c.query(`insert into public.tenant_times (tenant_id, team_id, nome, descricao, padrao, verificado_em) values ($1, 20, 'Suporte', 'Problemas com o produto', true, now()), ($1, 21, 'Financeiro', 'Boletos e pagamentos', false, now()), ($1, 22, 'Fantasma', 'NAO verificado', false, null)`, [T.a]);
+      // isca: time do tenant B com o mesmo nome — não pode aparecer para A
+      await c.query(`insert into public.tenant_times (tenant_id, team_id, nome, descricao, padrao, verificado_em) values ($1, 77, 'Financeiro', 'do B', true, now())`, [T.b]);
+      roteiro.push({ tool: 'transferir_humano', args: { resumo: 'Cliente quer segunda via do boleto', time: 'financeiro' } }, { texto: 'Encaminhei ao financeiro, aguarde.' });
+      const fkt = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 217, content: 'preciso do boleto' }));
+      await vencer(); await umCiclo(depsWorker);
+      const vkt = vistoPeloModelo.at(-1);
+      chk('o prompt de A lista os times VERIFICADOS de A (Suporte padrão, Financeiro) e NÃO o não-verificado nem o do B',
+        /## Times de atendimento/.test(vkt.systemMessage) && /"Suporte" \(padrão\): Problemas com o produto/.test(vkt.systemMessage) && /"Financeiro": Boletos e pagamentos/.test(vkt.systemMessage) && !/Fantasma/.test(vkt.systemMessage) && !/do B/.test(vkt.systemMessage), JSON.stringify({ tem: /## Times de atendimento/.test(vkt.systemMessage), trecho: vkt.systemMessage.slice(Math.max(0, vkt.systemMessage.indexOf('## Times')-20), vkt.systemMessage.indexOf('## Times')+400), tools: vkt.ferramentas }));
+      const pkt = (await passosDe((await turnoDaFila(fkt.filaId)).id)).find((p) => p.tipo === 'tool' && p.nome === 'transferir_humano');
+      chk('a tool atribuiu ao time 21 (Financeiro) na conversa 217, depois da nota privada; diagnóstico traz o time; texto ao modelo cita o time',
+        chamadasAtribuir.at(-1)?.teamId === 21 && chamadasAtribuir.at(-1)?.conversationId === 217 && pkt?.saida?.diagnostico?.atribuiu?.time?.id === 21 && /encaminhada ao time "time-21"/.test(pkt?.saida?.texto ?? ''), JSON.stringify({ a: chamadasAtribuir.at(-1), d: pkt?.saida?.diagnostico }));
+      chk('e a conversa 217 ficou pausada como sempre', (await um(`select status from public.conversas where tenant_id=$1 and conversation_id=217`, [T.a])).status === 'pausado');
+      // sem `time` -> o padrão (20)
+      roteiro.push({ tool: 'transferir_humano', args: { resumo: 'Cliente quer falar com alguém' } }, { texto: 'Já chamei alguém.' });
+      await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 218, content: 'quero falar com alguém' }));
+      await vencer(); await umCiclo(depsWorker);
+      chk('sem `time` no argumento -> o padrão (20) recebe', chamadasAtribuir.at(-1)?.teamId === 20 && chamadasAtribuir.at(-1)?.conversationId === 218);
+      // Chatwoot fora na atribuição: transferência CONTINUA (pausa + nota), trace diz falhou
+      atribuirFalha = true;
+      roteiro.push({ tool: 'transferir_humano', args: { resumo: 'x', time: 'Suporte' } }, { texto: 'Aguarde.' });
+      const fkf = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 219, content: 'ajuda' }));
+      await vencer(); await umCiclo(depsWorker); atribuirFalha = false;
+      const pkf = (await passosDe((await turnoDaFila(fkf.filaId)).id)).find((p) => p.tipo === 'tool' && p.nome === 'transferir_humano');
+      chk('atribuição falhando não derruba a transferência: pausou, diagnóstico atribuiu=falhou, texto sem time',
+        pkf?.saida?.diagnostico?.pausou === true && pkf.saida.diagnostico.atribuiu === 'falhou' && !/encaminhada ao time/.test(pkf.saida.texto), JSON.stringify(pkf?.saida?.diagnostico));
+      // sem times cadastrados: nada de seção, nada de atribuição (o comportamento de antes)
+      await c.query(`delete from public.tenant_times where tenant_id = any($1::uuid[])`, [[T.a, T.b]]);
+      const antesAtr = chamadasAtribuir.length;
+      roteiro.push({ tool: 'transferir_humano', args: { resumo: 'y', time: 'Suporte' } }, { texto: 'Aguarde.' });
+      const fk0 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 220, content: 'humano' }));
+      await vencer(); await umCiclo(depsWorker);
+      const pk0 = (await passosDe((await turnoDaFila(fk0.filaId)).id)).find((p) => p.tipo === 'tool' && p.nome === 'transferir_humano');
+      chk('sem times: prompt sem a seção, nenhuma atribuição mesmo com `time` informado, diagnóstico atribuiu=nenhum',
+        !/## Times de atendimento/.test(vistoPeloModelo.at(-1).systemMessage) && chamadasAtribuir.length === antesAtr && pk0?.saida?.diagnostico?.atribuiu === 'nenhum');
+    }
 
     // 5l. RESOLVER: a tool resolve no Chatwoot E escreve `resolvido` no banco (65); a próxima
     // mensagem do cliente REABRE (sync) e é respondida.

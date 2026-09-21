@@ -1,6 +1,8 @@
 # Transferir para um time do Chatwoot — desenho
 
-> **Estado: desenho, nada construído.** A medição que decidia o custo do projeto
+> **Estado (21/09/2026): CONSTRUÍDO no serviço `agente/`** — `transferir_humano` ganhou o parâmetro `time`, o prompt lista os times verificados (`secaoTimes`) e a tool atribui por `POST /assignments` depois da nota privada (`escolherTime`: nome → padrão → único → nenhum). Descoberto no caminho: a migração **45** (só time verificado sai de `api_n8n_times`) nunca tinha sido aplicada — sem ela, id sem selo chega ao bot e desatribui a conversa. Teste `teste:migracao-times-verificados`; aplicar a 45 é pré-requisito. O texto abaixo é o desenho original.
+>
+> ~~Estado: desenho, nada construído.~~ A medição que decidia o custo do projeto
 > está feita (seção 1) e o resultado é o barato: sem conta cross-tenant, sem
 > segredo novo, sem `$env`.
 

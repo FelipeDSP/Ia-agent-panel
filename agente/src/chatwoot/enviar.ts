@@ -27,6 +27,13 @@ export interface Chatwoot {
   enviarParaNumero(p: { tenantId: string; numero: string; texto: string }): Promise<{ conversationId: number; mensagemId: number | null; contatoId: number }>;
   /** Se `enviarParaNumero` tem com que trabalhar. */
   temTokenDaAgencia(): boolean;
+  /**
+   * 21/09: atribui a conversa a um TIME do Chatwoot (`POST /assignments`,
+   * token do Agent Bot — o bot atribui, medido em 18/08). `time: null` = o
+   * Chatwoot respondeu 200 com corpo nulo, que é o que ele faz para id que
+   * não existe (e DESATRIBUI) — por isso só chegam aqui ids verificados.
+   */
+  atribuirTime(p: { tenantId: string; conversationId: number; teamId: number }): Promise<{ time: { id: number; nome: string } | null }>;
 }
 
 interface Credencial { chatwoot_url: string; chatwoot_token: string; chatwoot_account_id: number }
@@ -58,6 +65,21 @@ export function criarChatwoot(db: Db, fetchFn: typeof fetch = fetch, agenciaToke
       let id: number | null = null;
       try { const j = (await r.json()) as { id?: number }; id = typeof j.id === 'number' ? j.id : null; } catch { /* corpo não-JSON: id fica nulo */ }
       return { mensagemId: id };
+    },
+
+    async atribuirTime({ tenantId, conversationId, teamId }) {
+      const cred = await fnUma<Credencial>(db, 'api_n8n_credencial_chatwoot', [tenantId]);
+      if (!cred?.chatwoot_url || !cred.chatwoot_token) throw new Error('tenant sem credencial de Chatwoot');
+      const url = `${cred.chatwoot_url.replace(/\/+$/, '')}/api/v1/accounts/${cred.chatwoot_account_id}/conversations/${conversationId}/assignments`;
+      const r = await fetchFn(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', api_access_token: cred.chatwoot_token },
+        body: JSON.stringify({ team_id: teamId }),
+      });
+      if (!r.ok) throw new Error(`Chatwoot assignments -> HTTP ${r.status}`);
+      const j = await json(r);
+      const id = Number(j?.['id']);
+      return { time: j && Number.isFinite(id) ? { id, nome: String(j['name'] ?? '') } : null };
     },
 
     async enviarParaNumero({ tenantId, numero, texto }) {
