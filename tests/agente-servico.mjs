@@ -448,9 +448,9 @@ try {
     {
       chk('escolherTime: vazio -> null', escolherTime([], 'x') === null);
       const TS = [{ team_id: 20, nome: 'Suporte', descricao: 'problemas', padrao: true }, { team_id: 21, nome: 'Financeiro', descricao: 'boletos', padrao: false }];
-      chk('escolherTime: nome bate sem acento/caixa', escolherTime(TS, 'financeiro')?.team_id === 21 && escolherTime(TS, 'FINANCEIRO ')?.team_id === 21);
-      chk('escolherTime: nome desconhecido ou vazio -> o padrão', escolherTime(TS, 'vendas')?.team_id === 20 && escolherTime(TS, null)?.team_id === 20);
-      chk('escolherTime: sem padrão e vários -> null (nunca chuta); sem padrão e um só -> ele', escolherTime(TS.map((t) => ({ ...t, padrao: false })), '') === null && escolherTime([TS[1]], '')?.team_id === 21);
+      chk('escolherTime: nome bate sem acento/caixa', escolherTime(TS, 'financeiro')?.nome === 'Financeiro' && escolherTime(TS, 'FINANCEIRO ')?.nome === 'Financeiro');
+      chk('escolherTime: nome desconhecido ou vazio -> o padrão', escolherTime(TS, 'vendas')?.nome === 'Suporte' && escolherTime(TS, null)?.nome === 'Suporte');
+      chk('escolherTime: sem padrão e vários -> null (nunca chuta); sem padrão e um só -> ele', escolherTime(TS.map((t) => ({ ...t, padrao: false })), '') === null && escolherTime([TS[1]], '')?.nome === 'Financeiro');
       chk('secaoTimes: vazio -> ""; com times, lista nome, (padrão) e descrição', secaoTimes([]) === '' && /"Suporte" \(padrão\): problemas/.test(secaoTimes(TS)) && /"Financeiro": boletos/.test(secaoTimes(TS)));
 
       await c.query(`insert into public.tenant_times (tenant_id, team_id, nome, descricao, padrao, verificado_em) values ($1, 20, 'Suporte', 'Problemas com o produto', true, now()), ($1, 21, 'Financeiro', 'Boletos e pagamentos', false, now()), ($1, 22, 'Fantasma', 'NAO verificado', false, null)`, [T.a]);
