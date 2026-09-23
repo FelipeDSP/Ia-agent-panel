@@ -56,8 +56,14 @@ try {
   const bHoje = await ins(T.b, 'b2', 'openai_usage');
   // datas: antes do corte para três, depois para uma (o trigger de atualizado_em não toca criado_em)
   await c.query(`update public.mensagens_log set criado_em = $2 where id = any($1::uuid[])`, [[aAntEst, aAntReal, bAntReal], '2026-09-18T12:00:00Z']);
-  await c.query(`update public.mensagens_log set criado_em = $2 where id = $1`, [bHoje, '2026-09-21T12:00:00Z']);
-  await c.query(`insert into public.uso_ingestao (tenant_id, modelo, tokens, criado_em) values ($1, 'text-embedding-3-small', 777, '2026-09-10T00:00:00Z'), ($1, 'text-embedding-3-small', 555, '2026-09-21T10:00:00Z')`, [T.a]);
+  // 23/09: a linha "depois do corte" e a de ingestao de hoje usam `now()`, nao
+  // uma data literal. Escritas com '2026-09-21T12:00Z' elas eram "hoje" no dia
+  // em que o teste nasceu e viraram passado em 48 h — o teto diario do portao
+  // (`criado_em >= date_trunc('day', now())`) passou a somar zero e o teste
+  // ficou vermelho sem defeito nenhum. O corte da migracao e fixo no arquivo;
+  // `now()` esta sempre depois dele, hoje e daqui a um ano.
+  await c.query(`update public.mensagens_log set criado_em = now() where id = $1`, [bHoje]);
+  await c.query(`insert into public.uso_ingestao (tenant_id, modelo, tokens, criado_em) values ($1, 'text-embedding-3-small', 777, '2026-09-10T00:00:00Z'), ($1, 'text-embedding-3-small', 555, now())`, [T.a]);
   const tok = async (id) => await um(`select tokens_entrada te, tokens_saida ts, tokens_entrada_cache tc, tokens_wrapper tw, tokens_round_trip tr, fonte_tokens f, conteudo, modelo from public.mensagens_log where id=$1`, [id]);
   const antes = await tok(aAntEst);
   chk('contraprova: antes da 76 a linha antiga TEM tokens (5000/100, cache 400, componentes)', antes.te === 5000 && antes.ts === 100 && antes.tc === 400 && antes.tw === 10 && antes.tr === 60 && /estimativa/.test(antes.f), JSON.stringify(antes));

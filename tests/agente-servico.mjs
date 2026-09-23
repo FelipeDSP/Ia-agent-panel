@@ -47,6 +47,7 @@ const { montarSystemMessage } = await importar('agente/prompt.ts');
 const { limparVazamento } = await importar('turno/saida.ts');
 const { MAX_ITERACOES, TEXTO_TETO } = await importar('agente/modelo.ts');
 const { escolherTime, secaoTimes } = await importar('tools/transferir-humano.ts');
+const { ehUuid, TEXTO_PRODUTO_ID_INVALIDO } = await importar('tools/gerenciar-pedido.ts');
 
 const DIR = path.join(RAIZ, 'supabase', 'migrations');
 const leia = (n) => fs.readFileSync(path.join(DIR, n), 'utf8').replace(/\r\n/g, '\n');
@@ -441,6 +442,41 @@ try {
     if (fk2.resultado === 'enfileirada') { await vencer(); await umCiclo(depsWorker); }
     chk('mensagem seguinte na conversa pausada: NENHUMA resposta, NENHUMA chamada ao modelo (descarte silencioso)',
       chamadasChatwoot.length === antesCw && vistoPeloModelo.length === antesModeloK, JSON.stringify({ r: fk2.resultado, cw: chamadasChatwoot.length - antesCw }));
+
+    // 5k¼ (23/09). ID DE PRODUTO INVENTADO: o modelo mandou "nr01" duas vezes em
+    // 17/09 (sendbox); `produto_id` vai para um parâmetro UUID, o Postgres devolvia
+    // 22P02 e o modelo via só "a ferramenta falhou". Agora recebe INSTRUÇÃO.
+    {
+      chk('ehUuid: aceita UUID, recusa SKU/nome/vazio/quase-uuid', ehUuid('3f0a1b2c-4d5e-6f70-8192-a3b4c5d6e7f8') && ehUuid(' 3F0A1B2C-4D5E-6F70-8192-A3B4C5D6E7F8 ')
+        && !ehUuid('nr01') && !ehUuid('nr01-online') && !ehUuid('') && !ehUuid(null) && !ehUuid('3f0a1b2c-4d5e-6f70-8192-a3b4c5d6e7f'));
+      const antesItens = (await um(`select count(*)::int n from public.pedido_itens i join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1`, [T.a])).n;
+      roteiro.push({ tool: 'gerenciar_pedido', args: { acao: 'adicionar', produto_id: 'nr01', quantidade: 1, observacao: null, metadados: null, pagamento: null } },
+                   { texto: 'Deixa eu confirmar o item certinho.' });
+      const fu = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 233, content: 'quero o nr01' }));
+      await vencer();
+      // Sem a guarda, o id vira 22P02 e — nesta suíte, que roda TUDO numa
+      // transação — envenena a conexão (25P02) e derruba o processo. Crash não
+      // é falha: vira FALHA nomeada, e a transação é recuperada pelo savepoint
+      // para os casos seguintes continuarem medindo.
+      await c.query('savepoint sp_uuid');
+      let excecaoUuid = null;
+      try { await umCiclo(depsWorker); } catch (e) { excecaoUuid = e; await c.query('rollback to savepoint sp_uuid'); }
+      chk('id não-UUID não chega ao banco (sem a guarda, 22P02 aborta a transação da suíte)', excecaoUuid === null, String(excecaoUuid?.message ?? '').slice(0, 90));
+      const tu = excecaoUuid ? {} : await turnoDaFila(fu.filaId);
+      const pu = excecaoUuid ? null : (await passosDe(tu.id)).find((p) => p.tipo === 'tool' && p.nome === 'gerenciar_pedido');
+      chk('id não-UUID: a tool devolve INSTRUÇÃO (consultar_catalogo), não erro de banco; o passo não tem `erro`',
+        pu?.saida?.texto === TEXTO_PRODUTO_ID_INVALIDO && /ID DE PRODUTO INVALIDO/.test(pu?.saida?.texto ?? '') && pu?.erro == null && tu.status === 'ok', JSON.stringify({ e: pu?.erro, t: (pu?.saida?.texto ?? '').slice(0, 60) }));
+      chk('e NADA foi criado: nenhum item novo e nenhum pedido novo na conversa 233', (await um(`select count(*)::int n from public.pedido_itens i join public.pedidos p on p.id=i.pedido_id where p.tenant_id=$1`, [T.a])).n === antesItens
+        && (await um(`select count(*)::int n from public.pedidos where tenant_id=$1 and conversation_id=233`, [T.a])).n === 0);
+      // contraprova: com o UUID de verdade a MESMA ação passa
+      roteiro.push({ tool: 'gerenciar_pedido', args: { acao: 'adicionar', produto_id: PROD, quantidade: 1, observacao: null, metadados: null, pagamento: null } },
+                   { texto: 'Anotado!' });
+      const fu2 = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 233, content: 'entao o bolo' }));
+      await vencer(); await umCiclo(depsWorker);
+      const pu2 = (await passosDe((await turnoDaFila(fu2.filaId)).id)).find((p) => p.tipo === 'tool' && p.nome === 'gerenciar_pedido');
+      chk('contraprova: com o UUID certo a ação entra (a guarda não barra o caminho bom)',
+        pu2?.saida?.texto !== TEXTO_PRODUTO_ID_INVALIDO && (await um(`select count(*)::int n from public.pedidos where tenant_id=$1 and conversation_id=233`, [T.a])).n === 1, (pu2?.saida?.texto ?? '').slice(0, 80));
+    }
 
     // 5k½ (21/09). TIMES DO CHATWOOT: com times verificados cadastrados, o prompt lista
     // os times, o modelo escolhe pelo nome e a tool ATRIBUI depois da nota privada.

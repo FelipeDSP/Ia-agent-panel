@@ -21,6 +21,7 @@
  *   node tests/isolamento-fase2.mjs
  */
 
+import fs from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 
 import { carregarEnv } from '../scripts/lib/env.mjs';
@@ -466,20 +467,48 @@ function montarCookiesSessao(sessao) {
   return partes;
 }
 
+/**
+ * O alvo é ESTE painel? (23/09)
+ *
+ * Antes bastava `status < 500`, e isso só prova que ALGUMA COISA atende em
+ * `BASE_APP` — que é `NEXT_PUBLIC_SITE_URL`, hoje `http://localhost:3000`.
+ * Em 23/09 outro projeto estava nessa porta: a camada 3 mediu o app errado e
+ * reprovou com "redireciona para /entrar" e "/admin/tenants → 404". Vermelho
+ * sem defeito nenhum aqui — e o inverso é pior: um app estranho cujas rotas
+ * por acaso redirecionem daria VERDE numa camada que existe para provar
+ * isolamento.
+ *
+ * Então a prova é de IDENTIDADE: a página de login tem de ser a nossa. O
+ * marcador sai do próprio arquivo da página (`/chatyou-logo.png`), não de uma
+ * constante escrita duas vezes que pode envelhecer de um lado só.
+ */
+const MARCADOR_LOGIN = (() => {
+  const src = fs.readFileSync(new URL('../src/app/(auth)/login/page.tsx', import.meta.url), 'utf8');
+  const m = src.match(/src="(\/[\w-]+\.png)"/);
+  if (!m) throw new Error('não achei o marcador da página de login — ajuste MARCADOR_LOGIN');
+  return m[1];
+})();
+
 async function servidorNoAr() {
   try {
     const r = await fetch(`${BASE_APP}/login`, { redirect: 'manual' });
-    return r.status < 500;
-  } catch {
-    return false;
+    if (r.status >= 500) return { ok: false, porque: `HTTP ${r.status}` };
+    const corpo = await r.text();
+    if (!corpo.includes(MARCADOR_LOGIN)) {
+      return { ok: false, porque: `responde, mas NÃO é este painel (sem "${MARCADOR_LOGIN}" no /login) — outro app na porta?` };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, porque: `sem resposta (${e.message})` };
   }
 }
 
 async function testarHttp(usuarios) {
   console.log('\n  -- URL direta (HTTP) --');
 
-  if (!(await servidorNoAr())) {
-    pular('camada 3 (URL direta)', `servidor não responde em ${BASE_APP}; rode "npm run dev"`);
+  const alvo = await servidorNoAr();
+  if (!alvo.ok) {
+    pular('camada 3 (URL direta)', `${BASE_APP}: ${alvo.porque}. Rode "npm run dev" ou aponte NEXT_PUBLIC_SITE_URL para este painel.`);
     return;
   }
 

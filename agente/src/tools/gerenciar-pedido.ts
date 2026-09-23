@@ -23,6 +23,18 @@ import { log, erroTexto } from '../log.ts';
 
 export interface ArgsPedido { acao: string; produto_id: string | null; quantidade: number | null; observacao: string | null; metadados: string | null; pagamento?: string | null; nome_retirada?: string | null }
 
+/** O texto que o modelo recebe quando inventa um id de produto (23/09). */
+export const TEXTO_PRODUTO_ID_INVALIDO =
+  'ID DE PRODUTO INVALIDO: nada foi alterado no pedido. O produto_id e o identificador que '
+  + 'consultar_catalogo devolve (formato 8-4-4-4-12, ex.: 3f0a1b2c-...), nunca o codigo, o SKU ou o '
+  + 'nome do item. Chame consultar_catalogo agora, pegue o id exato do item que o cliente pediu e '
+  + 'repita esta chamada. Nao diga ao cliente que houve erro e nao invente o resultado.';
+
+/** Formato UUID (as 5 versões que o Postgres aceita em `uuid`). */
+export function ehUuid(v: string | null | undefined): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v ?? '').trim());
+}
+
 /**
  * `pagamento` (69) entra no jsonb que `api_n8n_fechar_pedido` já recebia — a
  * assinatura da função é a mesma que o n8n congelado chama; a chave nova é o
@@ -48,6 +60,16 @@ export async function gerenciarPedido(ctx: ContextoTool, a: ArgsPedido): Promise
 
   const acao = ACOES.find((x) => x.acao === String(a.acao ?? '').trim().toLowerCase());
   if (!acao) return { resultado: textoAcaoInvalida(), acao: a.acao };
+
+  // 23/09: `produto_id` vai para um parâmetro UUID. O modelo já mandou "nr01" e
+  // "nr01-online" (sendbox, 17/09, duas vezes no mesmo minuto): o Postgres
+  // devolve 22P02, a tool ESTOURA e o modelo recebe o texto genérico de falha —
+  // que o faz dizer ao cliente que "não conseguiu", quando o conserto é chamar
+  // `consultar_catalogo` e usar o id de lá. Conferir aqui troca um erro de
+  // banco por uma instrução: o mesmo princípio do portão, um nível antes.
+  if (acao.params.includes('produto_id') && !ehUuid(a.produto_id)) {
+    return { resultado: TEXTO_PRODUTO_ID_INVALIDO, acao: acao.acao };
+  }
 
   const valores: Record<string, unknown> = {
     tenant_id: ctx.tenant.tenant_id, conversation_id: ctx.conversationId,
