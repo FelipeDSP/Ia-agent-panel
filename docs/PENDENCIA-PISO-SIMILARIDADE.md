@@ -87,3 +87,38 @@ tamanho do chunk sem medir: quebra calado.
 Quando houver cliente com base grande **e** relato de resposta fora de contexto —
 ou seja, quando o falso positivo custar atendimento. Até lá o problema aparece
 como base pequena, e a correção certa é encher a base, não filtrar a busca.
+
+## Medição de 30/09/2026 — em produção, com o trace
+
+O trace guarda a saída da `busca_conhecimento`, e ela traz a relevância de cada
+trecho (`[Trecho N | relevância 0.xxx]`). Isso permite medir a distribuição real
+sem gastar uma chamada de API. Sobre as **76 buscas** registradas desde 15/09
+(CEEJAAR e sendbox):
+
+| faixa da maior relevância | buscas |
+|---|---|
+| ≥ 0,60 | 46 (61%) |
+| 0,45–0,60 | 27 (36%) |
+| 0,30–0,45 | 3 (4%) |
+| < 0,30 | 0 |
+
+E `NENHUM_RESULTADO` saiu **0 vezes em 76** — como esta pendência previa: sem
+piso, a busca sempre devolve os 5 mais próximos, e o "não tenho isso" só
+acontece com base vazia ou embeddings fora do ar.
+
+O que a medição acrescenta: **um piso fixo não separaria nada aqui.** Perguntas
+que a base claramente não cobre caem no meio da faixa "boa" — "horário de
+funcionamento do CEEJAAR" (0,548), "prazo de emissão do certificado" (0,542),
+"e-mail institucional para contato" (0,551) — enquanto o único grupo realmente
+baixo (0,378–0,447) tem três itens, dois deles perguntas fora do escopo da base.
+
+A causa é o tamanho da base: CEEJAAR tem **16 trechos**, Empório **2**. Com base
+pequena, a distância ao trecho mais próximo diz mais sobre o tamanho e o estilo
+da base do que sobre a pergunta — e o número não é comparável entre clientes.
+Se um dia houver piso, ele tem de ser **relativo ao próprio tenant** (percentil
+da distribuição dele), nunca uma constante global.
+
+Consequência prática, e é o que motivou a fase 0 de
+`/painel/conhecimento/chamadas` (30/09): o sinal utilizável de "o agente não
+soube" **não é** a busca fraca — é a chamada a `transferir_humano`, onde o
+próprio agente declarou que não deu conta.

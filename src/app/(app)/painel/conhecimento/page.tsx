@@ -5,6 +5,7 @@ import { agruparDocumentos, type ChunkDaLista } from '@/lib/conhecimento/agrupar
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 import { listarStatusJobs, type JobStatus } from './acoes';
+import { AbasConhecimento } from './abas';
 import { GestaoConhecimento } from './componentes';
 
 export default async function PaginaConhecimento() {
@@ -48,6 +49,8 @@ export default async function PaginaConhecimento() {
             prompt. Fora do acordeão pelo mesmo motivo. */}
         <p className="mt-2 text-sm text-muted-foreground">{CRITERIO_NA_BASE}</p>
       </header>
+
+      <AbasConhecimento atual="base" />
 
       {/*
         O QUE O CLIENTE NÃO TEM COMO DEDUZIR.

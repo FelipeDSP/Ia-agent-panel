@@ -17,6 +17,13 @@ export const REGISTRO_TOOLS: Record<string, DefinicaoTool> = {
     rotulo: 'Buscar na base de conhecimento',
     resumo: 'O agente consulta a base de conhecimento do cliente para responder.',
     temConfigCliente: false,
+    // 30/09: "Chamou atendente" é seção da Base de conhecimento (aba), não
+    // item de menu — mesmo caso de Categorias dentro do Catálogo. A rota fica
+    // declarada porque é superfície DESTA tool: ela existe para virar conteúdo
+    // da base, e some junto com ela.
+    rotasPainel: [
+      { href: '/painel/conhecimento/chamadas', rotulo: 'Chamou atendente', icone: 'BookOpen', menu: false },
+    ],
   },
   [TOOL_TRANSFERIR]: {
     nome: TOOL_TRANSFERIR,
