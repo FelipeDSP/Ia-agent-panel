@@ -12,6 +12,7 @@
 
 begin;
 
+drop function if exists public.api_agente_aprendizado_ligado(uuid);
 drop function if exists public.api_agente_aprendizado_dialogo(uuid, bigint, timestamptz, timestamptz);
 drop function if exists public.api_agente_aprendizado_dialogo(uuid, uuid);
 drop function if exists public.api_agente_kb_job_texto(uuid, text);

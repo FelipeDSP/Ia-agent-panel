@@ -30,6 +30,7 @@ const M78 = leia('20261001120000_78_aprendizado_automatico.sql');
 const R78 = leia('20261001120000_78_aprendizado_automatico_rollback.sql');
 const semTx = (s) => s.replace(/^\s*(begin|commit)\s*;\s*$/gim, '');
 const { cicloAprendizado } = await import(new URL('../agente/src/aprendizado/ciclo.ts', import.meta.url).href);
+const { receber } = await import(new URL('../agente/src/entrada/receber.ts', import.meta.url).href);
 
 let ok = 0;
 const falhas = [];
@@ -100,8 +101,11 @@ try {
     await c.query(`select public.api_n8n_registrar_mensagem($1, $2, 'entrada', 'quanto tempo demora o certificado?', 0, 0, null, null, $3, null)`, [t, conv, `cli-${t}-${conv}`]);
     await c.query(`select public.api_n8n_registrar_mensagem($1, $2, 'saida', $4, 0, 0, null, null, $3, $5::jsonb)`,
       [t, conv, `humano-${t}-${conv}`, respostaHumana, JSON.stringify({ fonte: 'humano', chamadas: 0 })]);
-    // envelhece tudo: a função só pega conversa parada há 15 min
-    await c.query(`update public.mensagens_log set criado_em = now() - interval '1 hour' where tenant_id = $1 and conversation_id = $2`, [t, conv]);
+    // envelhece: a função só pega conversa parada há 15 min. Instantes
+    // DISTINTOS — o cliente pergunta antes de o atendente responder, e empate
+    // de timestamp deixaria a ordem do diálogo por conta do planner.
+    await c.query(`update public.mensagens_log set criado_em = now() - interval '1 hour' - interval '2 minutes' where tenant_id = $1 and conversation_id = $2 and direcao = 'entrada'`, [t, conv]);
+    await c.query(`update public.mensagens_log set criado_em = now() - interval '1 hour' where tenant_id = $1 and conversation_id = $2 and direcao = 'saida'`, [t, conv]);
   };
   await semear(T.a, 801, DIALOGO_RESPOSTA);
   await semear(T.b, 802, DIALOGO_RESPOSTA);
@@ -175,6 +179,65 @@ try {
   ingestaoFalha = false;
   const a6 = await um(`select status, motivo from public.kb_aprendizado where tenant_id=$1 and conversation_id=806`, [T.a]);
   chk('ingestão falhando -> status erro com o detalhe, e NÃO conta como publicado', r6.erros === 1 && r6.publicados === 0 && a6.status === 'erro' && /ingest/i.test(a6.motivo), JSON.stringify(a6));
+
+  console.log('\n== 5e. MODO ESCUTA: agente DESLIGADO, aprendizado LIGADO ==\n');
+  {
+    // O caso que o Felipe pediu: a empresa liga o aprendizado ANTES de ligar o
+    // agente, a equipe atende uma semana, e o agente chega sabendo.
+    // `chatwoot_account_id` é coluna da AGÊNCIA: o guard barra até o postgres
+    // sem claim (medido na 75). O arranjo vai como super_admin, que é quem
+    // conecta a conta de verdade.
+    await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
+    const par = await um(`select chatwoot_account_id a, chatwoot_inbox_id i from public.tenants where id=$1`, [T.a]);
+    await c.query(`update public.tenants set agente_ativo = false, chatwoot_account_id = 7801, chatwoot_inbox_id = 7802 where id = $1`, [T.a]);
+    await c.query(`select set_config('request.jwt.claims', '', true)`);
+    const webhook = (conv, texto, id) => ({
+      event: 'message_created', message_type: 'incoming', private: false, id,
+      content: texto, sender: { type: 'contact' },
+      conversation: { id: conv, inbox_id: 7802, meta: { sender: { name: 'Cliente', phone_number: '+5569900000000' } } },
+      account: { id: 7801 }, inbox: { id: 7802 },
+    });
+    const depsReceber = { db, waha: null, n8nJsDir: path.join(RAIZ, 'n8n') };
+
+    const r = await receber(depsReceber, 7802, webhook(807, 'vocês abrem no sábado?', 70001));
+    chk('agente desligado + aprendizado LIGADO: a fala do cliente é ESCUTADA (gravada), não enfileirada',
+      r.resultado === 'escutada' && r.motivo === 'agente_inativo', JSON.stringify(r));
+    const grav = await um(`select conteudo, direcao, fonte_tokens from public.mensagens_log where tenant_id=$1 and conversation_id=807`, [T.a]);
+    chk('e ficou em mensagens_log como entrada, marcada como escuta', grav?.direcao === 'entrada' && grav?.fonte_tokens === 'escuta' && /sábado/.test(grav?.conteudo ?? ''), JSON.stringify(grav));
+    const nFila = await um(`select count(*)::int n from public.agente_fila where tenant_id=$1 and conversation_id=807`, [T.a]);
+    chk('NADA foi enfileirado: o agente continua mudo, que é o que o cliente pediu ao desligá-lo', nFila.n === 0);
+
+    // idempotência: o Chatwoot reentrega o mesmo webhook
+    await receber(depsReceber, 7802, webhook(807, 'vocês abrem no sábado?', 70001));
+    chk('reentrega do mesmo webhook não duplica a fala', (await um(`select count(*)::int n from public.mensagens_log where tenant_id=$1 and conversation_id=807 and direcao='entrada'`, [T.a])).n === 1);
+
+    // o atendente responde (esse caminho nunca olhou agente_ativo)
+    await c.query(`select public.api_n8n_registrar_mensagem($1, 807, 'saida', $2, 0, 0, null, null, 'humano-807', $3::jsonb)`,
+      [T.a, 'Sim, abrimos aos sabados das 8h as 12h, e o atendimento presencial e na secretaria.', JSON.stringify({ fonte: 'humano', chamadas: 0 })]);
+    await c.query(`update public.mensagens_log set criado_em = now() - interval '1 hour' - interval '2 minutes' where tenant_id = $1 and conversation_id = 807 and direcao = 'entrada'`, [T.a]);
+    await c.query(`update public.mensagens_log set criado_em = now() - interval '1 hour' where tenant_id = $1 and conversation_id = 807 and direcao = 'saida'`, [T.a]);
+
+    // e o ciclo aprende — SEM nenhuma transferência nesta conversa
+    const temTransf = await um(`select count(*)::int n from public.agente_passos p join public.agente_turnos t on t.id=p.turno_id where t.tenant_id=$1 and t.conversation_id=807 and p.nome='transferir_humano'`, [T.a]);
+    chk('contraprova: esta conversa NÃO teve transferência nenhuma', temTransf.n === 0);
+    respostaDoModelo = JSON.stringify({ guardar: true, pergunta: 'Vocês abrem aos sábados?', resposta: 'Sim, abrimos aos sabados das 8h as 12h, e o atendimento presencial e na secretaria.', motivo: '' });
+    const rc = await cicloAprendizado(deps());
+    const aud = await um(`select status, origem from public.kb_aprendizado where tenant_id=$1 and conversation_id=807`, [T.a]);
+    chk('o ciclo aprendeu com o agente DESLIGADO e sem transferência', rc.publicados === 1 && aud?.status === 'publicado', JSON.stringify({ rc, aud }));
+
+    // e com o botão desligado, não escuta nada
+    await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
+    await c.query(`update public.tenants set aprendizado_auto = false where id = $1`, [T.a]);
+    await c.query(`select set_config('request.jwt.claims', '', true)`);
+    const r2 = await receber(depsReceber, 7802, webhook(808, 'e no domingo?', 70002));
+    chk('aprendizado DESLIGADO: volta a descartar, sem gravar nada',
+      r2.resultado === 'tenant' && r2.motivo === 'agente_inativo'
+      && (await um(`select count(*)::int n from public.mensagens_log where tenant_id=$1 and conversation_id=808`, [T.a])).n === 0, JSON.stringify(r2));
+
+    await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
+    await c.query(`update public.tenants set agente_ativo = true, aprendizado_auto = true, chatwoot_account_id = $2, chatwoot_inbox_id = $3 where id = $1`, [T.a, par.a, par.i]);
+    await c.query(`select set_config('request.jwt.claims', '', true)`);
+  }
 
   console.log('\n== 6. Isolamento da auditoria ==\n');
   // o tenant B passa a ter uma linha também, para a contraprova não ser vácua

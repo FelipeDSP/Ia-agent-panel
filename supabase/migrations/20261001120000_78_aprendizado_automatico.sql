@@ -10,7 +10,15 @@
 --
 --   1. `tenants.aprendizado_auto` (boolean, default FALSE) — o botão. É do
 --      CLIENTE: entra na whitelist de `tenants_guard_colunas`, porque a base
---      de conhecimento é dele. Nasce desligado: ligar é ato, não omissão;
+--      de conhecimento é dele. Nasce desligado: ligar é ato, não omissão.
+--
+--      ELE TAMBÉM AUTORIZA ESCUTAR. Com o agente DESLIGADO (`agente_ativo =
+--      false`) o serviço descartava a mensagem do cliente sem registrar nada.
+--      Pedido do Felipe (01/10): deixar o agente aprender enquanto está
+--      desligado, para já chegar sabendo quando for ligado — que é o caso de
+--      onboarding de quem tem base vazia (o Empório tem 2 trechos). Então, com
+--      o agente desligado, o serviço grava a conversa SE E SOMENTE SE este
+--      botão estiver ligado. Desligados os dois, nada é gravado, como antes;
 --
 --   2. `kb_aprendizado` — uma linha por par (pergunta do cliente, resposta do
 --      atendente) que o ciclo considerou. Ela existe por três razões, e
@@ -122,13 +130,21 @@ create policy p_kb_aprendizado_leitura on public.kb_aprendizado
 -- ---------------------------------------------------------------------------
 -- 3. A superfície do serviço
 -- ---------------------------------------------------------------------------
--- Os pares ainda não processados de tenants com o botão LIGADO.
+-- Os atendimentos ainda não processados de tenants com o botão LIGADO.
 --
--- O par é: a fala do atendente (`fonte_tokens = 'humano'`, migração do serviço
--- de 01/10) e a pergunta que o agente resumiu ao transferir, no mesmo turno
--- imediatamente anterior daquela conversa. Sem transferência não há pergunta
--- formulada, e um texto solto do atendente não vira base — é por isso que o
--- `join` com o passo é INNER.
+-- A ÂNCORA É A FALA DO ATENDENTE (`fonte_tokens = 'humano'`), não a
+-- transferência. A primeira versão exigia um passo `transferir_humano` para
+-- ter de onde tirar a pergunta — e isso impedia exatamente o caso que o
+-- Felipe pediu em 01/10: com o agente DESLIGADO ele nunca transfere, logo
+-- nunca aprenderia. Também deixava de fora o atendente que entra por conta
+-- própria numa conversa, sem o agente ter chamado.
+--
+-- Quem formula a pergunta passou a ser a LLM, lendo o diálogo. O resumo da
+-- transferência, quando existe, continua vindo como `pergunta` — serve de
+-- contexto e de rótulo na auditoria do que foi recusado.
+--
+-- Exige pelo menos uma fala do CLIENTE na conversa: sem pergunta de alguém não
+-- há o que aprender, e um atendente falando sozinho é aviso, não conhecimento.
 --
 -- `p_silencio_min`: só entra conversa parada há esse tempo. Enquanto o
 -- atendente está escrevendo, a resposta pode continuar na próxima mensagem.
@@ -172,15 +188,13 @@ as $$
            limit 1) as pergunta,
          f.conteudo, f.criado_em
     from fala f
-   where (select p.entrada->>'resumo'
-            from public.agente_passos p
-            join public.agente_turnos tu on tu.id = p.turno_id
-           where tu.tenant_id = f.tenant_id
-             and tu.conversation_id = f.conversation_id
-             and p.nome = 'transferir_humano'
-             and p.criado_em < f.criado_em
-           order by p.criado_em desc
-           limit 1) is not null
+   where exists (
+     select 1 from public.mensagens_log cli
+      where cli.tenant_id = f.tenant_id
+        and cli.conversation_id = f.conversation_id
+        and cli.direcao = 'entrada'
+        and cli.criado_em <= f.criado_em
+        and cli.criado_em >= f.criado_em - interval '2 hours')
    order by f.criado_em
    limit greatest(coalesce(p_limite, 20), 1);
 $$;
@@ -219,6 +233,31 @@ comment on function public.api_agente_aprendizado_concluir(uuid, bigint, uuid, t
 revoke all on function public.api_agente_aprendizado_concluir(uuid, bigint, uuid, text, text, text, text, text) from public, anon, authenticated;
 grant execute on function public.api_agente_aprendizado_concluir(uuid, bigint, uuid, text, text, text, text, text) to service_role;
 grant execute on function public.api_agente_aprendizado_concluir(uuid, bigint, uuid, text, text, text, text, text) to n8n_agent;
+
+-- O botão, para o serviço. Consultado no caminho de ENTRADA quando o agente
+-- está desligado: é o que decide entre gravar a conversa (para aprender
+-- depois) e descartá-la como antes. Função própria e não coluna nova em
+-- `api_n8n_tenant_por_chatwoot` porque aquela é chamada viva do caminho
+-- quente — mexer no tipo de retorno dela quebraria o serviço no ar até o
+-- próximo deploy (a regra do CLAUDE.md sobre assinatura de função viva).
+drop function if exists public.api_agente_aprendizado_ligado(uuid);
+create or replace function public.api_agente_aprendizado_ligado(p_tenant_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path to 'public', 'extensions'
+as $$
+  select coalesce((select t.aprendizado_auto from public.tenants t
+                    where t.id = p_tenant_id and t.deletado_em is null), false);
+$$;
+
+comment on function public.api_agente_aprendizado_ligado(uuid) is
+  'O botao do aprendizado automatico do tenant. Com o agente desligado, e o que autoriza GRAVAR a conversa para aprender depois.';
+
+revoke all on function public.api_agente_aprendizado_ligado(uuid) from public, anon, authenticated;
+grant execute on function public.api_agente_aprendizado_ligado(uuid) to service_role;
+grant execute on function public.api_agente_aprendizado_ligado(uuid) to n8n_agent;
 
 -- O DIÁLOGO que o modelo vai ler: da transferência até a fala do atendente que
 -- fechou o atendimento. `fonte_tokens = 'humano'` marca quem é atendente — o
@@ -269,7 +308,10 @@ as $$
      and l.criado_em >= (select desde from inicio)
      and l.criado_em <= (select criado_em from ancora)
      and coalesce(btrim(l.conteudo), '') <> ''
-   order by l.criado_em
+   -- `id` desempata: duas falas no MESMO instante (acontece no arranjo de
+   -- teste, e nada impede em produção) deixariam a ordem a cargo do planner, e
+   -- o modelo leria o atendente respondendo antes de o cliente perguntar.
+   order by l.criado_em, l.id
    limit 60;
 $$;
 

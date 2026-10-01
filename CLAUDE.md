@@ -62,14 +62,21 @@ O que ainda cita n8n neste repositório, e por quê:
 Chatwoot é o único passo. Cliente novo nasce em `codigo` (explícito no insert
 do painel e default da coluna pela 75).
 
-Migrações aplicadas até aqui: **62–77** (fila/trace/runtime, prompt no turno,
+Migrações aplicadas até aqui: **62–78** (fila/trace/runtime, prompt no turno,
 encerramento do link Asaas, conversa resolvida reabre, config por tenant,
 retenção de dados, tokens em cache, vendas por modalidade, aviso pelo
 Chatwoot, pagamento confirmado com fim, nome de quem retira, guard de
 usuários, horário do agente, default `codigo`, consumo zerado). A **76** e
 a **77** são as primeiras SEM rollback: zeraram as colunas de token de
 `mensagens_log` (linhas ficam — é memória) e de `uso_ingestao`; o consumo
-conta de **21/09/2026 19:45 UTC** — a aba nasceu vazia nesse instante. Pagamento por link (Asaas) funciona no sandbox;
+conta de **21/09/2026 19:45 UTC** — a aba nasceu vazia nesse instante. A
+**78** (01/10) é o aprendizado automático: o agente transforma a resposta do
+atendente humano em base, sem confirmação de ninguém, para o cliente que ligar
+o botão (`tenants.aprendizado_auto`, nasce desligado). A LLM lê o diálogo e
+julga; o código verifica (`agente/src/aprendizado/filtro.ts`: dado pessoal,
+caso particular, e a ÂNCORA — todo número da resposta tem de existir no
+diálogo). Com o agente DESLIGADO e o botão ligado o serviço só ESCUTA: grava a
+conversa e não responde, para o agente chegar sabendo quando for ligado. Pagamento por link (Asaas) funciona no sandbox;
 BaaS/subcontas depende da conta PJ da estud.you (não é código).
 
 Regras do serviço que não se "consertam":
