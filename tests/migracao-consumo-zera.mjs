@@ -68,9 +68,15 @@ try {
   const antes = await tok(aAntEst);
   chk('contraprova: antes da 76 a linha antiga TEM tokens (5000/100, cache 400, componentes)', antes.te === 5000 && antes.ts === 100 && antes.tc === 400 && antes.tw === 10 && antes.tr === 60 && /estimativa/.test(antes.f), JSON.stringify(antes));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
+  // 01/10: `billing_consumo_mensal` devolve UMA LINHA POR MÊS, e as linhas do
+  // teste agora nascem em `now()` — no dia 1º elas caem em dois meses e as
+  // asserções que exigiam `length === 1` quebraram sozinhas, sem defeito
+  // nenhum. A propriedade nunca foi "existe uma linha": é quanto o tenant
+  // soma. Somar atravessa a virada do mês; contar linha, não.
+  const soma = (linhas, campo) => (linhas ?? []).reduce((t, l) => t + Number(l[campo] ?? 0), 0);
   const bill = async (t) => (await tudo(`select * from public.billing_consumo_mensal() where tenant_id = $1 order by mes`, [t]));
   const bA0 = await bill(T.a);
-  chk('contraprova: billing conta a estimativa e o real antigos de A (1 real + 1 estimada, tokens > 0)', bA0.length === 1 && Number(bA0[0].mensagens_reais) === 1 && Number(bA0[0].mensagens_estimadas) === 1 && Number(bA0[0].tokens_entrada) === 10000, JSON.stringify(bA0));
+  chk('contraprova: billing conta a estimativa e o real antigos de A (1 real + 1 estimada, tokens > 0)', soma(bA0, 'mensagens_reais') === 1 && soma(bA0, 'mensagens_estimadas') === 1 && soma(bA0, 'tokens_entrada') === 10000, JSON.stringify(bA0));
 
   console.log('\n== 1. A 76, duas vezes ==\n');
   await c.query(semTx(M76));
@@ -87,12 +93,14 @@ try {
 
   console.log('\n== 2. O que a aba vê ==\n');
   const bA = await bill(T.a);
-  chk('A (só linhas antigas): nenhuma mensagem real nem estimada, tokens 0, custo 0 — ou linha nenhuma', bA.every((l) => Number(l.mensagens_reais) === 0 && Number(l.mensagens_estimadas) === 0 && Number(l.tokens_entrada) === 0 && Number(l.custo_usd) === 0), JSON.stringify(bA));
+  chk('A (só linhas antigas): nenhuma mensagem real nem estimada, tokens 0, custo 0 — ou linha nenhuma',
+    soma(bA, 'mensagens_reais') === 0 && soma(bA, 'mensagens_estimadas') === 0 && soma(bA, 'tokens_entrada') === 0 && soma(bA, 'custo_usd') === 0, JSON.stringify(bA));
   const bB = await bill(T.b);
-  chk('B: setembro mostra SÓ a mensagem de hoje (1 real, 5000 de entrada, custo > 0)', bB.length === 1 && Number(bB[0].mensagens_reais) === 1 && Number(bB[0].mensagens_estimadas) === 0 && Number(bB[0].tokens_entrada) === 5000 && Number(bB[0].custo_usd) > 0, JSON.stringify(bB));
+  chk('B: a aba mostra SÓ a mensagem de hoje (1 real, 5000 de entrada, custo > 0)',
+    soma(bB, 'mensagens_reais') === 1 && soma(bB, 'mensagens_estimadas') === 0 && soma(bB, 'tokens_entrada') === 5000 && soma(bB, 'custo_usd') > 0, JSON.stringify(bB));
   const ing = await tudo(`select tokens, criado_em from public.uso_ingestao where tenant_id=$1 order by criado_em`, [T.a]);
   chk('uso_ingestao: a linha antiga fica (idempotência) com tokens 0; a de hoje mantém 555', ing.length === 2 && Number(ing[0].tokens) === 0 && Number(ing[1].tokens) === 555, JSON.stringify(ing));
-  chk('embedding na aba de A: só o de hoje (555)', bA.length === 1 && Number(bA[0].tokens_embedding) === 555, JSON.stringify(bA));
+  chk('embedding na aba de A: só o de hoje (555)', soma(bA, 'tokens_embedding') === 555, JSON.stringify(bA));
   await c.query(`select set_config('request.jwt.claims', '', true)`);
 
   console.log('\n== 3. O teto diário não vê o passado (antes e depois iguais) ==\n');

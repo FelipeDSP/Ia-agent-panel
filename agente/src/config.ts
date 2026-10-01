@@ -19,6 +19,15 @@ export interface Config {
   openaiApiKey: string;
   /** O `x-foto-secret` da Edge Function `foto-produto`; sem ele a tool de foto recusa com motivo próprio. */
   fotoSecret: string | null;
+  /** Ingestão na base (aprendizado automático, 01/10): a Edge Function e o segredo dela. */
+  supabaseUrl: string | null;
+  ingestaoSecret: string | null;
+  /**
+   * O modelo que LÊ o atendimento no aprendizado automático. Separado do
+   * modelo do atendimento (que é por tenant, em `tenants.modelo`): aqui é
+   * leitura em lote, fora do caminho da resposta, e o barato serve.
+   */
+  modeloAprendizado: string;
   /** Pasta com os corpos JS do n8n que continuam sendo fonte (extrair, filtro). */
   n8nJsDir: string;
   waha: { url: string; apiKey: string } | null;
@@ -75,6 +84,9 @@ export function lerConfig(env: NodeJS.ProcessEnv = process.env): Config {
     limpezaSecret: obrigatorio('LIMPEZA_SECRET'),
     openaiApiKey: obrigatorio('OPENAI_API_KEY'),
     fotoSecret: env.FOTO_SECRET?.trim() || null,
+    supabaseUrl: env.SUPABASE_URL?.trim() || null,
+    ingestaoSecret: env.INGESTAO_SECRET?.trim() || null,
+    modeloAprendizado: env.MODELO_APRENDIZADO?.trim() || 'gpt-4.1-mini',
     n8nJsDir: env.N8N_JS_DIR?.trim() || path.resolve(AQUI, '..', '..', 'n8n'),
     waha: wahaUrl && wahaKey ? { url: wahaUrl.replace(/\/+$/, ''), apiKey: wahaKey } : null,
     chatwootAgenciaToken: env.CHATWOOT_AGENCIA_TOKEN?.trim() || null,

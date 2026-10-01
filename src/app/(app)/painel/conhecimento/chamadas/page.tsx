@@ -4,7 +4,7 @@ import { criarClienteServidor } from '@/lib/supabase/server';
 import { chamadasDeAtendente, type PassoTransferencia } from '@/lib/conhecimento/lacunas';
 
 import { AbasConhecimento } from '../abas';
-import { ListaChamadas } from './componentes';
+import { ListaChamadas, ListaAprendido, type Aprendido } from './componentes';
 
 /**
  * "Chamou atendente" — as vezes em que o agente precisou de gente.
@@ -34,6 +34,11 @@ export default async function PaginaChamadas() {
 
   const chamadas = chamadasDeAtendente(data as PassoTransferencia[] | null);
 
+  // O que o aprendizado automático guardou — e o que recusou, com o motivo.
+  // Não é aprovação: já entrou. É auditoria, que é o que o cliente ganha em
+  // troca de ter ligado um botão que escreve na base dele sem perguntar.
+  const { data: aprendido } = await supabase.rpc('painel_aprendizado_recente', { p_limite: 30 });
+
   return (
     <div className="flex flex-col gap-6">
       <header>
@@ -50,6 +55,8 @@ export default async function PaginaChamadas() {
       {error ? (
         <Alert variant="destructive">Não foi possível carregar: {error.message}</Alert>
       ) : null}
+
+      <ListaAprendido itens={(aprendido ?? []) as Aprendido[]} />
 
       <ListaChamadas chamadas={chamadas} />
     </div>

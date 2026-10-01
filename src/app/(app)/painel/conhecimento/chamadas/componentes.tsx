@@ -120,3 +120,69 @@ export function ListaChamadas({ chamadas }: { chamadas: Chamada[] }) {
     </div>
   );
 }
+
+/** Uma linha de `kb_aprendizado`, como `painel_aprendizado_recente` a devolve. */
+export interface Aprendido {
+  id: string;
+  conversation_id: number | string;
+  pergunta: string;
+  resposta: string;
+  status: 'publicado' | 'descartado' | 'erro';
+  motivo: string | null;
+  origem: string | null;
+  criado_em: string;
+}
+
+const PORQUE: Record<string, string> = {
+  dado_pessoal: 'tinha dado pessoal do cliente',
+  caso_particular: 'valia só para aquele cliente',
+  nao_resposta: 'não era uma resposta ("vou verificar", "bom dia")',
+  curta: 'curta demais para informar',
+  longa: 'longa demais para uma entrada de base',
+  sem_pergunta: 'sem a pergunta correspondente',
+};
+
+/**
+ * O que o aprendizado automático guardou e o que recusou.
+ *
+ * O descartado aparece de propósito: é ele que explica por que a base não
+ * cresceu depois de uma semana de atendimento, e é o único jeito de o cliente
+ * perceber que o filtro está recusando algo que ele queria lá.
+ */
+export function ListaAprendido({ itens }: { itens: Aprendido[] }) {
+  if (itens.length === 0) return null;
+  const publicados = itens.filter((i) => i.status === 'publicado').length;
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-3 py-4">
+        <div>
+          <p className="font-medium">Aprendido com a sua equipe</p>
+          <p className="text-sm text-muted-foreground">
+            {publicados} de {itens.length} respostas viraram conteúdo da base. Elas estão na aba
+            Conteúdo e podem ser editadas ou removidas.
+          </p>
+        </div>
+        <ul className="flex flex-col gap-2 text-sm">
+          {itens.map((i) => (
+            <li key={i.id} className="flex flex-wrap items-baseline gap-2 border-t border-border pt-2">
+              <Badge variant={i.status === 'publicado' ? 'success' : i.status === 'erro' ? 'danger' : 'secondary'}>
+                {i.status === 'publicado' ? 'na base' : i.status === 'erro' ? 'falhou' : 'não guardado'}
+              </Badge>
+              <span className="min-w-0 flex-1">{i.pergunta}</span>
+              {i.status === 'descartado' && i.motivo ? (
+                <span className="text-xs text-muted-foreground">{PORQUE[i.motivo] ?? i.motivo}</span>
+              ) : null}
+              <Link
+                href={`/painel/conversas/${i.conversation_id}`}
+                className="text-xs text-primary underline-offset-4 hover:underline"
+              >
+                conversa
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}

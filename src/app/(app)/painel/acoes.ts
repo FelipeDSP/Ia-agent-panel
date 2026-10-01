@@ -269,6 +269,37 @@ export async function salvarHorarioAgente(_estado: EstadoConfig, fd: FormData): 
 }
 
 /**
+ * O botão do aprendizado automático (migração 78, 01/10).
+ *
+ * É do CLIENTE: a base é dele e a decisão de deixar o agente aprender com o
+ * próprio atendimento é dele. A coluna está na whitelist do guard, então o
+ * `update` passa com o JWT de tenant_admin — sem service_role, sem rota de
+ * agência.
+ *
+ * Ausência do campo = desligado: checkbox não marcado não é enviado no
+ * FormData, e tratar ausência como "manter" faria o desligar não funcionar.
+ */
+export async function salvarAprendizado(_estado: EstadoConfig, fd: FormData): Promise<EstadoConfig> {
+  const usuario = await exigirTenantAdmin();
+  const ligado = fd.get('aprendizado') === 'on' || fd.get('aprendizado') === 'true';
+
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase
+    .from('tenants')
+    .update({ aprendizado_auto: ligado })
+    .eq('id', usuario.tenantId);
+  if (error) return { erro: `Não foi possível salvar: ${error.message}` };
+
+  revalidatePath('/painel/configuracoes');
+  revalidatePath('/painel/conhecimento');
+  return {
+    sucesso: ligado
+      ? 'Aprendizado ligado: o que sua equipe responder vira base de conhecimento.'
+      : 'Aprendizado desligado. O que já entrou continua na base.',
+  };
+}
+
+/**
  * Cliente salva a config de vendas (migração 69): formas de pagar, o que fazer
  * com pedido de entrega, eventos e destino do aviso ao dono.
  *

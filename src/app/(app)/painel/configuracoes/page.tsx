@@ -22,6 +22,7 @@ import { FormularioConfig } from './formulario';
 import { FormularioAvisos } from './formulario-avisos';
 import { FormularioTransferir } from './formulario-transferir';
 import { FormularioVendas } from './formulario-vendas';
+import { FormularioAprendizado } from './formulario-aprendizado';
 import { FormularioHorario } from './formulario-horario';
 import { ListaModulos, SwitchModulo } from './lista-modulos';
 import { Times, type TimeDaTela } from './times';
@@ -33,7 +34,7 @@ export default async function PaginaConfiguracoes() {
   const [{ data: tenant }, { data: tools }, { data: timesRaw }] = await Promise.all([
     supabase
       .from('tenants')
-      .select('agente_ativo, debounce_segundos, msg_midia_nao_suportada, msg_fora_escopo, chatwoot_account_id, horario_agente')
+      .select('agente_ativo, debounce_segundos, msg_midia_nao_suportada, msg_fora_escopo, chatwoot_account_id, horario_agente, aprendizado_auto')
       .eq('id', usuario.tenantId)
       .maybeSingle(),
     supabase
@@ -70,6 +71,7 @@ export default async function PaginaConfiguracoes() {
   const transferirDisponivel = transferirContratado && Boolean(toolTransferir?.ativo);
   const linkDisponivel = Boolean((tools ?? []).find((t) => t.tool_nome === 'pagamento')?.contratado);
   const horarioAgente = lerHorarioAgente(tenant.horario_agente);
+  const aprendizadoLigado = tenant.aprendizado_auto === true;
   // 18/09: um número, uma lista do que avisar — lido das duas configs
   const avisos = lerAvisos(transferirContratado ? configTransferir : null, vendasContratada ? (toolVendas?.config ?? {}) : null, vendasContratada);
 
@@ -136,6 +138,19 @@ export default async function PaginaConfiguracoes() {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Aprendizado automático</CardTitle>
+          <CardDescription>
+            O agente aprende com o que a sua equipe responde quando assume uma conversa — sem você
+            precisar escrever nada na base.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FormularioAprendizado ligado={aprendizadoLigado} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

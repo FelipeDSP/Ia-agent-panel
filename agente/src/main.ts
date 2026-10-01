@@ -15,6 +15,7 @@ import { criarModeloOpenAI } from './agente/modelo.ts';
 import { criarEmbeddingsOpenAI, criarTranscritorOpenAI } from './agente/openai-servicos.ts';
 import { umCiclo } from './fila/worker.ts';
 import { alarmeAgenteMudo, varrerRetencao, encerrarLinksVencidos, aplicarRetencao, RETENCAO_PADRAO } from './manutencao.ts';
+import { cicloAprendizado } from './aprendizado/ciclo.ts';
 import { criarAsaas } from './pagamento/asaas.ts';
 import { ENCERRAMENTO } from '../../n8n/tool-pagamento-fonte.mjs';
 import { log, erroTexto } from './log.ts';
@@ -64,6 +65,7 @@ async function lacoDaFila(): Promise<void> {
 async function lacoDeManutencao(): Promise<void> {
   let ultimaVarredura = 0;
   let ultimoEncerramento = 0;
+  let ultimoAprendizado = 0;
   const intervaloEncerramentoMs = Number(ENCERRAMENTO.intervalo_minutos ?? 5) * 60_000;
   while (!parando) {
     try {
@@ -73,6 +75,18 @@ async function lacoDeManutencao(): Promise<void> {
         const r = await encerrarLinksVencidos({ db: pool, waha, retencaoDias: cfg.retencaoDias, mudoMinutos: cfg.mudoMinutos, alarme, asaas });
         if (r.vencidas > 0) log('info', 'encerramento.varredura', { ...r });
         ultimoEncerramento = Date.now();
+      }
+      // Aprendizado automático (01/10) a cada 10 min, e só para tenant com o
+      // botão ligado — a função de banco já filtra. Sem a ingestão configurada
+      // o ciclo nem roda: publicaria nada e gravaria `erro` em cadeia.
+      if (cfg.supabaseUrl && cfg.ingestaoSecret && Date.now() - ultimoAprendizado >= 10 * 60_000) {
+        try {
+          const a = await cicloAprendizado({ db: pool, fetchFn: fetch, supabaseUrl: cfg.supabaseUrl, ingestaoSecret: cfg.ingestaoSecret, modelo, nomeDoModelo: cfg.modeloAprendizado });
+          if (a.vistos > 0) log('info', 'aprendizado.ciclo', { ...a });
+        } catch (e) {
+          log('erro', 'aprendizado.ciclo_falhou', { erro: erroTexto(e) });
+        }
+        ultimoAprendizado = Date.now();
       }
       // Retenção 1x por dia, às 04:00 de Brasília (UTC-3 => 07:00Z).
       const agora = new Date();

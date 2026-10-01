@@ -113,3 +113,31 @@ src/pagamento/asaas.ts  as 4 chamadas ao Asaas (chave por chamada, da linha do t
 src/pagamento/webhook.ts o webhook (extrai pelo MESMO webhook-pagamento-extrai.js; a função do banco decide)
 src/tools/gerar-link-pagamento.ts  a 7ª tool, só para tenant com `pagamento` contratada; texto de n8n/tool-pagamento-resposta.js
 ```
+
+## Aprendizado automático (01/10/2026)
+
+O agente aprende com o atendimento da própria empresa: quando ele chama um
+atendente, o que o atendente responde ao cliente pode virar conteúdo da base —
+**sem ninguém confirmar**. O consentimento é o botão em *Configurações →
+Aprendizado automático*, do cliente, desligado por padrão (migração 78).
+
+O caminho, uma vez a cada 10 min na manutenção:
+
+1. `api_agente_aprendizado_pendentes` — pares (pergunta resumida na
+   transferência, última fala do atendente) de tenants com o botão ligado, em
+   conversa parada há 15 min;
+2. `api_agente_aprendizado_dialogo` — as falas daquele atendimento;
+3. **a LLM lê e julga** (`aprendizado/extrator.ts`): há conhecimento da empresa
+   ali? qual a pergunta, qual a resposta impessoal?
+4. **o código verifica** (`aprendizado/filtro.ts`): dado pessoal, caso
+   particular, não-resposta, tamanho — e a **âncora**, que mede se o modelo
+   acrescentou fato (todo número da resposta tem de existir no diálogo);
+5. publica pelo caminho normal de ingestão e grava o veredito em
+   `kb_aprendizado` — inclusive o descarte, com o motivo.
+
+Envs novas no serviço: `SUPABASE_URL`, `INGESTAO_SECRET` (os mesmos do painel)
+e `MODELO_APRENDIZADO` (default `gpt-4.1-mini`). Sem as duas primeiras o ciclo
+não roda.
+
+O cliente vê o que entrou em *Base de conhecimento → Chamou atendente*, com o
+motivo de cada recusa, e pode excluir qualquer entrada.
