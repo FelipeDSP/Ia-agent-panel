@@ -173,6 +173,7 @@ try {
       'conversa_historico',       // /painel/conversas/[id]
       'agendar_podcast',          // formulario publico do site
       'painel_marcar_pedido',     // /painel/pedidos/[id] (69: pago / retirado)
+      'painel_aprendizado_recente', // /painel/conhecimento/chamadas (78: o que o aprendizado guardou e recusou)
     ];
     const { rows } = await c.query(
       `select p.proname
@@ -259,7 +260,7 @@ try {
   {
     const PAINEL_AUTHENTICATED = [
       'agendar_podcast', 'billing_consumo_mensal', 'billing_volume_mensal', 'conversa_historico',
-      'painel_marcar_pedido',
+      'painel_marcar_pedido', 'painel_aprendizado_recente',
     ];
     const { rows } = await c.query(
       `select p.proname,
