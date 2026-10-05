@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const RAIZ = fileURLToPath(new URL('../', import.meta.url));
-const FONTE = RAIZ + 'n8n/estima-tokens.js';
+const FONTE = RAIZ + 'agente/regras/estima-tokens.js';
 
 let ok = 0;
 const falhas = [];

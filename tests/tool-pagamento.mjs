@@ -40,14 +40,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
-import * as PAG from '../n8n/tool-pagamento-fonte.mjs';
+import * as PAG from '../agente/regras/tool-pagamento-fonte.mjs';
+
+// 05/10: a pasta `n8n/` foi apagada. As seções que liam os JSONs dos workflows
+// (estrutura dos nós, ligações do principal, identidade nó↔arquivo) perderam o
+// outro lado do par e saíram. O que ficou é o que roda contra o CÓDIGO VIVO: a
+// fonte `.mjs`/`.js` que o serviço importa e executa, e o efeito no banco.
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ler = (rel) => JSON.parse(fs.readFileSync(path.join(RAIZ, rel), 'utf8'));
-const TOOL = ler('n8n/workflows/tool-gerar-link-pagamento.json');
-const WH = ler('n8n/workflows/webhook-pagamento-asaas.json');
-const PRINCIPAL = ler('n8n/workflows/agente-principal.json');
-const PORTAO = fs.readFileSync(path.join(RAIZ, 'n8n', 'aplica-portao.js'), 'utf8');
+// Os corpos que o SERVIÇO executa. Eram lidos do `jsCode` dos nós, que eram
+// cópia destes arquivos; com a pasta `n8n/` apagada, o arquivo é a fonte.
+const RESPOSTA_JS = fs.readFileSync(path.join(RAIZ, 'agente', 'regras', 'tool-pagamento-resposta.js'), 'utf8');
+const EXTRAI_JS = fs.readFileSync(path.join(RAIZ, 'agente', 'regras', 'webhook-pagamento-extrai.js'), 'utf8');
+const PORTAO = fs.readFileSync(path.join(RAIZ, 'agente', 'regras', 'aplica-portao.js'), 'utf8');
 const md5 = (t) => crypto.createHash('md5').update(typeof t === 'string' ? t : JSON.stringify(t), 'utf8').digest('hex').slice(0, 12);
 
 let ok = 0;
@@ -73,71 +79,10 @@ function rodarPortao(texto, estado) {
   return new Function('$input', '$', PORTAO)({ first: () => ({ json: estado }) }, $)[0].json;
 }
 
-// ===========================================================================
-console.log('\n== 1. A ferramenta: o que o modelo NÃO controla ==\n');
-// ===========================================================================
-{
-  const bruto = JSON.stringify(TOOL);
-  chk('nenhum `$fromAI` no sub-workflow (valor, produto, prazo: nada vem do modelo)', !/\$fromAI\(/.test(bruto));
-  chk('nenhuma chave do Asaas cravada', !/aact_/.test(bruto));
-  const trg = no(TOOL, 'When Executed by Another Workflow');
-  chk('as entradas são SÓ tenant_id e conversation_id',
-    JSON.stringify(trg.parameters.workflowInputs.values.map((v) => v.name)) === JSON.stringify(PAG.ENTRADAS.map((e) => e.name)));
-  chk('`tool_ativa` é a primeira coisa: trigger -> Busca Config -> Pagamento Ativa?',
-    TOOL.connections['When Executed by Another Workflow'].main[0][0].node === 'Busca Config'
-    && TOOL.connections['Busca Config'].main[0][0].node === 'Pagamento Ativa?'
-    && /api_n8n_config_tool\(\$1::uuid, 'pagamento'\)/.test(no(TOOL, 'Busca Config').parameters.query));
-  const res = no(TOOL, 'Reserva Cobranca');
-  chk('a reserva chama api_n8n_gerar_cobranca($1, $2) — dois argumentos, sem valor',
-    /api_n8n_gerar_cobranca\(\$1::uuid, \$2::bigint\)/.test(res.parameters.query) && !/\$3/.test(res.parameters.query));
-  const http = no(TOOL, 'Cria Link Asaas');
-  chk('o nó HTTP usa a base e a chave DO TENANT (da linha da reserva), não host fixo',
-    http.parameters.url === '={{ $json.base_url }}/v3/paymentLinks'
-    && http.parameters.headerParameters.parameters.some((h) => h.name === 'access_token' && h.value === '={{ $json.api_key }}')
-    && !/asaas\.com/.test(http.parameters.url));
-  chk('o corpo leva dueDateLimitDays=1, value em decimal só na fronteira, e externalReference',
-    new RegExp(`dueDateLimitDays: ${PAG.DUE_DATE_LIMIT_DAYS}\\b`).test(http.parameters.body)
-    && /value: Math\.round\(Number\(\$json\.valor_centavos\)\) \/ 100/.test(http.parameters.body)
-    && /externalReference: \$json\.referencia_externa/.test(http.parameters.body));
-  chk('o Asaas fora do ar não derruba a execução (onError no HTTP)', http.onError === 'continueRegularOutput');
-  for (const n of TOOL.nodes) {
-    if (n.name === 'Retorno') continue;
-    chk(`"${n.name}" chega ao Retorno`, alcanca(TOOL, n.name, 'Retorno'));
-  }
-  const fonte = fs.readFileSync(path.join(RAIZ, 'n8n', 'tool-pagamento-resposta.js'), 'utf8').replace(/\r\n/g, '\n');
-  chk('o jsCode do Monta Resposta == n8n/tool-pagamento-resposta.js', no(TOOL, 'Monta Resposta').parameters.jsCode === fonte,
-    `${md5(no(TOOL, 'Monta Resposta').parameters.jsCode)} vs ${md5(fonte)}`);
-}
-
-// ===========================================================================
-console.log('\n== 2. O principal do EXPERIMENTO continua sem a ferramenta ==\n');
-// ===========================================================================
-{
-  chk('o agente-principal.json do repo NÃO tem o nó de pagamento', !no(PRINCIPAL, PAG.NO_PRINCIPAL));
-  const sm = no(PRINCIPAL, 'AI Agent Vendas').parameters.options.systemMessage;
-  chk('nem a seção `gerar_link_pagamento` no system message', !sm.includes('## Ferramenta: gerar_link_pagamento'));
-  const ligadas = Object.entries(PRINCIPAL.connections)
-    .filter(([, v]) => (v.ai_tool ?? []).flat().some((d) => d?.node === 'AI Agent Vendas')).length;
-  chk('e o AI Agent Vendas segue com 6 tools (a fusão, intacta)', ligadas === 6, String(ligadas));
-
-  // O GERADOR SE RECUSA com a flag enquanto o id for placeholder — disparado de
-  // verdade, e o arquivo tem de sair intocado.
-  const antes = md5(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
-  const r = spawnSync(process.execPath, ['scripts/gerar-principal.mjs'], {
-    cwd: RAIZ, env: { ...process.env, GERAR_COM_PAGAMENTO: '1' }, encoding: 'utf8',
-  });
-  const depois = md5(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
-  chk('GERAR_COM_PAGAMENTO=1 com o id placeholder -> o gerador ABORTA (exit 1)', r.status === 1, `exit=${r.status}`);
-  chk('  ...com a mensagem certa', /placeholder/.test(r.stderr + r.stdout));
-  chk('  ...e o agente-principal.json ficou INTOCADO (md5)', antes === depois, `${antes} -> ${depois}`);
-  chk('o id do sub-workflow na fonte ainda é o placeholder (o import não aconteceu)', /^PENDENTE/.test(PAG.ID_WORKFLOW));
-}
-
-// ===========================================================================
 console.log('\n== 3. O texto que volta ao modelo, por caso ==\n');
 // ===========================================================================
 {
-  const corpo = no(TOOL, 'Monta Resposta').parameters.jsCode;
+  const corpo = RESPOSTA_JS;
   const base = { ok: true, motivo: 'ok', pedido_numero: 7, valor_centavos: 6990, expira_em: '2026-09-11T15:30:00.000Z', ja_existia: false };
   const okNovo = rodarCode(corpo, { reserva: base, asaas: { id: 'pl_x', url: 'https://sandbox.asaas.com/c/abc123' } }).resultado;
   chk('ok: a URL vai CRUA, sozinha numa linha', /\nhttps:\/\/sandbox\.asaas\.com\/c\/abc123\n/.test(okNovo), okNovo);
@@ -173,7 +118,7 @@ console.log('\n== 3. O texto que volta ao modelo, por caso ==\n');
 console.log('\n== 3b. O webhook extrai só o que o banco recebe ==\n');
 // ===========================================================================
 {
-  const corpo = no(WH, 'Extrai Evento').parameters.jsCode;
+  const corpo = EXTRAI_JS;
   const saida = rodarCode(corpo, {
     headers: { 'asaas-access-token': 'tok'.repeat(12), 'content-type': 'application/json' },
     body: { id: 'evt_abc&123', event: 'PAYMENT_RECEIVED',
@@ -187,19 +132,11 @@ console.log('\n== 3b. O webhook extrai só o que o banco recebe ==\n');
   chk('valor vira INTEIRO em centavos (5.0 -> 500)', saida.valor_centavos === 500, String(saida.valor_centavos));
   chk('e NADA do pagador atravessa (só as 7 chaves)',
     Object.keys(saida).length === 7 && !JSON.stringify(saida).includes('Fulano'));
-  const wh = no(WH, 'Webhook Asaas');
-  chk('path próprio, sem colidir com o principal nem com o passo 0',
-    wh.parameters.path === 'asaas-pagamento-sandbox'
-    && !['agente-lavanderia-chatwoot-teste-teste', 'chatwoot-sandbox-pagamento'].includes(wh.parameters.path));
-  chk('responde ANTES de notificar (Aplica Webhook -> Responde 200 -> IFs)',
-    WH.connections['Aplica Webhook'].main[0][0].node === 'Responde 200'
-    && WH.connections['Responde 200'].main[0].map((c) => c.node).sort().join(',') === 'Aplicou?,Precisa Humano?');
-  chk('a resposta ao Asaas leva só o estado, sem tenant/conversa/valor',
-    !/tenant_id|conversation_id|total_centavos|mensagem/.test(no(WH, 'Responde 200').parameters.responseBody));
-  chk('a notificação ao cliente é `outgoing` e pública, pela credencial de Agent Bot',
-    /message_type: 'outgoing', private: false/.test(no(WH, 'Notifica Cliente').parameters.body)
-    && /api_n8n_credencial_chatwoot/.test(no(WH, 'Credencial Chatwoot').parameters.query));
-  chk('a nota de fora do prazo é PRIVADA', /private: true/.test(no(WH, 'Nota Privada Fora do Prazo').parameters.body));
+  // (o grafo do webhook — método, path, ligações dos nós — saiu com o n8n. O
+  //  serviço expõe `POST /asaas` e o caminho dele é medido em teste:agente-servico.)
+  // (as asserções sobre os nós do webhook do n8n — corpo da resposta ao Asaas,
+  //  mensagem pública ao cliente, nota privada — saíram com ele. O mesmo
+  //  comportamento é medido no serviço em teste:agente-servico, §webhook Asaas.)
   // A POLÍTICA, DECIDIDA — e escrita em DOIS lugares (a fonte e o doc §6.9).
   // A guarda contra divergirem: o rótulo do doc tem de ser o da fonte, e o
   // encerramento derivado dela tem de dizer que é obrigatório. Se alguém
@@ -216,139 +153,28 @@ console.log('\n== 3b. O webhook extrai só o que o banco recebe ==\n');
     PAG.POLITICA_EXPIRACAO !== 'expirou_aceita'
     || (PAG.ENCERRAMENTO.obrigatorio === true && PAG.ENCERRAMENTO.desativa_link === true
         && PAG.ENCERRAMENTO.remove_cobrancas_pendentes === true && PAG.ENCERRAMENTO.disparo === 'agendado'));
-  chk('e o webhook NÃO carrega o encerramento, seja qual for a política (quem confirma não desliga)',
-    !JSON.stringify(WH).includes('active": false') && !/paymentLinks/.test(JSON.stringify(WH)));
+  chk('e quem CONFIRMA o pagamento não desliga o link: o encerramento é da manutenção, não do webhook',
+    !/paymentLinks|active": false/.test(fs.readFileSync(path.join(RAIZ, 'agente', 'src', 'pagamento', 'webhook.ts'), 'utf8')));
 }
 
-// ===========================================================================
-console.log('\n== 4. Os três casos, com as queries DOS JSONs, no banco ==\n');
-// ===========================================================================
-const url = fs.readFileSync(path.join(RAIZ, '.env.local'), 'utf8').split(/\r?\n/)
-  .find((l) => l.startsWith('SUPABASE_DB_URL=')).slice('SUPABASE_DB_URL='.length).trim().replace(/^["']|["']$/g, '');
-const c = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
-await c.connect();
-await c.query('begin');
-const um = async (q, p = []) => (await c.query(q, p)).rows[0];
-const TOKEN = 'tokdeteste' + 'p'.repeat(30);
-const retrato = async (t) => {
-  const r = await c.query(
-    `select (select count(*)::int from public.pagamento_eventos where tenant_id=$1) ev,
-            (select count(*)::int from public.pedido_cobrancas where tenant_id=$1) cob,
-            (select coalesce(string_agg(p.id::text||'|'||p.status||'|'||p.atualizado_em::text, ',' order by p.id),'') from public.pedidos p where p.tenant_id=$1) ped,
-            (select coalesce(string_agg(c.id::text||'|'||coalesce(c.pago_em::text,'-')||'|'||coalesce(c.pagamento_id,'-')||'|'||coalesce(c.notificado_em::text,'-'), ',' order by c.id),'') from public.pedido_cobrancas c where c.tenant_id=$1) cobs`,
-    [t]);
-  return md5(r.rows[0]);
-};
-
-/** Executa a query de um nó Postgres do JSON, com `$n` mapeado por posição. */
-const q = (w, nome, params) => c.query(no(w, nome).parameters.query, params);
-
-try {
-  const T = (await um(`insert into public.tenants (slug, nome) values ('z-teste-pag-tool', 'Teste Pag') returning id`)).id;
-  await c.query(`insert into public.tenant_credenciais (tenant_id, asaas_ambiente, asaas_api_key_sandbox, asaas_webhook_token_sandbox)
-                 values ($1, 'sandbox', 'sk_sandbox_tool', $2)`, [T, TOKEN]);
-  await c.query(`insert into public.tenant_tools (tenant_id, tool_nome, ativo, contratado) values ($1,'pagamento',true,true), ($1,'vendas',true,true)`, [T]);
-  const prod = (await um(`insert into public.produtos (tenant_id, nome, preco_centavos, unidade, disponivel) values ($1,'Curso',6990,'un',true) returning id`, [T])).id;
-  const CONV = 880001;
-  await c.query(`select public.api_n8n_adicionar_item($1,$2,$3,1,null)`, [T, CONV, prod]);
-  await c.query(`select public.api_n8n_fechar_pedido($1,$2,null)`, [T, CONV]);
-  const ped = await um(`select id, status, numero from public.pedidos where tenant_id=$1 and conversation_id=$2`, [T, CONV]);
-  chk('arranjo: pedido fechado (aguardando_pagamento)', ped.status === 'aguardando_pagamento');
-
-  // --- tool_ativa primeiro, pela query do JSON ---
-  const cfg = (await q(TOOL, 'Busca Config', [T])).rows[0];
-  chk('Busca Config (query do JSON) diz tool_ativa=true para quem contratou', cfg.tool_ativa === true);
-
-  // --- a RESERVA, pela query do JSON ---
-  const reserva = (await q(TOOL, 'Reserva Cobranca', [T, CONV])).rows[0];
-  chk('reserva: ok, com a chave DO TENANT e a base derivada do ambiente',
-    reserva.ok === true && reserva.api_key === 'sk_sandbox_tool' && reserva.base_url === 'https://api-sandbox.asaas.com',
-    `${reserva.motivo} / ${reserva.base_url}`);
-  chk('reserva: o valor é o do pedido (6990), e não há parâmetro por onde entrar outro', reserva.valor_centavos === 6990);
-
-  // --- o REGISTRO, pela query do JSON (o Asaas é simulado: id + url) ---
-  await q(TOOL, 'Registra Cobranca', [T, reserva.cobranca_id, 'pl_teste_tool', 'https://sandbox.asaas.com/c/pl_teste_tool']);
-  const cob = await um(`select link_id, url, pago_em from public.pedido_cobrancas where id=$1`, [reserva.cobranca_id]);
-  chk('CASO 1, lado A: o link FOI gerado (link_id e url no banco)', cob.link_id === 'pl_teste_tool' && /pl_teste_tool/.test(cob.url));
-  const stDepoisDoLink = (await um(`select status from public.pedidos where id=$1`, [ped.id])).status;
-  chk('CASO 1, lado B: gerar o link NÃO muda o status (continua aguardando_pagamento)', stDepoisDoLink === 'aguardando_pagamento', stDepoisDoLink);
-
-  // --- a REGRA 3 antes do pagamento: afirmar "caiu" é BARRADO ---
-  const estadoAntes = await um(`select * from public.api_n8n_estado_pedido($1,$2)`, [T, CONV]);
-  const r1 = rodarPortao('Pagamento confirmado! ✅ Já pode acessar o curso.', estadoAntes);
-  chk('CASO 3, antes do webhook: pagamento_confirmado=false e a afirmação é BARRADA pela regra 3',
-    estadoAntes.pagamento_confirmado === false && r1._portao.veredito === 'barrado_regra_3', r1._portao.veredito);
-
-  // --- o WEBHOOK, pela query do JSON ---
-  const ev = ['evt_tool_1', 'PAYMENT_RECEIVED', 'pay_tool_1', 'pl_teste_tool', reserva.cobranca_id, 6990];
-  const w1 = (await q(WH, 'Aplica Webhook', [TOKEN, ...ev])).rows[0];
-  chk('webhook (query do JSON): reconhecido e APLICOU', w1.reconhecido === true && w1.aplicou === true, w1.motivo);
-  chk('CASO 1, lado B: SÓ o webhook levou o pedido a `pago`',
-    (await um(`select status from public.pedidos where id=$1`, [ped.id])).status === 'pago');
-  chk('e a mensagem ao cliente veio pronta do banco, com o valor', /R\$ 69,90/.test(w1.mensagem) && /confirmado/i.test(w1.mensagem));
-
-  // --- CASO 2: reenvio do MESMO evento, estado idêntico ---
-  const antes = await retrato(T);
-  const w2 = (await q(WH, 'Aplica Webhook', [TOKEN, ...ev])).rows[0];
-  const depois = await retrato(T);
-  chk('CASO 2: reenvio -> ja_processado, não aplica, sem mensagem', w2.ja_processado === true && w2.aplicou === false && w2.mensagem === null);
-  chk('CASO 2: e o ESTADO DO BANCO é idêntico (md5 do retrato)', antes === depois, `${antes} vs ${depois}`);
-
-  // --- CASO 3, o ESPELHO: depois do webhook, a MESMA afirmação PASSA ---
-  const estadoDepois = await um(`select * from public.api_n8n_estado_pedido($1,$2)`, [T, CONV]);
-  const r2 = rodarPortao('Pagamento confirmado! ✅ Já pode acessar o curso.', estadoDepois);
-  chk('CASO 3, depois do webhook: pagamento_confirmado=true e a MESMA afirmação PASSA',
-    estadoDepois.pagamento_confirmado === true && r2._portao.veredito === 'passou', r2._portao.veredito);
-
-  // --- token errado não faz nada ---
-  const wf = (await q(WH, 'Aplica Webhook', ['x'.repeat(40), 'evt_forjado', 'PAYMENT_RECEIVED', null, null, reserva.cobranca_id, 6990])).rows[0];
-  chk('token desconhecido -> reconhecido=false, nada aplicado, nenhum evento gravado',
-    wf.reconhecido === false && (await um(`select count(*)::int n from public.pagamento_eventos where evento_id='evt_forjado'`)).n === 0);
-
-  // --- SABOTAGEM S2: evento_id por Date.now() no Code do webhook ---
-  {
-    const corpo = no(WH, 'Extrai Evento').parameters.jsCode;
-    const alvo = "evento_id: String(body.id ?? ''),";
-    const n = corpo.split(alvo).length - 1;
-    if (n !== 1) chk('S2 localizou o alvo', false, `${n}x`);
-    else {
-      const mut = corpo.split(alvo).join("evento_id: String(Date.now()) + Math.random(),");
-      console.log(`     [mutou "evento_id aleatorio": md5 ${md5(corpo)} -> ${md5(mut)}]`);
-      const payload = { headers: { 'asaas-access-token': TOKEN }, body: { id: 'evt_tool_1', event: 'PAYMENT_RECEIVED', payment: { id: 'pay_tool_1', paymentLink: 'pl_teste_tool', externalReference: reserva.cobranca_id, value: 69.9 } } };
-      const a = rodarCode(mut, payload); const b = rodarCode(mut, payload);
-      const antesS = await retrato(T);
-      await q(WH, 'Aplica Webhook', [a.webhook_token, a.evento_id, a.evento, a.pagamento_id, a.link_id, a.referencia, a.valor_centavos]);
-      await q(WH, 'Aplica Webhook', [b.webhook_token, b.evento_id, b.evento, b.pagamento_id, b.link_id, b.referencia, b.valor_centavos]);
-      const depoisS = await retrato(T);
-      chk('S2: com id aleatório, o "mesmo" evento entra duas vezes e o retrato ACUSA', antesS !== depoisS);
-      chk('  ...mas o pedido continua pago UMA vez (a camada 2 segura o estado)',
-        (await um(`select count(*)::int n from public.pedidos where tenant_id=$1 and status='pago'`, [T])).n === 1);
-    }
-  }
-} catch (e) {
-  falhas.push('exceção');
-  console.log(`\n  EXCEÇÃO: ${e.code ?? ''} ${e.message}`);
-} finally {
-  await c.query('rollback');
-  await c.end();
-}
-
-// ===========================================================================
 console.log('\n== 5. SABOTAGEM (sem banco) ==\n');
 // ===========================================================================
 {
   // S1 — um $fromAI de valor na tool. A guarda do gerador reprova; aqui a
   //      asserção do §1 tem de reprovar também.
-  const sab = JSON.parse(JSON.stringify(TOOL));
-  const res = no(sab, 'Reserva Cobranca');
-  const antes = md5(res.parameters);
-  res.parameters.query = "SELECT * FROM public.api_n8n_gerar_cobranca($1::uuid, $2::bigint, $3::integer);";
-  res.parameters.options.queryReplacement = "={{ [ a, b, $fromAI('valor', 'quanto cobrar', 'number') ] }}";
-  console.log(`     [mutou "valor via $fromAI": md5 ${antes} -> ${md5(res.parameters)}]`);
-  chk('S1: $fromAI na tool é detectado', /\$fromAI\(/.test(JSON.stringify(sab)));
+  // 05/10: mutava o JSON da tool do n8n. O alvo vivo é a FONTE do serviço: se
+  // alguém puser um `$fromAI` (valor escolhido pelo modelo) no caminho do
+  // pagamento, é aqui que apareceria.
+  const semComentario = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  // sem os comentários: a fonte EXPLICA o `$fromAI` em prosa, e um regex cru
+  // casaria com a explicação — a armadilha do auto-casamento do CLAUDE.md.
+  const fonteTool = semComentario(fs.readFileSync(path.join(RAIZ, 'agente', 'regras', 'tool-pagamento-fonte.mjs'), 'utf8'));
+  const comFromAI = fonteTool + "\nconst x = $fromAI('valor', 'quanto cobrar', 'number');";
+  chk('S1: a varredura ACHA um $fromAI de valor quando ele existe', /\$fromAI\(/.test(comFromAI));
+  chk('S1: ...e NÃO acha na fonte de verdade (o valor nunca vem do modelo)', !/\$fromAI\(/.test(fonteTool));
 
   // S3 — tirar a frase "NAO afirme que o pagamento foi feito" do Monta Resposta.
-  const corpo = no(TOOL, 'Monta Resposta').parameters.jsCode;
+  const corpo = RESPOSTA_JS;
   const alvo = "'NAO afirme que o pagamento foi feito ou confirmado: o sistema avisa quando cair.'";
   const n = corpo.split(alvo).length - 1;
   if (n !== 1) chk('S3 localizou o alvo', false, `${n}x`);

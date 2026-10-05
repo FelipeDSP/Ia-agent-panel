@@ -18,7 +18,7 @@
 // exercita contra (a) o formato LangChain serializado, (b) objeto ciclico,
 // (c) objeto sem uso nenhum. Sabotagem inclusa.
 import fs from 'node:fs';
-const src = fs.readFileSync('n8n/estima-tokens.js', 'utf8');
+const src = fs.readFileSync('agente/regras/estima-tokens.js', 'utf8');
 const ini = src.indexOf('const acharUsos =');
 const fim = src.indexOf('let sonda_b;');
 if (ini < 0 || fim < 0) { console.log('FALHA: nao achei o bloco acharUsos'); process.exit(1); }

@@ -29,9 +29,12 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ler = (rel) => JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', rel), 'utf8'));
-const FOTO = ler('tool-enviar-foto.json').nodes.find((n) => n.name === 'Resposta ao Agente').parameters.jsCode;
-const KB = ler('Tool - Busca KB Multi-Tenant.json').nodes.find((n) => n.name === 'Consolida Resultado').parameters.jsCode;
+// 05/10: a fonte era o `jsCode` do nó no JSON do workflow. A pasta `n8n/` foi
+// apagada, e o nó era cópia do arquivo — que é o que o SERVIÇO executa. Ler o
+// arquivo é a mesma medida com uma fonte a menos entre o teste e a produção.
+const regra = (nome) => fs.readFileSync(path.join(RAIZ, 'agente', 'regras', nome), 'utf8');
+const FOTO = regra('enviar-foto-resposta.js');
+const KB = regra('busca-kb-consolida.js');
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
 let ok = 0;

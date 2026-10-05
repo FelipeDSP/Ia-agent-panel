@@ -29,10 +29,10 @@ type Corpo = (ctx: { body: unknown }) => Array<{ json: Extraido }>;
 
 let corpoCompilado: Corpo | null = null;
 
-export function carregarExtrair(n8nJsDir: string): Corpo {
+export function carregarExtrair(regrasDir: string): Corpo {
   if (corpoCompilado) return corpoCompilado;
-  const extrair = fs.readFileSync(path.join(n8nJsDir, 'extrair-e-filtrar.js'), 'utf8');
-  const filtro = fs.readFileSync(path.join(n8nJsDir, 'filtro-texto.js'), 'utf8').trim();
+  const extrair = fs.readFileSync(path.join(regrasDir, 'extrair-e-filtrar.js'), 'utf8');
+  const filtro = fs.readFileSync(path.join(regrasDir, 'filtro-texto.js'), 'utf8').trim();
   if (!extrair.includes('// __FILTRO_TEXTO__')) throw new Error('extrair-e-filtrar.js sem o marcador // __FILTRO_TEXTO__');
   const corpo = extrair.replace('// __FILTRO_TEXTO__', filtro);
   // O corpo é o de um nó Code: lê `$json.body` e devolve `[{ json }]`.
@@ -43,8 +43,8 @@ export function carregarExtrair(n8nJsDir: string): Corpo {
 }
 
 /** O que o n8n devolveria para este webhook. */
-export function extrair(n8nJsDir: string, body: unknown): Extraido {
-  const saida = carregarExtrair(n8nJsDir)({ body });
+export function extrair(regrasDir: string, body: unknown): Extraido {
+  const saida = carregarExtrair(regrasDir)({ body });
   const item = saida[0]?.json;
   if (!item) throw new Error('extrair-e-filtrar.js devolveu vazio');
   return item;

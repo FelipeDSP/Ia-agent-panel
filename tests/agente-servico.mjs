@@ -74,7 +74,9 @@ const M72 = leia('20260917220000_72_nome_de_quem_retira.sql');
 const R72 = leia('20260917220000_72_nome_de_quem_retira_rollback.sql');
 const M74 = leia('20260918120000_74_horario_do_agente.sql');
 const R74 = leia('20260918120000_74_horario_do_agente_rollback.sql');
-const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
+// 05/10: a pasta `n8n/` foi apagada. As três comparações que liam o workflow
+// perderam o outro lado e viraram o que sempre deveriam ter sido: o CONTRATO
+// declarado aqui (§1 e §2) e o arquivo que o serviço executa (§3).
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
 let ok = 0;
@@ -154,8 +156,8 @@ const asaas = {
   async cobrancasPendentes(base, key, id) { chamadasAsaas.push({ op: 'pendentes', id }); return { ok: true, status: 200, ids: [`pay_${id}_a`, `pay_${id}_b`], detalhe: 'HTTP 200' }; },
   async removerCobranca(base, key, id) { chamadasAsaas.push({ op: 'remover', id }); return { ok: true, status: 200, corpo: { deleted: true }, detalhe: 'HTTP 200' }; },
 };
-const deps = { db: c, waha, n8nJsDir: path.join(RAIZ, 'n8n'), chatwoot };
-const depsWorker = { db: c, chatwoot, waha, modelo, embeddings, transcritor, n8nJsDir: path.join(RAIZ, 'n8n'), versaoCodigo: 'teste', fotoSecret: null, fetchFn: fetchFalso, asaas, workerId: 'w-teste', lote: 10, leaseMinutos: 5 };
+const deps = { db: c, waha, regrasDir: path.join(RAIZ, 'agente', 'regras'), chatwoot };
+const depsWorker = { db: c, chatwoot, waha, modelo, embeddings, transcritor, regrasDir: path.join(RAIZ, 'agente', 'regras'), versaoCodigo: 'teste', fotoSecret: null, fetchFn: fetchFalso, asaas, workerId: 'w-teste', lote: 10, leaseMinutos: 5 };
 
 const vencer = async () => c.query(`update public.agente_fila set executar_em = now() - interval '1 second' where estado = 'pendente' and tenant_id = any($1)`, [Object.values(T)]);
 const webhook = (p) => ({
@@ -218,45 +220,62 @@ try {
   console.log('\n== 1. classificar == Roteia Evento do JSON ==\n');
   // =========================================================================
   {
-    const regras = W.nodes.find((n) => n.name === 'Roteia Evento').parameters.rules.values;
-    // eslint-disable-next-line no-new-func
-    const avalia = (expr, body) => new Function('$json', `return (${expr.replace(/^=\{\{\s*|\s*\}\}$/g, '')});`)({ body });
-    const opera = (cd, body) => { const l = avalia(cd.leftValue, body); switch (cd.operator.operation) { case 'equals': return String(l) === String(cd.rightValue); case 'notEquals': return String(l) !== String(cd.rightValue); case 'notEmpty': return l !== undefined && l !== null && String(l) !== ''; case 'false': return l === false; case 'true': return l === true; default: throw new Error(cd.operator.operation); } };
-    const pelaJson = (body) => { for (const [i, r] of regras.entries()) { const res = r.conditions.conditions.map((cd) => opera(cd, body)); if (r.conditions.combinator === 'and' ? res.every(Boolean) : res.some(Boolean)) return ['cliente', 'humano'][i]; } return 'descartar'; };
-    const casos = {
-      'cliente incoming público': webhook({ account: 1, inbox: 1, conv: 1 }),
-      'cliente incoming PRIVADO': webhook({ account: 1, inbox: 1, conv: 1, private: true }),
-      'o próprio bot (outgoing, agent_bot)': webhook({ account: 1, inbox: 1, conv: 1, tipo: 'outgoing', sender: { type: 'agent_bot' } }),
-      'humano (outgoing, user)': webhook({ account: 1, inbox: 1, conv: 1, tipo: 'outgoing', sender: { type: 'user', name: 'Atendente' } }),
-      'outgoing SEM sender': webhook({ account: 1, inbox: 1, conv: 1, tipo: 'outgoing', sender: null }),
-      'outro evento': { ...webhook({ account: 1, inbox: 1, conv: 1 }), event: 'conversation_updated' },
-    };
-    for (const [nome, body] of Object.entries(casos)) chk(`${nome}: código=${classificar(body)} == JSON=${pelaJson(body)}`, classificar(body) === pelaJson(body));
-    chk('ESPELHO: os casos produzem os três eventos', new Set(Object.values(casos).map(classificar)).size === 3);
+    // O ESPERADO É DECLARADO, e não lido de um workflow. Era espelhado das
+    // regras do nó `Roteia Evento`; com o n8n apagado, a tabela abaixo É o
+    // contrato — e lê-la diz o que o serviço faz, o que a comparação com o
+    // JSON nunca disse para quem abria o teste.
+    const casos = [
+      ['cliente incoming público', webhook({ account: 1, inbox: 1, conv: 1 }), 'cliente'],
+      // Privada é nota interna entre atendentes: o cliente não a vê, o agente também não.
+      ['cliente incoming PRIVADO', webhook({ account: 1, inbox: 1, conv: 1, private: true }), 'descartar'],
+      // A própria resposta do bot voltando pelo webhook — responder a ela seria laço.
+      ['o próprio bot (outgoing, agent_bot)', webhook({ account: 1, inbox: 1, conv: 1, tipo: 'outgoing', sender: { type: 'agent_bot' } }), 'descartar'],
+      ['humano (outgoing, user)', webhook({ account: 1, inbox: 1, conv: 1, tipo: 'outgoing', sender: { type: 'user', name: 'Atendente' } }), 'humano'],
+      // Sem `sender` não dá para saber quem falou: não se supõe que foi humano.
+      ['outgoing SEM sender', webhook({ account: 1, inbox: 1, conv: 1, tipo: 'outgoing', sender: null }), 'descartar'],
+      ['outro evento', { ...webhook({ account: 1, inbox: 1, conv: 1 }), event: 'conversation_updated' }, 'descartar'],
+    ];
+    for (const [nome, body, esperado] of casos) chk(`${nome} -> ${esperado}`, classificar(body) === esperado, classificar(body));
+    chk('ESPELHO: os casos produzem os três eventos (tabela que só gera um valor não mede nada)',
+      new Set(casos.map(([, b]) => classificar(b))).size === 3);
   }
 
   // =========================================================================
-  console.log('\n== 2. O system message == o wrapper do n8n, nos dois perfis ==\n');
+  console.log('\n== 2. O wrapper do system message é ESTÁVEL nos dois perfis ==\n');
   // =========================================================================
   {
     const PROMPT = 'Você é o atendente do tenant a.';
-    for (const [perfil, no] of [['vendas', 'AI Agent Vendas'], ['basico', 'AI Agent Basico']]) {
-      const sm = W.nodes.find((n) => n.name === no).parameters.options.systemMessage;
-      // `=\`...\` {{ expr }}` -> o literal entre as crases, um espaço, o prompt do tenant.
-      const literal = sm.slice(sm.indexOf('`') + 1, sm.lastIndexOf('`'));
-      const esperado = literal + ' ' + PROMPT;
+    // ERA a comparação byte a byte com o wrapper do n8n. Sem ele, o que resta a
+    // guardar é que o wrapper NÃO MUDA SEM QUERER: ele entra em todo turno de
+    // todo cliente, define o hash do prompt (e o cache de entrada da OpenAI) e
+    // uma vírgula a mais passa despercebida em revisão.
+    //
+    // Mudar o wrapper DE PROPÓSITO é legítimo e frequente; o que o md5 cobra é
+    // que a mudança seja declarada aqui, de novo, por quem a fez. Se este teste
+    // ficar vermelho e você sabe por quê, atualize o número e siga.
+    // 12 caracteres: é o que o helper `md5` deste arquivo devolve.
+    const WRAPPER_MD5 = { vendas: 'a1982b6c1d0a', basico: '727586a7747f' };
+    for (const perfil of ['vendas', 'basico']) {
       const m = montarSystemMessage({ perfil, systemPromptDoTenant: PROMPT });
-      chk(`${perfil}: montarSystemMessage == wrapper do ${no} (byte a byte)`, m.texto === esperado, `md5 ${md5(m.texto)} vs ${md5(esperado)} | ${m.texto.length} vs ${esperado.length}`);
+      chk(`${perfil}: o wrapper continua o declarado (md5 congelado)`, md5(m.texto) === WRAPPER_MD5[perfil], `md5 ${md5(m.texto)} != ${WRAPPER_MD5[perfil]} | ${m.texto.length} chars`);
+      chk(`${perfil}: o prompt do tenant entra no fim, depois de um espaço`, m.texto.endsWith(' ' + PROMPT));
     }
     const a = montarSystemMessage({ perfil: 'vendas', systemPromptDoTenant: 'x' }); const b = montarSystemMessage({ perfil: 'vendas', systemPromptDoTenant: 'y' });
     chk('o hash muda com o prompt do tenant (é atribuível)', a.hash !== b.hash && a.hash.startsWith('sha256:'));
   }
 
   // =========================================================================
-  console.log('\n== 3. limparVazamento portado == a função do Estima Tokens ==\n');
+  console.log('\n== 3. limparVazamento portado == a função de estima-tokens.js ==\n');
   // =========================================================================
   {
-    const corpo = W.nodes.find((n) => n.name === 'Estima Tokens').parameters.jsCode;
+    // A fonte é o ARQUIVO (`agente/regras/estima-tokens.js`), de onde o nó do
+    // n8n tirava este corpo — um intermediário a menos entre o teste e o que
+    // o serviço portou em `turno/saida.ts`.
+    // O arquivo no repo esta em CRLF e o recorte abaixo procura o fim da funcao
+    // em LF — sem normalizar, ele nao acha e o corpo recortado nao compila. E a
+    // mesma armadilha de CRLF que ja matou uma guarda inteira em 24/08
+    // (CLAUDE.md); no JSON do n8n o corpo vinha em LF.
+    const corpo = fs.readFileSync(path.join(RAIZ, 'agente', 'regras', 'estima-tokens.js'), 'utf8').replace(RegExp(String.fromCharCode(13), 'g'), '');
     const ini = corpo.indexOf('function limparVazamento(bruto) {');
     const fim = corpo.indexOf('\n}\n', ini) + 3;
     // eslint-disable-next-line no-new-func
@@ -316,8 +335,8 @@ try {
     chk('mensagens_log: saída com tokens reais, fonte openai_usage, chamadas 1, portao.veredito passou, execucao_id = turno',
       l1.length === 2 && l1[1].tokens_entrada === 100 && l1[1].tokens_saida === 20 && l1[1].fonte_tokens === 'openai_usage' && l1[1].chamadas === 1 && l1[1].portao?.veredito === 'passou' && l1.every((x) => x.execucao_id === t1.id), JSON.stringify(l1.map((x) => ({ d: x.direcao, te: x.tokens_entrada, f: x.fonte_tokens, v: x.portao?.veredito }))));
     const p1 = (await passosDe(t1.id)).map((p) => `${p.tipo}:${p.nome}`);
-    chk('trace: entrada, sync, portão de entrada, tools ativas, memória, prompt, openai#1, estimativa_n8n, aplica-portao, envio, registro',
-      p1.join(' > ') === 'entrada:mensagens > registro:api_n8n_conversa_sync > portao:api_n8n_portao_mensagem > registro:api_n8n_tools_ativas > memoria:api_agente_memoria > entrada:prompt > registro:estado_do_sistema > modelo:openai#1 > registro:estimativa_n8n > portao:aplica-portao.js > envio:chatwoot.messages > registro:api_n8n_registrar_mensagem', p1.join(' > '));
+    chk('trace: entrada, sync, portão de entrada, tools ativas, memória, prompt, estado do sistema, openai#1, aplica-portao, envio, registro',
+      p1.join(' > ') === 'entrada:mensagens > registro:api_n8n_conversa_sync > portao:api_n8n_portao_mensagem > registro:api_n8n_tools_ativas > memoria:api_agente_memoria > entrada:prompt > registro:estado_do_sistema > modelo:openai#1 > portao:aplica-portao.js > envio:chatwoot.messages > registro:api_n8n_registrar_mensagem', p1.join(' > '));
 
     // 5b. segundo turno na mesma conversa: a MEMÓRIA chega ao modelo, e uma tool executa no banco.
     roteiro.push({ tool: 'consultar_catalogo', args: { termo: 'bolo' } }, { texto: 'Bolo de cenoura, R$ 40,00. Anoto um?' });
@@ -612,7 +631,7 @@ try {
 
     // 7c. o webhook do Asaas: aplica, avisa o cliente, entra no log; reenvio não repete; token forjado não faz nada.
     const { receberWebhookAsaas } = await import('../agente/src/pagamento/webhook.ts');
-    const evento = (id, token = TOKEN_WH, extra = {}) => receberWebhookAsaas({ db: c, chatwoot, n8nJsDir: path.join(RAIZ, 'n8n') }, { 'asaas-access-token': token }, { id, event: 'PAYMENT_RECEIVED', payment: { id: 'pay_pl_1_a', paymentLink: 'pl_1', externalReference: cob.id, value: 50, ...extra } });
+    const evento = (id, token = TOKEN_WH, extra = {}) => receberWebhookAsaas({ db: c, chatwoot, regrasDir: path.join(RAIZ, 'agente', 'regras') }, { 'asaas-access-token': token }, { id, event: 'PAYMENT_RECEIVED', payment: { id: 'pay_pl_1_a', paymentLink: 'pl_1', externalReference: cob.id, value: 50, ...extra } });
     const cwAntes = chamadasChatwoot.length;
     const w1 = await evento('evt_1'); await w1.pos;
     chk('evento 1: reconhecido, aplicou; pedido PAGO; cliente recebeu "Pagamento confirmado!" pelo bot',

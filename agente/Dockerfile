@@ -2,11 +2,10 @@
 #
 # O agente em código — imagem do SEGUNDO projeto no Coolify (DESENHO §1).
 #
-# Contexto de build: a RAIZ do repositório (não a pasta agente/), porque a
-# imagem carrega os `.js`/`.mjs` de `n8n/` que continuam sendo FONTE durante
-# a transição — extrair-e-filtrar, filtro-texto, aplica-portao,
-# busca-kb-consolida, enviar-foto-resposta, filtra-transcricao,
-# tool-pedido-acoes (agente/src/n8n-js.ts). No Coolify: Dockerfile =
+# Contexto de build: a RAIZ do repositório (não a pasta agente/), por causa do
+# `package.json` da raiz. As REGRAS que o serviço executa (portão, extração do
+# webhook, consolidação da busca, as tools) moram em `agente/regras` desde
+# 05/10/2026, quando a pasta `n8n/` foi apagada. No Coolify: Dockerfile =
 # agente/Dockerfile, Build context = /.
 #
 # Node 24 roda TypeScript direto (type stripping) — não há etapa de build.
@@ -29,8 +28,11 @@ RUN addgroup -S agente && adduser -S agente -G agente
 COPY --from=deps /app/agente/node_modules ./agente/node_modules
 COPY agente/package.json ./agente/
 COPY agente/src ./agente/src
-COPY n8n/*.js n8n/*.mjs ./n8n/
-ENV N8N_JS_DIR=/app/n8n
+COPY agente/regras ./agente/regras
+# `REGRAS_DIR` manda; o serviço confere se o diretório tem mesmo as regras antes
+# de aceitá-lo (config.ts), então um `N8N_JS_DIR=/app/n8n` esquecido no Coolify
+# não derruba o portão — ele cai no caminho embutido.
+ENV REGRAS_DIR=/app/agente/regras
 ENV PORT=3100
 USER agente
 EXPOSE 3100

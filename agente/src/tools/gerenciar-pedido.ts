@@ -13,7 +13,7 @@
  * posição — o mesmo contrato do `queryReplacement`.
  */
 import { fnUma } from '../db.ts';
-import { ACOES, TOOL_NOME, descricaoFerramenta, dicaFromAI, textoAcaoInvalida } from '../../../n8n/tool-pedido-acoes.mjs';
+import { ACOES, TOOL_NOME, descricaoFerramenta, dicaFromAI, textoAcaoInvalida } from '../../regras/tool-pedido-acoes.mjs';
 import type { FerramentaDoModelo } from '../agente/modelo.ts';
 import type { ConfigTool, ContextoTool } from './contexto.ts';
 import { TEXTO_VENDAS_INDISPONIVEL } from './consultar-catalogo.ts';

@@ -22,7 +22,7 @@ export interface ContextoTool {
   chatwoot: Chatwoot;
   waha: Waha | null;
   embeddings: Embeddings | null;
-  n8nJsDir: string;
+  regrasDir: string;
   /** O `x-foto-secret` da Edge Function `foto-produto` (env FOTO_SECRET); sem ele a foto não assina. */
   fotoSecret: string | null;
   /** `fetch` injetável (testes). */

@@ -36,7 +36,7 @@ export interface Recebido {
   extraido?: Extraido;
 }
 
-export interface Deps { db: Db; waha: Waha | null; n8nJsDir: string }
+export interface Deps { db: Db; waha: Waha | null; regrasDir: string }
 
 export async function receber(deps: Deps, inboxDaUrl: number | null, body: WebhookChatwoot): Promise<Recebido> {
   const evento = classificar(body);
@@ -47,7 +47,7 @@ export async function receber(deps: Deps, inboxDaUrl: number | null, body: Webho
     return { evento, resultado: r.acao === 'pausou' ? 'pausou' : r.acao === 'nota_interna' ? 'nota_interna' : 'tenant', motivo: r.acao, ...(r.descartadas ? { descartadas: r.descartadas } : {}) };
   }
 
-  const ex = extrair(deps.n8nJsDir, body);
+  const ex = extrair(deps.regrasDir, body);
   if (inboxDaUrl !== null && ex.chatwoot_inbox_id !== inboxDaUrl) {
     return { evento, resultado: 'caixa_divergente', motivo: `url=${inboxDaUrl} corpo=${ex.chatwoot_inbox_id}`, extraido: ex };
   }

@@ -25,8 +25,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
-const corpo = (nome) => W.nodes.find((n) => n.name === nome).parameters.jsCode;
+// 05/10: a fonte era o `jsCode` do nó no JSON do workflow; a pasta `n8n/` foi
+// apagada e o nó era cópia do arquivo — que é o que o SERVIÇO executa.
+const ARQUIVO = { 'Filtra Transcricao': 'filtra-transcricao.js', 'Mensagem Pronta': 'mensagem-pronta.js' };
+// `filtra-transcricao.js` tem o marcador `// __FILTRO_TEXTO__`, que o SERVIÇO
+// substitui pelo corpo de `filtro-texto.js` (regras-js.ts, `injetarFiltro`).
+// Sem reproduzir isso, `contemInjection` não existe e o corpo estoura — era o
+// JSON do workflow que vinha com a injeção já feita.
+const injetar = (txt) => txt.replace('// __FILTRO_TEXTO__',
+  fs.readFileSync(path.join(RAIZ, 'agente', 'regras', 'filtro-texto.js'), 'utf8').trim());
+const corpo = (nome) => injetar(fs.readFileSync(path.join(RAIZ, 'agente', 'regras', ARQUIVO[nome]), 'utf8'));
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
 let ok = 0;

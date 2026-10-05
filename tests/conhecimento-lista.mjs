@@ -157,10 +157,14 @@ checar(
 // ---------------------------------------------------------------------------
 // A tela diz "o agente busca os N trechos mais parecidos" e, abaixo de N, "ele
 // recebe TODOS os seus trechos". Isso e afirmacao sobre o COMPORTAMENTO do
-// agente, e o agente nao le o painel: quem decide e a tool do n8n, que passa o
-// numero para `api_n8n_buscar_kb`. Trocado la e nao aqui, o painel passa a
-// mentir para o cliente — e mentira sobre "o agente recebe tudo" e do tipo que
-// ninguem confere, porque a tela continua bonita.
+// agente, e o agente nao le o painel: quem decide e a tool do SERVICO, que
+// passa o numero para `api_n8n_buscar_kb`. Trocado la e nao aqui, o painel
+// passa a mentir para o cliente — e mentira sobre "o agente recebe tudo" e do
+// tipo que ninguem confere, porque a tela continua bonita.
+//
+// 05/10: a fonte era o JSON da tool do n8n, apagado junto com a pasta. Passou
+// a ser o consumidor VIVO (`agente/src/tools/busca-conhecimento.ts`) — que e
+// onde o numero sempre devia ter sido lido.
 {
   // `fileURLToPath` e nao `new URL(...)`: a linha 47 deste arquivo declara
   // `const URL` com a url do Supabase, o que SOMBREIA o construtor global.
@@ -168,13 +172,13 @@ checar(
   const path = await import('node:path');
   const { fileURLToPath } = await import('node:url');
   const raiz = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const wf = fs.readFileSync(
-    path.join(raiz, 'n8n', 'workflows', 'Tool - Busca KB Multi-Tenant.json'),
+  const tool = fs.readFileSync(
+    path.join(raiz, 'agente', 'src', 'tools', 'busca-conhecimento.ts'),
     'utf8',
   );
-  const m = wf.match(/api_n8n_buscar_kb\([^,]+,[^,]+,\s*(\d+)/);
+  const m = tool.match(/api_n8n_buscar_kb\([^,]+,[^,]+,\s*(\d+)/);
   checar(
-    'o numero do aviso foi encontrado na tool do n8n',
+    'o numero do aviso foi encontrado na tool do agente',
     m !== null,
     'o regex nao casou — a query mudou de forma e a comparacao abaixo seria vacua',
   );

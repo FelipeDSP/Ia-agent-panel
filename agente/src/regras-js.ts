@@ -19,7 +19,7 @@ type Corpo = (input: unknown, $: unknown, $json: unknown) => Array<{ json: Recor
 
 const cache = new Map<string, Corpo>();
 
-export function corpoN8n(dir: string, arquivo: string, opcoes: { injetarFiltro?: boolean } = {}): Corpo {
+export function corpoRegra(dir: string, arquivo: string, opcoes: { injetarFiltro?: boolean } = {}): Corpo {
   const chave = `${dir}/${arquivo}`;
   const pronto = cache.get(chave);
   if (pronto) return pronto;
@@ -40,7 +40,7 @@ export function corpoN8n(dir: string, arquivo: string, opcoes: { injetarFiltro?:
  * Nó pedido e não previsto lança — igual ao n8n, que erra em vez de devolver
  * vazio quando `$('X')` não existe.
  */
-export function rodarN8n(corpo: Corpo, entrada: { json: Record<string, unknown> } | Array<{ json: Record<string, unknown> }>, nos: Record<string, unknown> = {}): Record<string, unknown> {
+export function rodarRegra(corpo: Corpo, entrada: { json: Record<string, unknown> } | Array<{ json: Record<string, unknown> }>, nos: Record<string, unknown> = {}): Record<string, unknown> {
   const itens = Array.isArray(entrada) ? entrada : [entrada];
   const $input = { first: () => itens[0], all: () => itens, last: () => itens[itens.length - 1] };
   const $ = (nome: string) => {

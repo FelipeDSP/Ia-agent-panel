@@ -10,7 +10,7 @@
  * textos por tenant que a função devolve — quem envia é o turno.
  */
 import { fnUma, type Db } from '../db.ts';
-import { corpoN8n, rodarN8n } from '../n8n-js.ts';
+import { corpoRegra, rodarRegra } from '../regras-js.ts';
 
 export interface Anexo { file_type: string | null; data_url: string | null; file_size: number; extensao: string }
 
@@ -95,7 +95,7 @@ export async function baixarAnexo(fetchFn: typeof fetch, url: string, token: str
   throw new Error(`baixar anexo falhou em ${tentativas} tentativas / ${Math.round((agora() - inicio) / 1000)} s: ${[...new Set(erros)].join(' | ')}`);
 }
 
-export async function transcreverAnexo(p: { db: Db; n8nJsDir: string; tenantId: string; conversationId: number; anexo: Anexo; transcritor: Transcritor | null; fetchFn: typeof fetch; msgMidiaNaoSuportada: string | null }): Promise<ResultadoTranscricao> {
+export async function transcreverAnexo(p: { db: Db; regrasDir: string; tenantId: string; conversationId: number; anexo: Anexo; transcritor: Transcritor | null; fetchFn: typeof fetch; msgMidiaNaoSuportada: string | null }): Promise<ResultadoTranscricao> {
   const cfg = await fnUma<ConfigAudio>(p.db, 'api_n8n_pode_transcrever', [p.tenantId, p.conversationId]);
   if (!cfg || cfg.tool_ativa !== true || !p.transcritor) return { status: 'nao_contratado', avisoAoCliente: p.msgMidiaNaoSuportada };
   if (p.anexo.file_type !== 'audio' || !p.anexo.data_url) return { status: 'nao_contratado', avisoAoCliente: p.msgMidiaNaoSuportada };
@@ -108,7 +108,7 @@ export async function transcreverAnexo(p: { db: Db; n8nJsDir: string; tenantId: 
     // a API de transcrição decide o parser pelo nome do arquivo.
     const nome = `audio.${p.anexo.extensao || 'oga'}`;
     const resposta = await p.transcritor.transcrever(bytes, nome);
-    const saida = rodarN8n(corpoN8n(p.n8nJsDir, 'filtra-transcricao.js', { injetarFiltro: true }), { json: resposta }, {
+    const saida = rodarRegra(corpoRegra(p.regrasDir, 'filtra-transcricao.js', { injetarFiltro: true }), { json: resposta }, {
       'Extrair e Filtrar': { anexo: p.anexo },
     });
     const audioSegundos = typeof saida.audio_segundos === 'number' ? saida.audio_segundos : null;

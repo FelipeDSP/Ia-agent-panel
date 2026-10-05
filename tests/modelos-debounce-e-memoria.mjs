@@ -28,8 +28,10 @@ import { CENARIOS, conferir, simularN8n } from './lib/debounce-modelo.mjs';
 import { JANELA_PARES, SILENCIO_MIN, memoriaCodigo, memoriaN8n } from './lib/memoria-modelo.mjs';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const W = JSON.parse(fs.readFileSync(path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
-const no = (n) => W.nodes.find((x) => x.name === n);
+// 05/10: a §1 comparava o modelo do debounce com os nós IF do workflow. A
+// pasta `n8n/` foi apagada e esse lado do par não existe mais — os cenários
+// (§2 em diante) continuam, porque é neles que o modelo é a especificação do
+// que o SERVIÇO faz (CLAUDE.md: "os modelos executáveis são a especificação").
 const md5 = (t) => crypto.createHash('md5').update(t, 'utf8').digest('hex').slice(0, 12);
 
 let ok = 0;
@@ -40,25 +42,7 @@ const chk = (nome, cond, det = '') => {
 };
 
 // ===========================================================================
-console.log('\n== 1. O modelo reproduz o que está no JSON ==\n');
-// ===========================================================================
-{
-  const um = no('Ultima Mensagem?').parameters.conditions;
-  const c = um.conditions.map((x) => `${x.leftValue} ${x.operator.operation} ${x.rightValue}`);
-  chk('Ultima Mensagem? compara COMPRIMENTO de antes e depois (não conteúdo)',
-    /lista_antes \|\| \[\]\)\.length \}\} equals .*lista_depois \|\| \[\]\)\.length/.test(c[0]), c[0]);
-  chk('  ...E exige depois.length > 0 (a guarda d2), combinador and',
-    /lista_depois \|\| \[\]\)\.length \}\} gt 0/.test(c[1]) && um.combinator === 'and', c[1]);
-  chk('Acumulo Sumiu? é depois.length == 0', /lista_depois \|\| \[\]\)\.length \}\} equals 0/.test(no('Acumulo Sumiu?').parameters.conditions.conditions.map((x) => `${x.leftValue} ${x.operator.operation} ${x.rightValue}`)[0]));
-  chk('Remove Lidos é LPOP (tail:false) e Acumula é RPUSH (tail:true)',
-    no('Remove Lidos do Acumulo').parameters.tail === false && no('Acumula Mensagem').parameters.tail === true);
-  chk('Volta a Um Item é Limit maxItems=1', no('Volta a Um Item').parameters.maxItems === 1);
-  chk('a memória é Redis Chat Memory com sessionTTL 2400 e contextWindowLength 20',
-    no('Redis Chat Memory').parameters.sessionTTL === SILENCIO_MIN * 60 && no('Redis Chat Memory').parameters.contextWindowLength === JANELA_PARES);
-}
-
-// ===========================================================================
-console.log('\n== 2. Cenários do debounce, no modelo n8n ==\n');
+console.log('\n== 2. Cenários do debounce ==\n');
 // ===========================================================================
 for (const cn of CENARIOS) {
   const saida = simularN8n(cn);

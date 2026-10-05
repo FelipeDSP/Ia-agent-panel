@@ -16,8 +16,8 @@
  * experimento atribuível a uma versão do prompt.
  */
 import crypto from 'node:crypto';
-import { secaoPrompt as secaoGerenciarPedido } from '../../../n8n/tool-pedido-acoes.mjs';
-import { secaoPrompt as secaoGerarLinkPagamento } from '../../../n8n/tool-pagamento-fonte.mjs';
+import { secaoPrompt as secaoGerenciarPedido } from '../../regras/tool-pedido-acoes.mjs';
+import { secaoPrompt as secaoGerarLinkPagamento } from '../../regras/tool-pagamento-fonte.mjs';
 
 export type Perfil = 'basico' | 'vendas';
 

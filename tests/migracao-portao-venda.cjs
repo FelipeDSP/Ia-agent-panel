@@ -272,68 +272,64 @@ const chk = (nome, cond, detalhe) => {
     // comparando errado. O que fecha e RODAR a string do no, verbatim, contra a
     // funcao que a migracao acabou de criar nesta transacao.
     {
-      const wf = JSON.parse(fs.readFileSync(
-        path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
-      const noEstado = wf.nodes.find((n) => n.name === 'Estado do Pedido');
-      chk('o no "Estado do Pedido" existe no workflow', Boolean(noEstado));
-
-      if (noEstado) {
-        const sql = noEstado.parameters.query;
-
-        // 1. roda VERBATIM, com os mesmos tres parametros que o no manda
-        let r;
-        try {
-          r = await c.query(sql, [tid, String(conv), 'vendas']);
-          chk('a query do no EXECUTA contra a funcao da migracao 56->61', true);
-        } catch (e) {
-          chk('a query do no EXECUTA contra a funcao da migracao 56->61', false,
-            `${e.code} ${e.message}`);
-        }
-
-        // 2. e devolve exatamente as colunas que o `aplica-portao.js` LE
-        if (r) {
-          const devolvidas = r.fields.map((f) => f.name);
-          const corpo = fs.readFileSync(path.join(RAIZ, 'n8n', 'aplica-portao.js'), 'utf8');
-          const lidas = [...new Set([...corpo.matchAll(/\bestado\.([a-z_]+)/g)].map((m) => m[1]))];
-
-          // lista vazia e erro, nao "nada a conferir" — foi assim que o injetor
-          // gravou um SELECT sem coluna nenhuma e a guarda dele aprovou
-          chk('a extracao achou leituras `estado.X` no portao', lidas.length > 0, `${lidas.length}`);
-
-          const faltando = lidas.filter((x) => !devolvidas.includes(x));
-          chk('toda coluna que o portao LE vem na query do no', faltando.length === 0,
-            faltando.length ? `faltam: ${faltando.join(', ')}` : '');
-
-          const sobrando = devolvidas.filter((x) => !lidas.includes(x));
-          chk('a query nao pede coluna que ninguem le', sobrando.length === 0,
-            sobrando.length ? `sobram: ${sobrando.join(', ')}` : '');
-        }
-      }
-    }
-
-    // ------------------------------------------------------------------
-    console.log('\n-- 9b. SABOTAGEM da query do no --');
-    // ------------------------------------------------------------------
-    // Reintroduz o nome proibido e exige que a execucao REPROVE com 42703. Sem
-    // isto, o bloco acima poderia estar passando por qualquer motivo.
-    {
-      const wf = JSON.parse(fs.readFileSync(
-        path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json'), 'utf8'));
-      const sql = wf.nodes.find((n) => n.name === 'Estado do Pedido').parameters.query;
-      const sabotado = sql.replace('tem_pedido', 'tem_rascunho');
-      chk('a sabotagem MUTOU a query (senao o resultado abaixo nao vale nada)',
-        sabotado !== sql, sabotado === sql ? 'a string nao mudou' : '');
-
-      await c.query('savepoint sp_sab');
-      let codigo = null;
+      // 05/10: o subject era a `query` do nó `Estado do Pedido`, que o serviço
+      // nunca executou — ele chama a FUNÇÃO. Com o n8n apagado, o par passou a
+      // ser o que sempre foi de verdade: o que `aplica-portao.js` LÊ de
+      // `estado.<campo>` × o que a função DEVOLVE.
+      //
+      // E o teste vale mais agora, não menos. Antes, ler um campo inexistente
+      // dava 42703 e derrubava o nó — barulhento. Hoje o campo simplesmente
+      // chega `undefined` ao portão, que decide com ele em silêncio: a regra
+      // some sem ninguém ver. Esta é a única guarda contra isso.
+      let r;
       try {
-        await c.query(sabotado, [tid, String(conv), 'vendas']);
+        r = await c.query('select * from public.api_n8n_estado_pedido($1, $2, $3)', [tid, String(conv), 'vendas']);
+        chk('api_n8n_estado_pedido EXECUTA (migracao 56->61)', true);
       } catch (e) {
-        codigo = e.code;
+        chk('api_n8n_estado_pedido EXECUTA (migracao 56->61)', false, `${e.code} ${e.message}`);
       }
-      await c.query('rollback to savepoint sp_sab');
-      chk('com `tem_rascunho` o Postgres responde 42703 (coluna inexistente)',
-        codigo === '42703', `codigo=${codigo}`);
+
+      if (r) {
+        const devolvidas = r.fields.map((f) => f.name);
+        // DOIS consumidores desde que o serviço virou o único runtime: o portão
+        // (`estado.<campo>`) e o turno, que narra o fato do pagamento ao modelo
+        // (`e.<campo>`). Ler só um deles acusaria como "sobrando" a coluna que o
+        // outro usa — foi o que aconteceu na primeira execução desta versão.
+        const corpo = fs.readFileSync(path.join(RAIZ, 'agente', 'regras', 'aplica-portao.js'), 'utf8');
+        const turno = fs.readFileSync(path.join(RAIZ, 'agente', 'src', 'turno', 'executar.ts'), 'utf8');
+        const iniNarrar = turno.indexOf('async function narrarVenda');
+        const trechoNarrarVenda = iniNarrar === -1 ? '' : turno.slice(iniNarrar, turno.indexOf('\n}', iniNarrar));
+        const lidas = [...new Set([
+          ...[...corpo.matchAll(/\bestado\.([a-z_]+)/g)].map((m) => m[1]),
+          // SÓ dentro de `narrarVenda`: solto, `e.` casa com o `e.message` dos
+          // catch do arquivo inteiro e a lista de leitores vira lixo (medido:
+          // entraram `name` e `message`, e a comparação acusou falta delas).
+          ...[...trechoNarrarVenda.matchAll(/\be\.([a-z_]+)/g)].map((m) => m[1]),
+        ])];
+        // DECLARADA, não ignorada: `pedido_id` é devolvido e ninguém lê. Não é
+        // defeito (coluna a mais não mente), mas fica escrito aqui para a
+        // próxima pessoa não gastar a tarde procurando o leitor que não existe.
+        const SEM_LEITOR = ['pedido_id'];
+
+        // lista vazia e erro, nao "nada a conferir" — foi assim que o injetor
+        // gravou um SELECT sem coluna nenhuma e a guarda dele aprovou
+        chk('a extracao achou leituras `estado.X` no portao', lidas.length > 0, `${lidas.length}`);
+        chk('a funcao devolveu colunas (lista vazia aprovaria qualquer leitura)', devolvidas.length > 0, `${devolvidas.length}`);
+
+        const faltando = lidas.filter((x) => !devolvidas.includes(x));
+        chk('toda coluna que o portao LE vem da funcao', faltando.length === 0,
+          faltando.length ? `faltam: ${faltando.join(', ')}` : '');
+
+        const sobrando = devolvidas.filter((x) => !lidas.includes(x) && !SEM_LEITOR.includes(x));
+        chk('a funcao nao devolve coluna sem leitor (fora das declaradas)', sobrando.length === 0,
+          sobrando.length ? `sobram: ${sobrando.join(', ')}` : '');
+
+        // SABOTAGEM: um nome que ninguem devolve tem de ser PEGO pela comparacao
+        // acima. Sem isto, "faltando esta vazio" poderia ser verdade por a lista
+        // de lidas estar errada.
+        chk('a comparacao discrimina: `tem_rascunho` (removido na 56) NAO esta entre as devolvidas',
+          !devolvidas.includes('tem_rascunho'), devolvidas.join(', '));
+      }
     }
 
     // ------------------------------------------------------------------

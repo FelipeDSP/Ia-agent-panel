@@ -14,8 +14,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const FONTE = path.join(RAIZ, 'n8n', 'aplica-portao.js');
-const WORKFLOW = path.join(RAIZ, 'n8n', 'workflows', 'agente-principal.json');
+const FONTE = path.join(RAIZ, 'agente', 'regras', 'aplica-portao.js');
+// 05/10: o `jsCode` do nó `Aplica Portao` era a outra metade deste par — um
+// script injetava o arquivo nele, e o teste conferia a identidade antes de
+// exercitar as regras. Com a pasta `n8n/` apagada, o arquivo é a ÚNICA fonte:
+// não há mais o que divergir, e as fixtures rodam direto nele.
 
 let ok = 0;
 let falhas = 0;
@@ -56,31 +59,16 @@ function rodar(fonte, { texto, estado }) {
 // Rodar so a identidade nao bastaria: com o injetor esquecido, a identidade
 // falha e nenhuma regra chega a ser exercitada.
 const FONTE_ARQUIVO = fs.readFileSync(FONTE, 'utf8');
-const FONTE_TXT = (() => {
-  const w = JSON.parse(fs.readFileSync(WORKFLOW, 'utf8'));
-  const no = w.nodes.find((n) => n.name === 'Aplica Portao');
-  if (!no) {
-    console.log('  FALHA no "Aplica Portao" ausente do workflow — nada a exercitar');
-    process.exit(1);
-  }
-  return no.parameters?.jsCode ?? '';
-})();
+const FONTE_TXT = FONTE_ARQUIVO;
 
-console.log('\n== 0. O no e o arquivo sao o mesmo codigo ==\n');
+console.log('\n== 0. O arquivo que SOBE le os campos certos ==\n');
 {
-  // Fim de linha normalizado nos dois lados: o repo oscila entre CRLF e LF
-  // (`core.autocrlf=true`, sem `.gitattributes`) e isso nao e deriva de logica.
-  const nl = (x) => x.replace(/\r\n/g, '\n');
-  chk('jsCode do no == n8n/aplica-portao.js',
-    nl(FONTE_ARQUIVO) === nl(FONTE_TXT),
-    `arquivo ${nl(FONTE_ARQUIVO).length} chars, no ${nl(FONTE_TXT).length}.`
-    + ' O injetor (scripts/aplicar-portao-venda.mjs) e o conserto, MAS SO DEPOIS'
-    + ' de o banco ter as colunas que o arquivo passou a ler: ele DERIVA a query'
-    + ' do no de `estado.<campo>`, e injetar campo que a producao ainda nao tem'
-    + ' da 42703 no CAMINHO UNICO — o agente para de responder para TODO tenant.'
-    + ' Confira as colunas em api_n8n_estado_pedido antes.'
-    + ' Ver docs/ENTREGA-PAGAMENTO-ASAAS-SANDBOX.md §10.');
-  // E o campo que a migracao 56 devolve, conferido no CODIGO QUE SOBE.
+  // A identidade arquivo↔nó saiu junto com o n8n. O que ela protegia de fato
+  // continua aqui: o par entre o que o código LÊ de `estado.<campo>` e o que
+  // `api_n8n_estado_pedido` DEVOLVE. Ler um campo que a função não tem dá
+  // 42703 no caminho único — o agente para de responder para todo tenant.
+  chk('o arquivo do portão foi lido e não está vazio (vazio aprovaria tudo)',
+    FONTE_TXT.length > 1000, String(FONTE_TXT.length));
   chk('o codigo que sobe le `tem_pedido` (o campo que a migracao 56 devolve)',
     /estado\.tem_pedido/.test(FONTE_TXT));
   chk('o codigo que sobe NAO le `estado.tem_rascunho` (removido na migracao 56)',

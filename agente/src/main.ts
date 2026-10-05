@@ -17,7 +17,7 @@ import { umCiclo } from './fila/worker.ts';
 import { alarmeAgenteMudo, varrerRetencao, encerrarLinksVencidos, aplicarRetencao, RETENCAO_PADRAO } from './manutencao.ts';
 import { cicloAprendizado } from './aprendizado/ciclo.ts';
 import { criarAsaas } from './pagamento/asaas.ts';
-import { ENCERRAMENTO } from '../../n8n/tool-pagamento-fonte.mjs';
+import { ENCERRAMENTO } from '../regras/tool-pagamento-fonte.mjs';
 import { log, erroTexto } from './log.ts';
 
 const cfg = lerConfig();
@@ -34,13 +34,13 @@ const alarme = process.env.ALARME_WAHA_SESSAO && process.env.ALARME_WAHA_DESTINO
 
 // Compila os corpos JS do n8n na subida: se faltarem, o processo não sobe —
 // melhor que descobrir no primeiro webhook.
-carregarExtrair(cfg.n8nJsDir);
+carregarExtrair(cfg.regrasDir);
 
 let ultimoCiclo = 0;
 let parando = false;
 
 const servidor = criarServidor({
-  db: pool, waha, n8nJsDir: cfg.n8nJsDir,
+  db: pool, waha, regrasDir: cfg.regrasDir,
   webhookToken: cfg.webhookToken, limpezaSecret: cfg.limpezaSecret, versaoCodigo: cfg.versaoCodigo, chatwoot,
   filaViva: () => Date.now() - ultimoCiclo < Math.max(cfg.intervaloFilaMs * 5, 15_000),
 });
@@ -50,7 +50,7 @@ async function lacoDaFila(): Promise<void> {
   while (!parando) {
     try {
       const r = await umCiclo({
-        db: pool, chatwoot, waha, modelo, embeddings, transcritor, n8nJsDir: cfg.n8nJsDir, versaoCodigo: cfg.versaoCodigo,
+        db: pool, chatwoot, waha, modelo, embeddings, transcritor, regrasDir: cfg.regrasDir, versaoCodigo: cfg.versaoCodigo,
         fotoSecret: cfg.fotoSecret, fetchFn: fetch, asaas, workerId: cfg.workerId, lote: cfg.loteFila, leaseMinutos: cfg.leaseMinutos,
       });
       if (r.reivindicadas > 0) log('info', 'fila.ciclo', { ...r });

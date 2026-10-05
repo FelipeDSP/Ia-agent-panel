@@ -40,7 +40,6 @@ import type { Asaas } from '../pagamento/asaas.ts';
 import type { Embeddings } from '../tools/contexto.ts';
 import { transcreverAnexo, type Anexo, type Transcritor } from '../midia/transcrever.ts';
 import { saidaLimpa } from './saida.ts';
-import { estimarComoN8n, desvioPct } from './estimativa.ts';
 import { aplicarPortao } from './portao.ts';
 import { digitosDe, lerOferta, secaoOferta } from '../pedido/oferta.ts';
 import type { ConfigTool, FotoPendente } from '../tools/contexto.ts';
@@ -75,7 +74,7 @@ export interface Deps {
   agora?: () => Date;
   db: Db; chatwoot: Chatwoot; waha: Waha | null; modelo: Modelo;
   embeddings: Embeddings | null; transcritor: Transcritor | null;
-  n8nJsDir: string; versaoCodigo: string; fotoSecret: string | null; fetchFn: typeof fetch;
+  regrasDir: string; versaoCodigo: string; fotoSecret: string | null; fetchFn: typeof fetch;
   /** Pagamento por link; `null` = a tool não entra mesmo contratada. */
   asaas: Asaas | null;
 }
@@ -237,7 +236,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       if (m.acao === 'processar' && m.mensagem) textos.push(m.mensagem);
       if (m.acao === 'midia' && m.anexo) {
         const t = await turno.medir('tool', 'transcrever', { file_type: m.anexo.file_type, file_size: m.anexo.file_size },
-          () => transcreverAnexo({ db, n8nJsDir: deps.n8nJsDir, tenantId: tenant.tenant_id, conversationId, anexo: m.anexo!, transcritor: deps.transcritor, fetchFn: deps.fetchFn, msgMidiaNaoSuportada: tenant.msg_midia_nao_suportada }),
+          () => transcreverAnexo({ db, regrasDir: deps.regrasDir, tenantId: tenant.tenant_id, conversationId, anexo: m.anexo!, transcritor: deps.transcritor, fetchFn: deps.fetchFn, msgMidiaNaoSuportada: tenant.msg_midia_nao_suportada }),
           // O trace guarda POR QUE não transcreveu: em 16/09 um áudio real levou 65 s e
           // saiu só `{ status: 'falhou' }` — sem o erro, não havia como saber se foi o
           // download, o whisper ou o filtro.
@@ -304,7 +303,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     if (estadoDoSistema) await turno.passo('registro', 'estado_do_sistema', { saida: { texto: estadoDoSistema } });
 
     // ---- o modelo ----
-    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, n8nJsDir: deps.n8nJsDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas, aceitaLink: oferta?.pagamentos.includes('link') ?? true, ...(deps.agora ? { agora: deps.agora } : {}), fotoPendente: null as FotoPendente | null };
+    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, regrasDir: deps.regrasDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas, aceitaLink: oferta?.pagamentos.includes('link') ?? true, ...(deps.agora ? { agora: deps.agora } : {}), fotoPendente: null as FotoPendente | null };
     const ferramentas = ferramentasDoPerfil(ctx, perfil, toolsAtivas);
     const r = await deps.modelo.responder({
       modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto, estadoDoSistema,
@@ -312,16 +311,6 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
       aoChamarModelo: (c) => turno.passo('modelo', `openai#${c.iteracao}`, { saida: { texto: c.texto, tool_calls: c.toolCalls, usage: c.uso }, duracaoMs: c.latenciaMs }),
       aoChamarTool: (c) => turno.passo('tool', c.nome, { entrada: c.args, saida: { texto: c.resultado, ...(c.diagnostico === undefined ? {} : { diagnostico: c.diagnostico }) }, erro: c.erro, duracaoMs: c.latenciaMs }),
     });
-
-    // ---- a estimativa do n8n ao lado do real (§5.8) — vai para o trace, não para o log ----
-    const estimativa = estimarComoN8n({
-      perfil, chamadas: r.chamadas.length, wrapper: prompt.texto.slice(0, prompt.texto.length - (tenant.system_prompt ?? '').length),
-      systemPrompt: tenant.system_prompt ?? '', mensagens: textoEntrada, historicoChars: Number(sync?.historico_chars) || 0, textoSaida: r.texto,
-    });
-    await turno.passo('registro', 'estimativa_n8n', { saida: {
-      estimado: estimativa, real: { entrada: r.uso.entrada, saida: r.uso.saida, chamadas: r.chamadas.length },
-      desvio_entrada_pct: desvioPct(estimativa.entrada, r.uso.entrada), desvio_saida_pct: desvioPct(estimativa.saida, r.uso.saida),
-    } });
 
     // ---- filtro de saída + componentes (rateio proporcional do total REAL) ----
     const limpa = saidaLimpa(r.texto);
@@ -348,7 +337,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
 
     // ---- o portão (o MESMO aplica-portao.js) ----
     const portao = await turno.medir('portao', 'aplica-portao.js', { chars: limpa.texto.length, perfil },
-      () => aplicarPortao({ db, n8nJsDir: deps.n8nJsDir, tenantId: tenant.tenant_id, conversationId, perfil, textoModelo: limpa.texto, componentes }),
+      () => aplicarPortao({ db, regrasDir: deps.regrasDir, tenantId: tenant.tenant_id, conversationId, perfil, textoModelo: limpa.texto, componentes }),
       (s) => ({ veredito: s.veredito, transferir: s.transferir, bruto: s.portao.bruto ?? null }));
 
     // ---- duas barradas seguidas: transfere DE VERDADE ----

@@ -197,7 +197,7 @@ try {
       conversation: { id: conv, inbox_id: 7802, meta: { sender: { name: 'Cliente', phone_number: '+5569900000000' } } },
       account: { id: 7801 }, inbox: { id: 7802 },
     });
-    const depsReceber = { db, waha: null, n8nJsDir: path.join(RAIZ, 'n8n') };
+    const depsReceber = { db, waha: null, regrasDir: path.join(RAIZ, 'agente', 'regras') };
 
     const r = await receber(depsReceber, 7802, webhook(807, 'vocês abrem no sábado?', 70001));
     chk('agente desligado + aprendizado LIGADO: a fala do cliente é ESCUTADA (gravada), não enfileirada',

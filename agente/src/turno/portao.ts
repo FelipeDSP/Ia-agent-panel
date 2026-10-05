@@ -9,7 +9,7 @@
  * sem a lista derivada que o injetor precisava manter no n8n.
  */
 import { fnUma, type Db } from '../db.ts';
-import { corpoN8n, rodarN8n } from '../n8n-js.ts';
+import { corpoRegra, rodarRegra } from '../regras-js.ts';
 
 export interface SaidaPortao {
   output: string;
@@ -21,12 +21,12 @@ export interface SaidaPortao {
 }
 
 export async function aplicarPortao(p: {
-  db: Db; n8nJsDir: string; tenantId: string; conversationId: number; perfil: string;
+  db: Db; regrasDir: string; tenantId: string; conversationId: number; perfil: string;
   textoModelo: string; componentes: Record<string, unknown>;
 }): Promise<SaidaPortao> {
   const estado = await fnUma<Record<string, unknown>>(p.db, 'api_n8n_estado_pedido', [p.tenantId, p.conversationId, p.perfil]);
   if (!estado) throw new Error('api_n8n_estado_pedido devolveu vazio');
-  const saida = rodarN8n(corpoN8n(p.n8nJsDir, 'aplica-portao.js'), { json: estado }, {
+  const saida = rodarRegra(corpoRegra(p.regrasDir, 'aplica-portao.js'), { json: estado }, {
     'Estima Tokens': { output: p.textoModelo, componentes_json: JSON.stringify(p.componentes) },
   });
   let componentes: Record<string, unknown> = {};

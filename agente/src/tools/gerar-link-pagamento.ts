@@ -15,11 +15,11 @@
  * um link".
  */
 import { fnUma, fnValor } from '../db.ts';
-import { corpoN8n, rodarN8n } from '../n8n-js.ts';
+import { corpoRegra, rodarRegra } from '../regras-js.ts';
 import type { FerramentaDoModelo } from '../agente/modelo.ts';
 import type { ContextoTool } from './contexto.ts';
 import type { Asaas } from '../pagamento/asaas.ts';
-import { DUE_DATE_LIMIT_DAYS, descricaoFerramenta } from '../../../n8n/tool-pagamento-fonte.mjs';
+import { DUE_DATE_LIMIT_DAYS, descricaoFerramenta } from '../../regras/tool-pagamento-fonte.mjs';
 
 export const NOME_FERRAMENTA = 'gerar_link_pagamento';
 
@@ -62,8 +62,8 @@ export function corpoDoLink(r: Reserva, formas?: string[]): Record<string, unkno
 }
 
 export async function gerarLinkPagamento(ctx: ContextoTool, asaas: Asaas): Promise<ResultadoLink> {
-  const corpo = corpoN8n(ctx.n8nJsDir, 'tool-pagamento-resposta.js');
-  const montar = (entrada: Record<string, unknown>) => String(rodarN8n(corpo, { json: entrada }).resultado ?? '');
+  const corpo = corpoRegra(ctx.regrasDir, 'tool-pagamento-resposta.js');
+  const montar = (entrada: Record<string, unknown>) => String(rodarRegra(corpo, { json: entrada }).resultado ?? '');
 
   const reserva = await fnUma<Reserva>(ctx.db, 'api_n8n_gerar_cobranca', [ctx.tenant.tenant_id, ctx.conversationId]);
   if (!reserva) return { texto: montar({ reserva: { ok: false, motivo: 'sem_resposta' } }), diagnostico: { motivo: 'sem_resposta' } };

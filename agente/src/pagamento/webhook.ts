@@ -21,11 +21,11 @@
 import { fnUma, fnValor, type Db } from '../db.ts';
 import { avisarDono } from '../pedido/aviso.ts';
 import type { Waha } from '../waha/notificar.ts';
-import { corpoN8n, rodarN8n } from '../n8n-js.ts';
+import { corpoRegra, rodarRegra } from '../regras-js.ts';
 import type { Chatwoot } from '../chatwoot/enviar.ts';
 import { log, erroTexto } from '../log.ts';
 
-export interface DepsWebhook { db: Db; chatwoot: Chatwoot; n8nJsDir: string; waha?: Waha | null }
+export interface DepsWebhook { db: Db; chatwoot: Chatwoot; regrasDir: string; waha?: Waha | null }
 
 export interface EstadoWebhook { reconhecido: boolean; ja_processado: boolean; aplicou: boolean; motivo: string | null }
 
@@ -45,7 +45,7 @@ export const NOTA_FORA_DO_PRAZO = (numero: number | null, centavos: number | nul
  * antes e os testes esperarem depois.
  */
 export async function receberWebhookAsaas(deps: DepsWebhook, headers: Record<string, string | string[] | undefined>, body: unknown): Promise<{ estado: EstadoWebhook; pos: Promise<void> }> {
-  const extraido = rodarN8n(corpoN8n(deps.n8nJsDir, 'webhook-pagamento-extrai.js'), { json: { headers, body: (body ?? {}) as Record<string, unknown> } }) as {
+  const extraido = rodarRegra(corpoRegra(deps.regrasDir, 'webhook-pagamento-extrai.js'), { json: { headers, body: (body ?? {}) as Record<string, unknown> } }) as {
     webhook_token: string; evento_id: string; evento: string; pagamento_id: string | null; link_id: string | null; referencia: string | null; valor_centavos: number | null;
   };
 

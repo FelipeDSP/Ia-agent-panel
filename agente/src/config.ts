@@ -2,6 +2,7 @@
  * Configuração do agente — tudo vem do ambiente do container (Coolify).
  * Nada de segredo em código nem em tabela (DESENHO §1).
  */
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,7 +30,8 @@ export interface Config {
    */
   modeloAprendizado: string;
   /** Pasta com os corpos JS do n8n que continuam sendo fonte (extrair, filtro). */
-  n8nJsDir: string;
+  /** Onde moram as regras `.js` que o serviço executa (ex-`n8n/`, desde 05/10 `agente/regras`). */
+  regrasDir: string;
   waha: { url: string; apiKey: string } | null;
   /** Token de USUÁRIO admin da agência no Chatwoot (uma credencial, todas as contas): abre a conversa do aviso ao dono. Opcional. */
   chatwootAgenciaToken: string | null;
@@ -87,7 +89,13 @@ export function lerConfig(env: NodeJS.ProcessEnv = process.env): Config {
     supabaseUrl: env.SUPABASE_URL?.trim() || null,
     ingestaoSecret: env.INGESTAO_SECRET?.trim() || null,
     modeloAprendizado: env.MODELO_APRENDIZADO?.trim() || 'gpt-4.1-mini',
-    n8nJsDir: env.N8N_JS_DIR?.trim() || path.resolve(AQUI, '..', '..', 'n8n'),
+    // 05/10: a pasta `n8n/` foi apagada e os arquivos que o serviço EXECUTA
+    // (portão, extrator do webhook, consolidação da busca) passaram para
+    // `agente/regras`. `REGRAS_DIR` manda; `N8N_JS_DIR` continua lido para o
+    // deploy que ainda a tiver no Coolify, e QUALQUER um dos dois só vale se o
+    // diretório existir de fato — apontar para `/app/n8n`, que não existe mais,
+    // derrubaria o portão em produção no primeiro turno.
+    regrasDir: primeiroDirValido([env.REGRAS_DIR?.trim(), env.N8N_JS_DIR?.trim(), path.resolve(AQUI, '..', 'regras')]),
     waha: wahaUrl && wahaKey ? { url: wahaUrl.replace(/\/+$/, ''), apiKey: wahaKey } : null,
     chatwootAgenciaToken: env.CHATWOOT_AGENCIA_TOKEN?.trim() || null,
     loteFila: inteiro('FILA_LOTE', 10),
@@ -107,4 +115,22 @@ export function lerConfig(env: NodeJS.ProcessEnv = process.env): Config {
       conversasDias: inteiro('RETENCAO_CONVERSAS_DIAS', 180),
     },
   };
+}
+
+/**
+ * O primeiro diretório da lista que EXISTE e tem as regras dentro.
+ *
+ * Não basta "a variável está definida": em 05/10 a pasta `n8n/` foi apagada e
+ * `N8N_JS_DIR=/app/n8n` pode ter sobrado no Coolify. Aceitar o caminho sem
+ * conferir deixaria o serviço subir e quebrar no primeiro turno, dentro do
+ * portão — o lugar mais caro possível. Conferir custa um `statSync`.
+ */
+function primeiroDirValido(candidatos: (string | undefined)[]): string {
+  const marca = 'aplica-portao.js';
+  for (const dir of candidatos) {
+    if (!dir) continue;
+    try { if (fs.statSync(path.join(dir, marca)).isFile()) return dir; } catch { /* próximo */ }
+  }
+  const ultimo = candidatos.filter(Boolean).at(-1);
+  throw new Error(`regras do agente não encontradas (${marca}) em: ${candidatos.filter(Boolean).join(', ') || '(nenhum caminho)'}${ultimo ? '' : ''}`);
 }

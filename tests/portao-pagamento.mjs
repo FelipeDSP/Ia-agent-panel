@@ -38,7 +38,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const FONTE = fs.readFileSync(path.join(RAIZ, 'n8n', 'aplica-portao.js'), 'utf8');
+const FONTE = fs.readFileSync(path.join(RAIZ, 'agente', 'regras', 'aplica-portao.js'), 'utf8');
 
 let ok = 0;
 let falhas = 0;

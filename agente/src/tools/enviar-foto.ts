@@ -13,7 +13,7 @@
  * que vai ao cliente. O `.js` de resposta continua sendo usado nas recusas.
  */
 import { fnUma } from '../db.ts';
-import { corpoN8n, rodarN8n } from '../n8n-js.ts';
+import { corpoRegra, rodarRegra } from '../regras-js.ts';
 import type { FerramentaDoModelo } from '../agente/modelo.ts';
 import type { ContextoTool, FotoPendente } from './contexto.ts';
 
@@ -45,7 +45,7 @@ export async function enviarFotoComLegenda(ctx: ContextoTool, foto: FotoPendente
 
 export async function enviarFoto(ctx: ContextoTool, produtoId: string, funcaoUrl = FOTO_FUNCAO_URL_PADRAO): Promise<string> {
   if (ctx.fotoPendente) return 'Ja ha uma foto preparada para esta resposta. Uma foto por vez: escreva a legenda e siga; se o cliente quiser outra, espere ele pedir.';
-  const respostaAoAgente = (v: Record<string, unknown>) => String(rodarN8n(corpoN8n(ctx.n8nJsDir, 'enviar-foto-resposta.js'), { json: v }).resultado ?? '');
+  const respostaAoAgente = (v: Record<string, unknown>) => String(rodarRegra(corpoRegra(ctx.regrasDir, 'enviar-foto-resposta.js'), { json: v }).resultado ?? '');
 
   let p: PodeEnviar | undefined;
   try {

@@ -8,7 +8,7 @@
  * principal, verbatim — é o que o modelo lê hoje.
  */
 import type { Db } from '../db.ts';
-import { corpoN8n, rodarN8n } from '../n8n-js.ts';
+import { corpoRegra, rodarRegra } from '../regras-js.ts';
 import type { FerramentaDoModelo } from '../agente/modelo.ts';
 import type { ContextoTool } from './contexto.ts';
 
@@ -23,7 +23,7 @@ export async function buscarConhecimento(ctx: ContextoTool, pergunta: string): P
   if (!Array.isArray(vetor) || vetor.length !== 1536) throw new Error(`Embedding invalido: esperado array de 1536, recebido ${vetor?.length ?? typeof vetor}`);
   const literal = '[' + vetor.join(',') + ']';
   const trechos = await buscarTrechos(ctx.db, ctx.tenant.tenant_id, literal);
-  const saida = rodarN8n(corpoN8n(ctx.n8nJsDir, 'busca-kb-consolida.js'), trechos.map((t) => ({ json: t as unknown as Record<string, unknown> })));
+  const saida = rodarRegra(corpoRegra(ctx.regrasDir, 'busca-kb-consolida.js'), trechos.map((t) => ({ json: t as unknown as Record<string, unknown> })));
   return String(saida.resposta ?? '');
 }
 

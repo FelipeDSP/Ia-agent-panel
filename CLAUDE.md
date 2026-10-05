@@ -33,14 +33,15 @@ Coolify do painel: `N8N_LIMPEZA_URL`, `N8N_LIMPEZA_SECRET`, `N8N_WEBHOOK_BASE`).
 **Nunca proponha mexer em workflow do n8n. Toda funcionalidade nova é no
 código.**
 
-O que ainda cita n8n neste repositório, e por quê:
+**A pasta `n8n/` NÃO EXISTE MAIS (05/10/2026).** Os workflows, o gerador e os
+scripts de import/diff foram apagados. Os arquivos que o serviço EXECUTA — o
+portão (`aplica-portao.js`), a extração do webhook, a consolidação da busca, as
+respostas das tools e os `.mjs` de tool — moram em **`agente/regras/`**, são
+carregados por `agente/src/regras-js.ts` e o Dockerfile os copia (`REGRAS_DIR`;
+`config.ts` confere se o diretório tem mesmo as regras antes de aceitá-lo, para
+um `N8N_JS_DIR` esquecido no Coolify não derrubar o portão).
 
-- `n8n/workflows/*.json` e `n8n/*.js` — descrição do comportamento que o
-  código igualou; `extrair-e-filtrar.js`, `filtro-texto.js`, `aplica-portao.js`,
-  `tool-pagamento-resposta.js`, `webhook-pagamento-extrai.js` e os `.mjs` de
-  tool são **executados pelo próprio serviço** (fonte única). Quando um `.js`
-  muda, `scripts/aplicar-portao-venda.mjs` re-injeta o JSON do repo — só para
-  o repositório ficar coerente; o JSON não é importado em lugar nenhum;
+O que ainda cita n8n neste repositório, e por quê:
 - as funções `api_n8n_*` e o role `n8n_agent` — nomes históricos. O serviço
   conecta como `agente_codigo` (membro de `n8n_agent`) e só fala com o banco por
   `api_n8n_*` e `api_agente_*` (`teste:grants-n8n` varre as duas). Nunca a URL
