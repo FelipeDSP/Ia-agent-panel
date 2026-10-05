@@ -95,8 +95,8 @@ Regras do serviço que não se "consertam":
   são a especificação;
 - os comportamentos que mudam de propósito estão nomeados nos testes como
   `divergencia_esperada`. Não os "corrija" para parecer o n8n;
-- o portão de saída (`n8n/aplica-portao.js`, o mesmo arquivo) é a defesa
-  contra fabricação; migrar para código não o substituiu.
+- o portão de saída (`agente/regras/aplica-portao.js`, o mesmo arquivo desde
+  o n8n) é a defesa contra fabricação; migrar para código não o substituiu.
 
 ## Contexto crítico
 
@@ -216,7 +216,7 @@ perde trabalho de cadastro que ninguém consegue devolver.
   O erro não foi de execução: a varredura estava certa e o **escopo** estava
   errado. Teste é consumidor do schema como o n8n é — só que não reclama quando
   a coluna some, porque o cliente PostgREST devolve erro em vez de lançar. Então:
-  `grep -rn "<coluna>" tests/ src/ supabase/ n8n/` antes de dropar, e confira
+  `grep -rn "<coluna>" tests/ src/ supabase/ agente/` antes de dropar, e confira
   cada resultado, não só os de código de produção.
 - **O nome do arquivo tem que bater com a versão em
   `supabase_migrations.schema_migrations`.** Até 2026-08-05 nenhum batia: as
@@ -330,8 +330,8 @@ perde trabalho de cadastro que ninguém consegue devolver.
      where p.prosrc ilike '%<nome_da_funcao_da_extensao>%';
     ```
 
-    É a mesma disciplina do `grep -rn "<coluna>" tests/ src/ supabase/ n8n/` antes
-    de dropar coluna: a varredura tem de alcançar onde a referência de fato mora.
+    É a mesma disciplina do `grep -rn "<coluna>" tests/ src/ supabase/ agente/`
+    antes de dropar coluna: a varredura tem de alcançar onde a referência de fato mora.
 
 - **`DROP FUNCTION` APAGA TODOS OS GRANTS. Recriar restaura só o que o script
   listar.** É a quinta armadilha da mesma família (28, 32, 37, 40, 41) e a
@@ -457,8 +457,11 @@ trocar o tamanho do chunk sem medir: quebra calado.
 
 ## (HISTÓRICO) O gerador do workflow do n8n
 
-> Vale como registro de por que os arquivos em `n8n/` são como são. Não há
-> trabalho novo aqui: o n8n está congelado (ver ESTADO ATUAL).
+> **Os arquivos desta seção foram APAGADOS em 05/10/2026** (`scripts/gerar-*`,
+> `n8n/workflows/*`). Ela fica porque explica por que os arquivos que
+> SOBREVIVERAM, em `agente/regras/`, têm a forma que têm — e porque a lição
+> sobre sabotagem que não muta nada vale para qualquer gerador. Não há trabalho
+> novo aqui.
 
 `scripts/gerar-principal.mjs` **não gera do zero — ele lê o próprio arquivo de
 saída e o muta**:
