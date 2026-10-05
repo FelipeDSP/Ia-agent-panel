@@ -62,7 +62,7 @@ O que ainda cita n8n neste repositório, e por quê:
 Chatwoot é o único passo. Cliente novo nasce em `codigo` (explícito no insert
 do painel e default da coluna pela 75).
 
-Migrações aplicadas até aqui: **62–78** (fila/trace/runtime, prompt no turno,
+Migrações aplicadas até aqui: **62–79** (fila/trace/runtime, prompt no turno,
 encerramento do link Asaas, conversa resolvida reabre, config por tenant,
 retenção de dados, tokens em cache, vendas por modalidade, aviso pelo
 Chatwoot, pagamento confirmado com fim, nome de quem retira, guard de
@@ -76,7 +76,14 @@ o botão (`tenants.aprendizado_auto`, nasce desligado). A LLM lê o diálogo e
 julga; o código verifica (`agente/src/aprendizado/filtro.ts`: dado pessoal,
 caso particular, e a ÂNCORA — todo número da resposta tem de existir no
 diálogo). Com o agente DESLIGADO e o botão ligado o serviço só ESCUTA: grava a
-conversa e não responde, para o agente chegar sabendo quando for ligado. Pagamento por link (Asaas) funciona no sandbox;
+conversa e não responde, para o agente chegar sabendo quando for ligado. A
+**79** (05/10) conserta o portão: a mensagem de endereço que a 72 manda ao
+fechar era registrada em `mensagens_log` no MEIO do turno e virava a borda da
+janela, deixando o pedido recém-fechado FORA dela — o portão barrava a
+confirmação da venda e o cliente lia "ainda não tenho nenhum item anotado"
+(conversa 39 do Empório, 02/10). A borda passou a ignorar escrita de tool no
+meio do turno, e `teste:portao-fechamento` deriva essa lista de
+`agente/src/tools`. Pagamento por link (Asaas) funciona no sandbox;
 BaaS/subcontas depende da conta PJ da estud.you (não é código).
 
 Regras do serviço que não se "consertam":
