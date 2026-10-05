@@ -211,9 +211,33 @@ try {
     await receber(depsReceber, 7802, webhook(807, 'vocês abrem no sábado?', 70001));
     chk('reentrega do mesmo webhook não duplica a fala', (await um(`select count(*)::int n from public.mensagens_log where tenant_id=$1 and conversation_id=807 and direcao='entrada'`, [T.a])).n === 1);
 
-    // o atendente responde (esse caminho nunca olhou agente_ativo)
-    await c.query(`select public.api_n8n_registrar_mensagem($1, 807, 'saida', $2, 0, 0, null, null, 'humano-807', $3::jsonb)`,
-      [T.a, 'Sim, abrimos aos sabados das 8h as 12h, e o atendimento presencial e na secretaria.', JSON.stringify({ fonte: 'humano', chamadas: 0 })]);
+    // O ATENDENTE RESPONDE — e isto entra pelo WEBHOOK, não por SQL.
+    //
+    // 05/10: até aqui o teste inseria a fala do atendente com `insert` direto,
+    // e por isso media só METADE do par. A pergunta que decide se o modo escuta
+    // serve para alguma coisa é a outra metade: com `agente_ativo = false`, o
+    // webhook de saída do atendente ainda é registrado? Se não fosse, a escuta
+    // guardaria perguntas sem nenhuma resposta e o ciclo não teria o que
+    // aprender — e o teste continuaria verde, porque o SQL punha a resposta lá
+    // de qualquer jeito. É o defeito "asserção verdadeira sobre metade de um
+    // par" do CLAUDE.md, na forma mais cara: o arranjo escondendo o sujeito.
+    //
+    // O que torna isso possível é a ORDEM em `receber`: o ramo `humano` vem
+    // ANTES de `resolverTenant`, e `humanoAssumiu` resolve o tenant por
+    // `api_n8n_tenant_por_chatwoot`, que não olha `agente_ativo`. Ler o código
+    // sugere isso; só executar prova.
+    const RESPOSTA_DO_ATENDENTE = 'Sim, abrimos aos sabados das 8h as 12h, e o atendimento presencial e na secretaria.';
+    const rh = await receber(depsReceber, 7802, {
+      event: 'message_created', message_type: 'outgoing', private: false, id: 70011,
+      content: RESPOSTA_DO_ATENDENTE, sender: { type: 'user' },
+      conversation: { id: 807, inbox_id: 7802, meta: { sender: { name: 'Cliente' } } },
+      account: { id: 7801 }, inbox: { id: 7802 },
+    });
+    chk('AGENTE DESLIGADO: o webhook do atendente ainda é roteado como `humano` e pausa',
+      rh.evento === 'humano' && rh.resultado === 'pausou', JSON.stringify(rh));
+    const falaH = await um(`select conteudo, direcao, fonte_tokens from public.mensagens_log where tenant_id=$1 and conversation_id=807 and direcao='saida'`, [T.a]);
+    chk('...e a RESPOSTA do atendente foi gravada pelo caminho real — sem ela a escuta guardaria pergunta sem resposta',
+      falaH?.fonte_tokens === 'humano' && falaH?.conteudo === RESPOSTA_DO_ATENDENTE, JSON.stringify(falaH));
     await c.query(`update public.mensagens_log set criado_em = now() - interval '1 hour' - interval '2 minutes' where tenant_id = $1 and conversation_id = 807 and direcao = 'entrada'`, [T.a]);
     await c.query(`update public.mensagens_log set criado_em = now() - interval '1 hour' where tenant_id = $1 and conversation_id = 807 and direcao = 'saida'`, [T.a]);
 
