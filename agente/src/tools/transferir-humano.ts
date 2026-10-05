@@ -132,9 +132,13 @@ export function ferramentaTransferirHumano(ctx: ContextoTool): FerramentaDoModel
       type: 'object',
       properties: {
         resumo: { type: 'string', description: 'Resumo claro do que foi conversado, para o atendente que vai assumir.' },
-        time: { type: 'string', description: 'Opcional: nome do time de atendimento que deve receber a conversa, exatamente como listado no prompt. Omita se não houver times ou se não tiver certeza.' },
+        // `strict: true` exige TODA propriedade em `required` (ver FerramentaDoModelo).
+        // Opcional é `['string','null']` + presente em `required`, como nas outras
+        // tools. Entrou em 21/09 fora dessa forma e a OpenAI passou a recusar o
+        // turno INTEIRO com 400 em 05/10 — `escolherTime(…, null)` já trata null.
+        time: { type: ['string', 'null'], description: 'Nome do time de atendimento que deve receber a conversa, exatamente como listado no prompt. null se não houver times ou se não tiver certeza.' },
       },
-      required: ['resumo'],
+      required: ['resumo', 'time'],
       additionalProperties: false,
     },
     executar: async (args) => {
