@@ -133,6 +133,7 @@
     "teste:chamadas-atendente": "node --import ./tests/lib/ts.mjs --env-file=.env.local tests/chamadas-atendente.mjs",
     "teste:aprendizado-filtro": "node --import ./tests/lib/ts.mjs tests/aprendizado-filtro.mjs",
     "teste:aprendizado-ciclo": "node --import ./tests/lib/ts.mjs --env-file=.env.local tests/aprendizado-ciclo.mjs",
+    "teste:relogio-do-agente": "node --import ./tests/lib/ts.mjs tests/relogio-do-agente.mjs",
     "teste:horario-agente": "node --import ./tests/lib/ts.mjs tests/horario-agente.mjs",
     "teste:avisos-painel": "node --import ./tests/lib/ts.mjs tests/avisos-painel.mjs"
   },

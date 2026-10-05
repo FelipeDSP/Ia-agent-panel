@@ -32,6 +32,7 @@ import { montarSystemMessage, versaoDasPartes } from '../agente/prompt.ts';
 import type { Modelo, MensagemHistorico } from '../agente/modelo.ts';
 import { ferramentasDoPerfil, temPagamento } from '../tools/index.ts';
 import { lerTimes, secaoTimes, transferirHumano } from '../tools/transferir-humano.ts';
+import { narrarAgora } from './agora.ts';
 import { enviarFotoComLegenda } from '../tools/enviar-foto.ts';
 import { linhaDoPromptFechado, situacao, textoDoAviso } from '../tenant/horario.ts';
 import { lerHorarioDoAgente } from '../tenant/horario-db.ts';
@@ -110,7 +111,24 @@ export async function lerConfigDoAgente(db: Db, tenantId: string): Promise<Confi
  * cliente). Hoje: o pagamento confirmado pelo webhook. Devolve `null` quando não
  * há nada a narrar — o item não vai ao modelo e o turno fica igual ao de antes.
  */
-export async function narrarEstadoDoSistema(db: Db, tenantId: string, conversationId: number, perfil: string): Promise<string | null> {
+/**
+ * O relógio + o que mais o código souber. Ver `agora.ts` para a conversa 48 do
+ * Empório, que é a razão de o relógio estar aqui.
+ *
+ * O relógio vale para TODO perfil: "abre hoje?" é pergunta de quem só tem
+ * `busca_conhecimento` tanto quanto de quem vende.
+ */
+export async function narrarEstadoDoSistema(
+  db: Db, tenantId: string, conversationId: number, perfil: string,
+  p: { agora?: Date; timezone?: string | null } = {},
+): Promise<string | null> {
+  const partes: string[] = [narrarAgora(p.agora ?? new Date(), p.timezone ?? null)];
+  const venda = await narrarVenda(db, tenantId, conversationId, perfil);
+  if (venda) partes.push(venda);
+  return partes.join('\n\n');
+}
+
+async function narrarVenda(db: Db, tenantId: string, conversationId: number, perfil: string): Promise<string | null> {
   if (perfil !== 'vendas') return null;
   const e = await fnUma<{ pagamento_confirmado: boolean | null; pedido_numero: number | null; pedido_status: string | null }>(db, 'api_n8n_estado_pedido', [tenantId, conversationId, perfil]);
   if (e?.pagamento_confirmado !== true) return null;
@@ -277,7 +295,12 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     // assistente. O banco sabe (`pagamento_confirmado`, o mesmo que o portão lê);
     // então o código NARRA, como item de sistema deste turno. O que o código
     // narra o modelo não precisa deduzir.
-    const estadoDoSistema = await narrarEstadoDoSistema(db, tenant.tenant_id, conversationId, perfil);
+    // O fuso é o que o cliente configurou no horário de atendimento (74); sem
+    // horário, o padrão. Lido aqui porque `horarioAgente` já veio do banco.
+    const estadoDoSistema = await narrarEstadoDoSistema(db, tenant.tenant_id, conversationId, perfil, {
+      ...(deps.agora ? { agora: deps.agora() } : {}),
+      timezone: (horario as { timezone?: string | null } | null)?.timezone ?? null,
+    });
     if (estadoDoSistema) await turno.passo('registro', 'estado_do_sistema', { saida: { texto: estadoDoSistema } });
 
     // ---- o modelo ----

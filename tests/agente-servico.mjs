@@ -317,7 +317,7 @@ try {
       l1.length === 2 && l1[1].tokens_entrada === 100 && l1[1].tokens_saida === 20 && l1[1].fonte_tokens === 'openai_usage' && l1[1].chamadas === 1 && l1[1].portao?.veredito === 'passou' && l1.every((x) => x.execucao_id === t1.id), JSON.stringify(l1.map((x) => ({ d: x.direcao, te: x.tokens_entrada, f: x.fonte_tokens, v: x.portao?.veredito }))));
     const p1 = (await passosDe(t1.id)).map((p) => `${p.tipo}:${p.nome}`);
     chk('trace: entrada, sync, portão de entrada, tools ativas, memória, prompt, openai#1, estimativa_n8n, aplica-portao, envio, registro',
-      p1.join(' > ') === 'entrada:mensagens > registro:api_n8n_conversa_sync > portao:api_n8n_portao_mensagem > registro:api_n8n_tools_ativas > memoria:api_agente_memoria > entrada:prompt > modelo:openai#1 > registro:estimativa_n8n > portao:aplica-portao.js > envio:chatwoot.messages > registro:api_n8n_registrar_mensagem', p1.join(' > '));
+      p1.join(' > ') === 'entrada:mensagens > registro:api_n8n_conversa_sync > portao:api_n8n_portao_mensagem > registro:api_n8n_tools_ativas > memoria:api_agente_memoria > entrada:prompt > registro:estado_do_sistema > modelo:openai#1 > registro:estimativa_n8n > portao:aplica-portao.js > envio:chatwoot.messages > registro:api_n8n_registrar_mensagem', p1.join(' > '));
 
     // 5b. segundo turno na mesma conversa: a MEMÓRIA chega ao modelo, e uma tool executa no banco.
     roteiro.push({ tool: 'consultar_catalogo', args: { termo: 'bolo' } }, { texto: 'Bolo de cenoura, R$ 40,00. Anoto um?' });
@@ -643,7 +643,13 @@ try {
     await vencer(); await umCiclo(depsWorker);
     const t7e = await turnoDaFila(f7e.filaId);
     chk('mesmo texto sem pagamento confirmado -> barrado_regra_3 (o cliente NÃO recebe "confirmado")', t7e.portao_veredito === 'barrado_regra_3' && !/confirmado/i.test(chamadasChatwoot.at(-1).content), JSON.stringify({ v: t7e.portao_veredito, c: chamadasChatwoot.at(-1).content.slice(0, 80) }));
-    chk('e sem pagamento o modelo NÃO recebe fato de sistema nenhum (contraprova)', (vistoPeloModelo.at(-1).estado ?? null) === null, String(vistoPeloModelo.at(-1).estado));
+    // 05/10: o estado do sistema passou a trazer SEMPRE o relógio (conversa 48
+    // do Empório: o agente não sabia que dia era hoje). A propriedade que esta
+    // asserção guarda continua sendo a mesma — o fato do PAGAMENTO não vaza
+    // para quem não pagou —, e por isso ela mede o pagamento, não o tamanho do
+    // estado. Com o relógio junto, exigir `estado === null` mediria o relógio.
+    chk('e sem pagamento o modelo NÃO recebe o fato do PAGAMENTO (contraprova) — só o relógio',
+      !/CONFIRMADO/.test(vistoPeloModelo.at(-1).estado ?? '') && /FATO DO SISTEMA \(relógio/.test(vistoPeloModelo.at(-1).estado ?? ''), String(vistoPeloModelo.at(-1).estado));
 
     // 7f. encerramento: link vencido do pedido B -> PUT active=false, GET pendentes, DELETE cada uma; a paga (A) intocada.
     roteiro.push({ tool: 'gerar_link_pagamento', args: {} }, { texto: 'Link: https://sandbox.asaas.com/c/link2' });
@@ -714,7 +720,10 @@ try {
     roteiro.push({ texto: 'Oi! O que você gostaria hoje?' });
     const f9z = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 500, content: 'oi, quero fazer outro pedido' }));
     await vencer(); await umCiclo(depsWorker);
-    chk('71: pedido pago E retirado -> o modelo NÃO recebe fato de sistema no turno seguinte', (vistoPeloModelo.at(-1).estado ?? null) === null && !(await passosDe((await turnoDaFila(f9z.filaId)).id)).some((p) => p.nome === 'estado_do_sistema'), String(vistoPeloModelo.at(-1).estado));
+    chk('71: pedido pago E retirado -> o modelo NÃO recebe o fato do pagamento no turno seguinte (o relógio continua)',
+      !/CONFIRMADO/.test(vistoPeloModelo.at(-1).estado ?? '')
+      && !(await passosDe((await turnoDaFila(f9z.filaId)).id)).some((p) => p.nome === 'estado_do_sistema' && /CONFIRMADO/.test(p.saida?.texto ?? '')),
+      String(vistoPeloModelo.at(-1).estado));
     const { avisarDono } = await import('../agente/src/pedido/aviso.ts');
     const cw2 = chamadasChatwoot.length; const w2 = chamadasWaha.length;
     const av = await avisarDono({ db: c, chatwoot, waha }, { tenantId: T.a, conversationId: 500, evento: 'pagamento_confirmado', pedidoId: ped9.id });
