@@ -4,6 +4,7 @@ import { criarClienteServidor } from '@/lib/supabase/server';
 import { toolsContratadas } from '@/lib/tools/contratacao';
 import { menuDoPainel, type ItemMenuPainel } from '@/lib/tools/registro';
 import { podeTudo } from '@/lib/usuarios/capacidades';
+import { contarNovos } from './painel/pedidos/vistos';
 
 export default async function LayoutAplicacao({
   children,
@@ -23,6 +24,7 @@ export default async function LayoutAplicacao({
   // tenant contratou. Ver `menuDoPainel`: se a resolucao falhar, `contratadas`
   // vem vazio e sobram so as rotas sempre-visiveis — as condicionais somem.
   let itensPainel: ItemMenuPainel[] = [];
+  let novosPorRota: Record<string, number> = {};
 
   if (usuario.tenantId) {
     const supabase = await criarClienteServidor();
@@ -42,6 +44,19 @@ export default async function LayoutAplicacao({
       ehAdmin ? null : await capacidadesDoUsuario(usuario),
       ehAdmin,
     );
+    // 84: o contador de venda nova. Só para quem tem a tela de Pedidos no
+    // menu — contar para quem não pode abrir seria mostrar um número que a
+    // rota recusa. Falha fecha: erro na consulta vira zero, não um aviso
+    // inventado.
+    if (itensPainel.some((i) => i.href === '/painel/pedidos')) {
+      const { data } = await supabase
+        .from('usuarios_painel')
+        .select('pedidos_vistos_em')
+        .eq('id', usuario.id)
+        .maybeSingle();
+      const n = await contarNovos(usuario.tenantId, (data?.pedidos_vistos_em as string | null) ?? null);
+      if (n > 0) novosPorRota = { '/painel/pedidos': n };
+    }
   }
 
   return (
@@ -52,6 +67,7 @@ export default async function LayoutAplicacao({
         email={usuario.email}
         nomeTenant={nomeTenant}
         itensPainel={itensPainel}
+        novosPorRota={novosPorRota}
       />
       {/*
         max-w limita a largura da leitura. Sem isso, em tela larga as tabelas e

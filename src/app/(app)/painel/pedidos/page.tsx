@@ -9,9 +9,11 @@ import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { lerHorarioAgente } from '@/lib/tenants/horario-agente';
 
+import { Atualiza } from './atualiza';
 import { Busca } from './busca';
 import { casaBusca, montarFila, naFila, type PedidoDaFila } from './fila';
 import { LinhaPedido } from './linha';
+import { lerEMarcarVistos } from './vistos';
 
 const ABAS = [
   ['fila', 'A fazer'],
@@ -29,6 +31,10 @@ export default async function PaginaPedidos({
   const sp = (await searchParams) ?? {};
   const aba: Aba = ABAS.some(([c]) => c === sp.ver) ? (sp.ver as Aba) : 'fila';
   const termo = String(sp.q ?? '').trim();
+
+  // O marcador de "até onde esta pessoa viu" — LIDO antes de ser carimbado,
+  // senão a própria visita apagaria o que ela veio ver.
+  const vistosAte = await lerEMarcarVistos(usuario.id, usuario.tenantId);
 
   const supabase = await criarClienteServidor();
 
@@ -110,6 +116,10 @@ export default async function PaginaPedidos({
       </nav>
 
       <Busca valor={termo} aba={aba} />
+      {/* A fila é tela de plantão: fica aberta enquanto se trabalha. Sem isto,
+          um pedido que fechou às 10h03 só apareceria quando alguém lembrasse
+          de apertar F5. */}
+      <Atualiza segundos={45} />
 
       {/* AS TRÊS ABAS SÃO O MESMO BLOCO: título, contagem, ajuda, e linhas com
           o mesmo esqueleto. Só muda o conteúdo. Antes a fila tinha uma forma e
@@ -145,7 +155,14 @@ export default async function PaginaPedidos({
               }
             >
               {g.pedidos.map((p) => (
-                <LinhaPedido key={p.id} p={p} tz={tz} mostrarHora acao="passo" />
+                <LinhaPedido
+                  key={p.id}
+                  p={p}
+                  tz={tz}
+                  mostrarHora
+                  acao="passo"
+                  novo={Boolean(vistosAte && p.criado_em > vistosAte)}
+                />
               ))}
             </Bloco>
           ))

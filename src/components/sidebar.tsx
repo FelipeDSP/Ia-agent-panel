@@ -72,6 +72,7 @@ export function Sidebar({
   email,
   nomeTenant,
   itensPainel = [],
+  novosPorRota = {},
 }: {
   papel: Papel;
   nome: string;
@@ -90,6 +91,12 @@ export function Sidebar({
    * em vez de vazamento silencioso, que ninguém nota.
    */
   itensPainel?: { href: string; rotulo: string; icone: string }[];
+  /**
+   * Quantos itens novos por rota (84). Hoje só Pedidos: quem prepara fica com
+   * o painel aberto, e uma venda que fecha às 10h03 precisa aparecer sem
+   * ninguém lembrar de apertar F5.
+   */
+  novosPorRota?: Record<string, number>;
 }) {
   const caminho = usePathname();
   const itens: ItemMenu[] =
@@ -238,7 +245,15 @@ export function Sidebar({
               )}
             >
               <Icone className="h-4 w-4" aria-hidden />
-              {rotulo}
+              <span className="flex-1">{rotulo}</span>
+              {(novosPorRota[href] ?? 0) > 0 ? (
+                <span
+                  className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground"
+                  aria-label={`${novosPorRota[href]} novo(s)`}
+                >
+                  {novosPorRota[href]}
+                </span>
+              ) : null}
             </Link>
           );
         })}

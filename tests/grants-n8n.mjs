@@ -174,6 +174,10 @@ try {
       'agendar_podcast',          // formulario publico do site
       'painel_marcar_pedido',     // /painel/pedidos/[id] (69: pago / retirado)
       'painel_aprendizado_recente', // /painel/conhecimento/chamadas (78: o que o aprendizado guardou e recusou)
+      // 84: o historico COM A FONTE de cada fala (cliente / agente / atendente
+      // / sistema). `conversa_historico` continua existindo e nao foi tocada —
+      // mudar o retorno dela exigiria `drop`, que apaga grants.
+      'painel_conversa_mensagens',
       // 80: estas duas NAO sao tela — sao as proprias funcoes de permissao, e
       // precisam de EXECUTE para `authenticated` porque sao chamadas DE DENTRO
       // das policies, que rodam como o usuario. Sem o grant, toda policy que as
@@ -277,6 +281,7 @@ try {
       // EXECUTE. Sem argumento e lendo so `auth.uid()`, a forma e segura.
       'auth_capacidades',
       'auth_papel',
+      'painel_conversa_mensagens', // 84, mesma forma de painel_aprendizado_recente
 ];
     const { rows } = await c.query(
       `select p.proname,

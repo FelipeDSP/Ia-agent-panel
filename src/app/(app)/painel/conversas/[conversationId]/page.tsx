@@ -7,6 +7,7 @@ import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 import { ControlePausa, LimparMemoria } from './controles';
+import { Mensagem, PedidoDaConversa } from './mensagem';
 // O MESMO badge da lista, e nao uma copia: os tres estados (ativo / pausado
 // manual / em atendimento humano) tem de dizer a mesma coisa nas duas telas.
 // Duas copias divergem, e divergiriam justamente no rotulo que a 51 introduziu.
@@ -35,7 +36,7 @@ export default async function PaginaConversa({
   // O historico vem por conversa_historico (SECURITY DEFINER): o tenant nao le
   // mensagens_log direto — a tabela tem tokens, que nao podem chegar ao cliente.
   // A funcao devolve so direcao/conteudo/tempo, escopada ao proprio tenant.
-  const [{ data: conversa }, { data: mensagensRaw }] = await Promise.all([
+  const [{ data: conversa }, { data: mensagensRaw }, { data: pedidosRaw }] = await Promise.all([
     supabase
       // View, nao tabela (migracao 51): `status` cru e lapide. Ver page.tsx da lista.
       .from('conversas_painel')
@@ -43,14 +44,33 @@ export default async function PaginaConversa({
       .eq('tenant_id', usuario.tenantId)
       .eq('conversation_id', idNum)
       .maybeSingle(),
-    supabase.rpc('conversa_historico', { p_conversation_id: idNum }),
+    // 84: `painel_conversa_mensagens` devolve a FONTE junto. A antiga
+    // (`conversa_historico`) continua existindo e não foi tocada — mudar o
+    // retorno de uma função viva exigiria `drop`, que apaga grants e deixaria o
+    // painel no ar chamando algo que sumiu por um instante.
+    supabase.rpc('painel_conversa_mensagens', { p_conversation_id: idNum }),
+    // O pedido que saiu daqui: ir e voltar entre conversa e pedido sem procurar.
+    supabase
+      .from('pedidos')
+      .select('id, numero, status, total_centavos')
+      .eq('tenant_id', usuario.tenantId)
+      .eq('conversation_id', idNum)
+      .is('deletado_em', null)
+      .order('criado_em', { ascending: false }),
   ]);
 
   const mensagens = (mensagensRaw ?? []) as {
     direcao: string;
     conteudo: string | null;
     criado_em: string;
+    fonte: string;
   }[];
+  const pedidos = (pedidosRaw ?? []).map((p) => ({
+    id: String(p.id),
+    numero: (p.numero as number | null) ?? null,
+    status: String(p.status),
+    total_centavos: Number(p.total_centavos ?? 0),
+  }));
 
   if (!conversa) notFound();
 
@@ -88,34 +108,17 @@ export default async function PaginaConversa({
         </div>
       </header>
 
+      {pedidos.length > 0 ? <PedidoDaConversa pedidos={pedidos} /> : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Histórico</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {mensagens && mensagens.length > 0 ? (
-            mensagens.map((m, i) => {
-              const daAgente = m.direcao === 'saida';
-              return (
-                <div
-                  key={`${m.criado_em}-${i}`}
-                  className={`flex flex-col gap-1 ${daAgente ? 'items-end' : 'items-start'}`}
-                >
-                  <div
-                    className={`max-w-[75%] rounded-lg border px-3 py-2 text-sm ${
-                      daAgente
-                        ? 'border-primary/20 bg-primary/15 text-foreground'
-                        : 'border-border bg-muted text-foreground'
-                    }`}
-                  >
-                    {m.conteudo ?? <span className="italic text-muted-foreground">(sem conteúdo)</span>}
-                  </div>
-                  <span className="text-xs text-muted-foreground">
-                    {daAgente ? 'Agente' : 'Contato'} · {dataHora(m.criado_em)}
-                  </span>
-                </div>
-              );
-            })
+          {mensagens.length > 0 ? (
+            mensagens.map((m, i) => (
+              <Mensagem key={`${m.criado_em}-${i}`} fonte={m.fonte} conteudo={m.conteudo} criadoEm={m.criado_em} />
+            ))
           ) : (
             <p className="text-sm text-muted-foreground">Nenhuma mensagem registrada nesta conversa.</p>
           )}

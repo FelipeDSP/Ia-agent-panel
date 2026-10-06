@@ -34,12 +34,15 @@ export function LinhaPedido({
   tz,
   mostrarHora,
   acao,
+  novo,
 }: {
   p: PedidoDaFila;
   tz: string;
   /** Fila: a hora combinada. Histórico e rascunhos: a data de criação. */
   mostrarHora: boolean;
   acao: 'passo' | 'nenhuma';
+  /** Fechou depois da última vez que ESTA pessoa abriu a fila. */
+  novo?: boolean;
 }) {
   const quando = mostrarHora
     ? (p.quando_em ? horaLocal(p.quando_em, tz) : '—')
@@ -60,6 +63,11 @@ export function LinhaPedido({
             {p.numero ? `Pedido nº ${p.numero}` : 'Pedido'}
           </Link>
           {p.retirada_nome ? <span className="truncate">{p.retirada_nome}</span> : null}
+          {novo ? (
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-primary-foreground">
+              novo
+            </span>
+          ) : null}
           <StatusPedido status={p.status} retiradoEm={p.retirado_em} />
           {p.separado_em && !p.retirado_em ? (
             <span className="text-xs text-muted-foreground">separado</span>
@@ -68,7 +76,16 @@ export function LinhaPedido({
         <p className="mt-0.5 text-xs text-muted-foreground">
           {p.itens} {p.itens === 1 ? 'item' : 'itens'}
           {p.pagamento_modo ? ` · ${rotuloPagamentoModo(p.pagamento_modo)}` : ''}
-          {` · conversa ${p.conversation_id}`}
+          {' · '}
+          {/* 06/10, pedido do Felipe: ir do pedido para a conversa sem procurar.
+              É a pergunta que quem prepara faz o tempo todo — "o que ele pediu
+              mesmo?" — e a resposta está no diálogo, não no pedido. */}
+          <Link
+            href={`/painel/conversas/${p.conversation_id}`}
+            className="underline-offset-4 hover:underline"
+          >
+            ver conversa
+          </Link>
         </p>
       </div>
 
