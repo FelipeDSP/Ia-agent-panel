@@ -31,6 +31,7 @@ import {
   FormVendasAgencia,
   GerenciarAdmins,
   GestaoModulos,
+  LimiteAgentes,
   ZonaPerigoExcluir,
   type ModuloAdmin,
 } from './componentes';
@@ -116,7 +117,7 @@ export default async function PaginaDetalheTenant({
       .select('id, conteudo, criado_em, criado_por')
       .eq('tenant_id', id)
       .order('criado_em', { ascending: false }),
-    supabase.from('usuarios_painel').select('id, nome, email').eq('tenant_id', id),
+    supabase.from('usuarios_painel').select('id, nome, email, papel, ativo').eq('tenant_id', id),
     // 06/10: a lista de 30 conversas saiu. Ela ocupava a maior parte da aba e
     // só repetia, com nome e telefone, o que a página de turnos já mostra
     // filtrada. O que NÃO estava em lugar nenhum é o que sobrou aqui: quantas
@@ -161,6 +162,19 @@ export default async function PaginaDetalheTenant({
       .eq('tool_nome', TOOL_VENDAS)
       .maybeSingle(),
   ]);
+
+  // O teto de agentes em consulta SEPARADA, de propósito: `max_agentes` nasce
+  // na migração 81, e painel e banco são deploys independentes neste projeto.
+  // Junto no `select` do tenant, um painel novo contra um banco sem a 81
+  // derrubaria a ficha INTEIRA de todo cliente. Separado, a aba Pessoas diz o
+  // que falta e o resto da tela continua de pé.
+  const { data: limiteRaw, error: erroLimite } = await supabase
+    .from('tenants')
+    .select('max_agentes')
+    .eq('id', id)
+    .maybeSingle();
+  const temLimite = !erroLimite;
+  const maxAgentes = Number(limiteRaw?.max_agentes ?? 0);
 
   const configTransferir = (toolTransferir?.config ?? {}) as Partial<ConfigTransferir>;
   const configVendas = lerConfigVendas(toolVendas?.config);
@@ -215,6 +229,12 @@ export default async function PaginaDetalheTenant({
     criado_em: v.criado_em,
     autor: null, // criado_por é uuid; nome do autor não é crítico aqui
   }));
+
+  const equipe = (admins ?? []).map((a) => ({ id: a.id, email: a.email, nome: a.nome, papel: a.papel, ativo: a.ativo }));
+  const donos = equipe.filter((u) => u.papel === 'tenant_admin');
+  const agentes = equipe.filter((u) => u.papel === 'tenant_agente');
+  const agentesAtivos = agentes.filter((u) => u.ativo !== false).length;
+  const lotado = temLimite && agentesAtivos >= maxAgentes;
 
   const contratouPagamento = estadoPorTool.get('pagamento')?.contratado === true;
   const temWahaLegado = Boolean(configTransferir.notificacao?.sessao || configVendas.notificacao.sessao);
@@ -426,23 +446,78 @@ export default async function PaginaDetalheTenant({
     ),
 
     pessoas: (
-      <Card>
-        <CardHeader>
-          <CardTitle>Admin do cliente</CardTitle>
-          <CardDescription>
-            {admins && admins.length > 0
-              ? `${admins.length} usuário(s) vinculado(s).`
-              : 'Nenhum admin convidado ainda.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <GerenciarAdmins
-            tenantId={tenant.id}
-            admins={(admins ?? []).map((a) => ({ id: a.id, email: a.email, nome: a.nome }))}
-          />
-          <FormConvite tenantId={tenant.id} />
-        </CardContent>
-      </Card>
+      <div className="flex flex-col gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              Dono da conta
+              <Ajuda titulo="Dono da conta">
+                O <strong>admin</strong> administra a conta inteira: prompt, catálogo, base,
+                configurações — e, quando houver agentes, é ele quem cria as funções e decide o que
+                cada pessoa pode fazer.
+                <br />
+                <br />
+                Quem convida admin é a <strong>agência</strong>. Agente, não: esse o próprio cliente
+                convida, dentro do limite que você definir aqui.
+              </Ajuda>
+            </CardTitle>
+            <CardDescription>
+              {donos.length > 0 ? `${donos.length} admin(s) vinculado(s).` : 'Nenhum admin convidado ainda.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <GerenciarAdmins tenantId={tenant.id} admins={donos} />
+            <FormConvite tenantId={tenant.id} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5">
+              Agentes da conta
+              <Ajuda titulo="Agentes da conta">
+                Agente é quem o cliente põe para trabalhar no painel dele — e só faz o que a
+                <strong> função</strong> dele permitir (ver conversas, marcar pedido, editar
+                catálogo…). O cliente monta as funções; você define{' '}
+                <strong>quantos agentes</strong> a conta pode ter.
+                <br />
+                <br />
+                <strong>Senha ninguém digita por ninguém.</strong> "Reenviar link" gera um link de
+                definição de senha para a pessoa usar — é como o acesso nasce e é como ele se
+                recupera.
+                <br />
+                <br />
+                Baixar o limite não desativa ninguém: só impede convite novo.
+              </Ajuda>
+            </CardTitle>
+            <CardDescription>
+              {temLimite
+                ? `${agentesAtivos} de ${maxAgentes} assento(s) em uso.`
+                : 'A migração 81 ainda não foi aplicada — o limite de agentes não existe neste banco.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-5">
+            {temLimite ? (
+              <>
+                <LimiteAgentes tenantId={tenant.id} limite={maxAgentes} emUso={agentesAtivos} />
+                <GerenciarAdmins tenantId={tenant.id} admins={agentes} />
+                <FormConvite
+                  tenantId={tenant.id}
+                  papel="tenant_agente"
+                  rotulo="agente"
+                  bloqueio={
+                    maxAgentes === 0
+                      ? 'Esta conta não tem agentes contratados. Defina o limite acima para liberar.'
+                      : lotado
+                        ? `Todos os ${maxAgentes} assento(s) estão em uso. Aumente o limite ou remova alguém.`
+                        : null
+                  }
+                />
+              </>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
     ),
 
     avancado: (

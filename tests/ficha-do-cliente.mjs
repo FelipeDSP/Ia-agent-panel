@@ -60,13 +60,34 @@ console.log('\n=== 2. Nenhuma capacidade sumiu no caminho ===\n');
 // Todo componente exportado por componentes.tsx (não os tipos).
 const EXPORTADOS = [...COMPONENTES.matchAll(/^export function ([A-Z]\w+)/gm)].map((m) => m[1]);
 chk('a varredura ACHOU componentes exportados', EXPORTADOS.length > 0, `vieram ${EXPORTADOS.length}`);
-chk('são os 11 formulários/controles de hoje', EXPORTADOS.length === 11, EXPORTADOS.join(','));
+// NÃO afirme o NÚMERO. A versão de 06/10 dizia "são os 11 de hoje" e ficou
+// vermelha no mesmo dia, quando `LimiteAgentes` nasceu — vermelha porque o
+// sistema cresceu, que é a forma mais rápida de todo mundo parar de olhar a
+// suíte (CLAUDE.md, "Afirme PROPRIEDADE, não estado do mundo"). É a terceira
+// vez que este defeito exato aparece neste repositório, e a segunda numa
+// entrega cujo texto já citava a regra.
+//
+// O piso continua porque mede OUTRA coisa: um regex quebrado devolveria um
+// punhado em vez da lista inteira, e o `length > 0` acima não pegaria isso.
+chk('a varredura achou a lista inteira, não um punhado (regex viva)', EXPORTADOS.length >= 8,
+  `${EXPORTADOS.length}: ${EXPORTADOS.join(',')}`);
 
 // Usado = aparece como tag JSX `<Nome`. Import sozinho não conta: importar e
 // não renderizar é exatamente o defeito que este bloco existe para pegar.
 const naoRenderizados = EXPORTADOS.filter((nome) => !new RegExp(`<${nome}\\b`).test(PAGINA));
 chk('TODO componente exportado é renderizado na página', naoRenderizados.length === 0,
   'não aparecem no JSX: ' + naoRenderizados.join(', '));
+
+// 06/10: `max_agentes` nasce na migração 81, e painel e banco são deploys
+// independentes. Se alguém "simplificar" juntando a coluna ao `select` do
+// tenant, um painel novo contra um banco sem a 81 derruba a ficha INTEIRA de
+// todo cliente — não só a aba Pessoas. A separação é a proteção, então ela é
+// medida.
+const selectDoTenant = PAGINA.slice(PAGINA.indexOf(".from('tenants')"), PAGINA.indexOf('if (!tenant) notFound()'));
+chk('o `select` principal do tenant NÃO pede max_agentes (a coluna pode não existir ainda)',
+  !/max_agentes/.test(selectDoTenant));
+chk('...e max_agentes vem numa consulta própria, que tolera o erro',
+  /max_agentes/.test(PAGINA) && /erroLimite/.test(PAGINA));
 
 console.log('\n=== 3. Link antigo não morre calado ===\n');
 

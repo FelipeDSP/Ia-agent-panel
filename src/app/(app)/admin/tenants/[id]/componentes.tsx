@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react';
 
 import {
   alternarSuspensaoTenant,
+  definirLimiteAgentes,
   conectarChatwoot,
   convidarAdminTenant,
   definirContratacao,
@@ -397,31 +398,51 @@ export function FormVendasAgencia({ tenantId, sessao }: { tenantId: string; sess
 
 // --- Convite do admin do cliente --------------------------------------------
 
-export function FormConvite({ tenantId }: { tenantId: string }) {
+export function FormConvite({
+  tenantId,
+  papel = 'tenant_admin',
+  rotulo = 'admin',
+  bloqueio = null,
+}: {
+  tenantId: string;
+  papel?: 'tenant_admin' | 'tenant_agente';
+  rotulo?: string;
+  /** Motivo pelo qual não dá para convidar agora (ex.: teto de agentes). */
+  bloqueio?: string | null;
+}) {
   const [estado, acao] = useActionState<EstadoAcao, FormData>(convidarAdminTenant, {});
   const [copiado, setCopiado] = useState(false);
+
+  // O bloqueio aqui é CORTESIA, não controle: quem manda é o trigger da
+  // migração 81, do lado do banco. Esconder o formulário sem o trigger seria a
+  // falsa sensação de controle que o CLAUDE.md descreve — e o convite nasce de
+  // um insert feito pelo `service_role`, que ignora RLS.
+  if (bloqueio) {
+    return <p className="text-sm text-muted-foreground">{bloqueio}</p>;
+  }
 
   return (
     <form action={acao} className="flex flex-col gap-4">
       <input type="hidden" name="tenant_id" value={tenantId} />
+      <input type="hidden" name="papel" value={papel} />
 
       {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
       {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="email">Email do admin</Label>
-          <Input id="email" name="email" type="email" required />
+          <Label htmlFor={`email-${papel}`}>Email do {rotulo}</Label>
+          <Input id={`email-${papel}`} name="email" type="email" required />
           <ErroCampo msg={estado.errosCampo?.['email']} />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="nome">Nome</Label>
-          <Input id="nome" name="nome" />
+          <Label htmlFor={`nome-${papel}`}>Nome</Label>
+          <Input id={`nome-${papel}`} name="nome" />
         </div>
       </div>
 
       <div>
-        <SubmitButton pendingLabel="Convidando…">Convidar admin</SubmitButton>
+        <SubmitButton pendingLabel="Convidando…">Convidar {rotulo}</SubmitButton>
       </div>
 
       {estado.linkConvite ? (
@@ -444,6 +465,50 @@ export function FormConvite({ tenantId }: { tenantId: string }) {
             </Button>
           </div>
         </div>
+      ) : null}
+    </form>
+  );
+}
+
+/**
+ * Quantos agentes esta conta pode ter. Decisão comercial da agência — por isso
+ * `max_agentes` fica FORA da lista branca do `tenants_guard_colunas`, e o
+ * cliente não consegue mexer nem pela API.
+ */
+export function LimiteAgentes({
+  tenantId,
+  limite,
+  emUso,
+}: {
+  tenantId: string;
+  limite: number;
+  emUso: number;
+}) {
+  const [estado, acao] = useActionState<EstadoAcao, FormData>(definirLimiteAgentes, {});
+  const excedente = emUso > limite;
+
+  return (
+    <form action={acao} className="flex flex-col gap-3">
+      <input type="hidden" name="tenant_id" value={tenantId} />
+      {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
+      {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex w-40 flex-col gap-1">
+          <Label htmlFor="max_agentes">Agentes contratados</Label>
+          <Input id="max_agentes" name="max_agentes" type="number" min={0} max={200} defaultValue={limite} />
+          <ErroCampo msg={estado.errosCampo?.['max_agentes']} />
+        </div>
+        <SubmitButton size="sm" pendingLabel="Salvando…">Salvar limite</SubmitButton>
+        <span className="pb-2 text-sm text-muted-foreground">{emUso} em uso</span>
+      </div>
+
+      {excedente ? (
+        <Alert variant="warning">
+          Esta conta tem {emUso} agente(s) ativo(s) e o limite é {limite}. Ninguém foi desativado —
+          reduzir o número só impede convites novos. Para tirar acesso de alguém, remova a pessoa
+          na lista abaixo, de propósito.
+        </Alert>
       ) : null}
     </form>
   );

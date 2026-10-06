@@ -122,6 +122,10 @@ export async function convidarAdminTenant(
   const tenantId = String(fd.get('tenant_id') ?? '');
   const email = String(fd.get('email') ?? '').trim().toLowerCase();
   const nome = String(fd.get('nome') ?? '').trim() || email;
+  // 06/10: o mesmo convite serve para agente. O papel vem do formulário, mas
+  // NUNCA é aceito como veio: só estes dois existem aqui, e `super_admin` não
+  // é um deles — um `papel` forjado no corpo não promove ninguém.
+  const papel = fd.get('papel') === 'tenant_agente' ? 'tenant_agente' : 'tenant_admin';
 
   if (!tenantId) return { erro: 'Tenant não informado.' };
   if (!email.includes('@')) return { errosCampo: { email: 'Email inválido.' } };
@@ -144,10 +148,16 @@ export async function convidarAdminTenant(
   const { data, error } = await criarUsuario(admin, {
     email,
     email_confirm: true,
-    app_metadata: { papel: 'tenant_admin', tenant_id: tenantId },
+    app_metadata: { papel, tenant_id: tenantId },
     user_metadata: { nome },
   });
 
+  // O teto de agentes é do BANCO (migração 81): o trigger recusa o insert que
+  // o trigger da 12 faz em `usuarios_painel`, e o erro sobe por aqui. A tela
+  // esconde o botão quando lotado, mas a tela não é a porta — esta é.
+  if (error && /Limite de agentes/i.test(error.message)) {
+    return { erro: error.message };
+  }
   if (error && ehEmailDuplicado(error)) {
     return {
       errosCampo: {
@@ -166,7 +176,7 @@ export async function convidarAdminTenant(
     .eq('id', data.user.id)
     .maybeSingle();
 
-  if (vinculo?.tenant_id !== tenantId || vinculo?.papel !== 'tenant_admin') {
+  if (vinculo?.tenant_id !== tenantId || vinculo?.papel !== papel) {
     return {
       erro: 'Usuário criado, mas o vínculo com o cliente não foi registrado. Verifique a migração 12.',
     };
@@ -206,11 +216,51 @@ export async function convidarAdminTenant(
 }
 
 /**
- * Confere que o usuário alvo é tenant_admin DESTE cliente antes de qualquer
- * ação de gestão. A verificação é contra o banco (não contra o request), então
- * o super admin nunca consegue mexer, por id forjado, num super_admin ou num
- * admin de outro tenant. Devolve a linha ou null.
+ * Quantos agentes esta conta pode ter ATIVOS. Só super admin — é decisão
+ * comercial, e `max_agentes` fica fora da lista branca do `tenants_guard_colunas`
+ * justamente para o cliente não se autoconceder assento.
+ *
+ * Reduzir abaixo do que já está em uso é PERMITIDO e não desativa ninguém: o
+ * trigger só barra entrada nova. Tirar acesso de quem já trabalha é decisão de
+ * gente, não efeito colateral de mexer num número — e a tela avisa o excedente.
  */
+export async function definirLimiteAgentes(_estado: EstadoAcao, fd: FormData): Promise<EstadoAcao> {
+  await exigirSuperAdmin();
+
+  const tenantId = String(fd.get('tenant_id') ?? '');
+  const bruto = String(fd.get('max_agentes') ?? '').trim();
+  if (!tenantId) return { erro: 'Cliente não informado.' };
+
+  const n = Number(bruto);
+  if (!Number.isInteger(n) || n < 0 || n > 200) {
+    return { errosCampo: { max_agentes: 'Informe um número inteiro entre 0 e 200.' } };
+  }
+
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase
+    .from('tenants')
+    .update({ max_agentes: n })
+    .eq('id', tenantId)
+    .is('deletado_em', null);
+  if (error) return { erro: `Não foi possível salvar: ${error.message}` };
+
+  revalidatePath(`/admin/tenants/${tenantId}`);
+  return { sucesso: n === 0 ? 'Conta sem direito a agentes.' : `Limite definido: ${n} agente(s).` };
+}
+
+/**
+ * Confere que o usuário alvo é do QUADRO DESTE cliente antes de qualquer ação
+ * de gestão. A verificação é contra o banco (não contra o request), então o
+ * super admin nunca consegue mexer, por id forjado, num super_admin ou em
+ * alguém de outro tenant. Devolve a linha ou null.
+ *
+ * 06/10: passou a aceitar `tenant_agente` junto com `tenant_admin`, para o
+ * super admin gerir a equipe do cliente pela mesma tela. A proteção que
+ * importa continua inteira — `super_admin` NÃO está na lista, então nenhuma
+ * destas ações alcança a agência, e o filtro de tenant segue explícito.
+ */
+const PAPEIS_DO_QUADRO = ['tenant_admin', 'tenant_agente'];
+
 async function carregarAdminDoTenant(
   supabase: Awaited<ReturnType<typeof criarClienteServidor>>,
   tenantId: string,
@@ -222,7 +272,7 @@ async function carregarAdminDoTenant(
     .eq('id', userId)
     .eq('tenant_id', tenantId)
     .maybeSingle();
-  if (!data || data.papel !== 'tenant_admin') return null;
+  if (!data || !PAPEIS_DO_QUADRO.includes(data.papel)) return null;
   return data;
 }
 
@@ -244,7 +294,7 @@ export async function removerAdmin(_estado: EstadoAcao, fd: FormData): Promise<E
 
   const supabase = await criarClienteServidor();
   const alvo = await carregarAdminDoTenant(supabase, tenantId, userId);
-  if (!alvo) return { erro: 'Admin não encontrado neste cliente.' };
+  if (!alvo) return { erro: 'Usuário não encontrado neste cliente.' };
 
   const admin = criarClienteAdmin();
   const { error: erroAuth } = await admin.auth.admin.deleteUser(userId);
@@ -280,7 +330,7 @@ export async function editarNomeAdmin(_estado: EstadoAcao, fd: FormData): Promis
 
   const supabase = await criarClienteServidor();
   const alvo = await carregarAdminDoTenant(supabase, tenantId, userId);
-  if (!alvo) return { erro: 'Admin não encontrado neste cliente.' };
+  if (!alvo) return { erro: 'Usuário não encontrado neste cliente.' };
 
   // Fonte da verdade do nome é o user_metadata no Auth; a projeção espelha.
   const admin = criarClienteAdmin();
@@ -320,7 +370,7 @@ export async function reenviarAcessoAdmin(_estado: EstadoAcao, fd: FormData): Pr
 
   const supabase = await criarClienteServidor();
   const alvo = await carregarAdminDoTenant(supabase, tenantId, userId);
-  if (!alvo) return { erro: 'Admin não encontrado neste cliente.' };
+  if (!alvo) return { erro: 'Usuário não encontrado neste cliente.' };
 
   const admin = criarClienteAdmin();
   const { data: linkData, error } = await admin.auth.admin.generateLink({
