@@ -35,3 +35,7 @@ npm-debug.log*
 
 .DS_Store
 Thumbs.db
+
+# dumps de rascunho (pg_get_functiondef) — nunca versionados
+.*.sql
+.srv.log
