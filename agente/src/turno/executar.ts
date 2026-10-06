@@ -303,7 +303,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     if (estadoDoSistema) await turno.passo('registro', 'estado_do_sistema', { saida: { texto: estadoDoSistema } });
 
     // ---- o modelo ----
-    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, regrasDir: deps.regrasDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas, aceitaLink: oferta?.pagamentos.includes('link') ?? true, ...(deps.agora ? { agora: deps.agora } : {}), fotoPendente: null as FotoPendente | null };
+    const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, regrasDir: deps.regrasDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas, aceitaLink: oferta?.pagamentos.includes('link') ?? true, timezone: (horario as { timezone?: string | null } | null)?.timezone ?? null, ...(deps.agora ? { agora: deps.agora } : {}), fotoPendente: null as FotoPendente | null };
     const ferramentas = ferramentasDoPerfil(ctx, perfil, toolsAtivas);
     const r = await deps.modelo.responder({
       modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto, estadoDoSistema,

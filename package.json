@@ -55,6 +55,7 @@
     "teste:times-chatwoot": "node --import ./tests/lib/ts.mjs tests/times-chatwoot.mjs",
     "teste:equipe-do-cliente": "node --import ./tests/lib/ts.mjs tests/equipe-do-cliente.mjs",
     "teste:ficha-do-cliente": "node tests/ficha-do-cliente.mjs",
+    "teste:fila-de-pedidos": "node --import ./tests/lib/ts.mjs tests/fila-de-pedidos.mjs",
     "teste:filtro-saida": "node tests/filtro-saida.mjs",
     "teste:saida-cortes": "node --env-file=.env.local tests/migracao-saida-cortes.mjs",
     "teste:retomada-pausa": "node --env-file=.env.local tests/migracao-retomada-pausa.mjs",

@@ -36,6 +36,12 @@ export interface ContextoTool {
   /** Relógio injetável (testes); ausente = `new Date()`. */
   agora?: () => Date;
   /**
+   * 83: o fuso da loja (`tenants.horario_agente.timezone`). É ele que converte
+   * o `quando` que o modelo informa — que vem no horário de quem atende — para
+   * o instante que a fila de pedidos ordena.
+   */
+  timezone?: string | null;
+  /**
    * 18/09: a foto do produto vai JUNTO com a resposta do modelo, numa mensagem
    * só (a resposta vira a legenda). A tool prepara aqui; o turno envia no fim.
    */

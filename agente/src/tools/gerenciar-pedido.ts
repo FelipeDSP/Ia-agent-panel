@@ -13,6 +13,8 @@
  * posição — o mesmo contrato do `queryReplacement`.
  */
 import { fnUma } from '../db.ts';
+import { resolverQuando } from '../pedido/quando.ts';
+import { FUSO_PADRAO } from '../turno/agora.ts';
 import { ACOES, TOOL_NOME, descricaoFerramenta, dicaFromAI, textoAcaoInvalida } from '../../regras/tool-pedido-acoes.mjs';
 import type { FerramentaDoModelo } from '../agente/modelo.ts';
 import type { ConfigTool, ContextoTool } from './contexto.ts';
@@ -21,7 +23,7 @@ import { avisarDono, avisarVendaFechada, type ResultadoAviso } from '../pedido/a
 import { lerOferta, mensagemDeRetirada } from '../pedido/oferta.ts';
 import { log, erroTexto } from '../log.ts';
 
-export interface ArgsPedido { acao: string; produto_id: string | null; quantidade: number | null; observacao: string | null; metadados: string | null; pagamento?: string | null; nome_retirada?: string | null }
+export interface ArgsPedido { acao: string; produto_id: string | null; quantidade: number | null; observacao: string | null; metadados: string | null; pagamento?: string | null; nome_retirada?: string | null; quando?: string | null }
 
 /** O texto que o modelo recebe quando inventa um id de produto (23/09). */
 export const TEXTO_PRODUTO_ID_INVALIDO =
@@ -41,17 +43,24 @@ export function ehUuid(v: string | null | undefined): boolean {
  * que ela passou a ler. Metadados que não são JSON-objeto viram `observacao`,
  * como a função faria sozinha.
  */
-export function metadadosComPagamento(metadados: string | null, pagamento: string | null | undefined, nomeRetirada?: string | null): string | null {
+export function metadadosComPagamento(
+  metadados: string | null,
+  pagamento: string | null | undefined,
+  nomeRetirada?: string | null,
+  /** 83: ISO em UTC, já resolvido por `resolverQuando`. Null = ninguém combinou. */
+  quandoIso?: string | null,
+): string | null {
   const pg = String(pagamento ?? '').trim().toLowerCase();
   const nome = String(nomeRetirada ?? '').trim().slice(0, 120);
-  if (!pg && !nome) return metadados;
+  const quando = String(quandoIso ?? '').trim();
+  if (!pg && !nome && !quando) return metadados;
   let base: Record<string, unknown> = {};
   const bruto = String(metadados ?? '').trim();
   if (bruto) {
     try { const j: unknown = JSON.parse(bruto); base = j && typeof j === 'object' && !Array.isArray(j) ? (j as Record<string, unknown>) : { observacao: bruto }; }
     catch { base = { observacao: bruto }; }
   }
-  return JSON.stringify({ ...base, ...(pg ? { pagamento: pg } : {}), ...(nome ? { nome_retirada: nome } : {}) });
+  return JSON.stringify({ ...base, ...(pg ? { pagamento: pg } : {}), ...(nome ? { nome_retirada: nome } : {}), ...(quando ? { quando_em: quando } : {}) });
 }
 
 export async function gerenciarPedido(ctx: ContextoTool, a: ArgsPedido): Promise<{ resultado: string; acao: string; notificacao?: ResultadoAviso; endereco?: 'enviado' | 'falhou' }> {
@@ -74,7 +83,8 @@ export async function gerenciarPedido(ctx: ContextoTool, a: ArgsPedido): Promise
   const valores: Record<string, unknown> = {
     tenant_id: ctx.tenant.tenant_id, conversation_id: ctx.conversationId,
     produto_id: a.produto_id ?? null, quantidade: a.quantidade ?? null,
-    observacao: a.observacao ?? null, metadados: metadadosComPagamento(a.metadados ?? null, a.pagamento, a.nome_retirada),
+    observacao: a.observacao ?? null,
+    metadados: metadadosComPagamento(a.metadados ?? null, a.pagamento, a.nome_retirada, resolverQuando(a.quando, (ctx.timezone ?? '').trim() || FUSO_PADRAO)),
   };
   const params = acao.params.map((p) => valores[p] === undefined ? null : valores[p]);
   const r = await ctx.db.query<{ resultado: string }>(acao.query, params);
@@ -124,8 +134,14 @@ export function ferramentaGerenciarPedido(ctx: ContextoTool): FerramentaDoModelo
         metadados: { type: ['string', 'null'], description: 'json com observacao geral do pedido, ex: {"observacao":"retirar as 7h"}; null se nao houver' },
         pagamento: { type: ['string', 'null'], enum: ['link', 'na_retirada', null], description: 'so em acao=fechar: como o cliente vai pagar — "link" (Pix/cartao agora) ou "na_retirada" (paga quando buscar). Se a loja oferece os dois, pergunte antes. null fora de fechar' },
         nome_retirada: { type: ['string', 'null'], description: 'so em acao=fechar: nome de quem vai retirar o pedido, como o cliente informou. null fora de fechar ou se a loja nao pede' },
+        // 83: a hora combinada, ESTRUTURADA. Antes caia em `metadados` como
+        // texto livre e o modelo inventava a chave a cada pedido — quatro
+        // pedidos do Emporio, quatro formatos. Quem prepara precisa ordenar por
+        // isso. Sem fuso de proposito: o modelo nao faz conta de horario de
+        // verao; `resolverQuando` converte com o fuso da loja.
+        quando: { type: ['string', 'null'], description: 'so em acao=fechar: quando o cliente vai buscar/receber, no formato AAAA-MM-DDTHH:MM e no horario da loja (ex: 2026-10-07T07:00). Use a data de hoje do estado do sistema para resolver "amanha", "sabado", etc. null se o cliente nao combinou hora' },
       },
-      required: ['acao', 'produto_id', 'quantidade', 'observacao', 'metadados', 'pagamento', 'nome_retirada'],
+      required: ['acao', 'produto_id', 'quantidade', 'observacao', 'metadados', 'pagamento', 'nome_retirada', 'quando'],
       additionalProperties: false,
     },
     executar: async (args) => {
@@ -136,6 +152,7 @@ export function ferramentaGerenciarPedido(ctx: ContextoTool): FerramentaDoModelo
         observacao: args.observacao == null ? null : String(args.observacao),
         metadados: args.metadados == null ? null : String(args.metadados),
         pagamento: args.pagamento == null ? null : String(args.pagamento),
+        quando: args.quando == null ? null : String(args.quando),
         nome_retirada: args.nome_retirada == null ? null : String(args.nome_retirada),
       });
       return { texto: r.resultado, diagnostico: { acao: r.acao, ...(r.notificacao ? { notificacao: r.notificacao } : {}), ...(r.endereco ? { endereco: r.endereco } : {}) } };

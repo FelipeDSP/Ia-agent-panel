@@ -55,3 +55,49 @@ export function MarcarPedido({
     </form>
   );
 }
+
+
+/**
+ * O botão do PRÓXIMO PASSO, para a fila (83).
+ *
+ * Um botão só por pedido, de propósito: quem está preparando não escolhe entre
+ * três ações, ele faz a próxima. Separar → (pagou) → saiu. Três botões lado a
+ * lado numa fila de vinte pedidos é onde se clica no errado.
+ */
+export function PassoDoPedido({
+  pedidoId,
+  passo,
+  pagamentoModo,
+  separado,
+}: {
+  pedidoId: string;
+  passo: 'separar' | 'pago' | 'retirado';
+  pagamentoModo: string | null;
+  separado: boolean;
+}) {
+  const [estado, acao] = useActionState<EstadoPedido, FormData>(marcarPedido, {});
+  const rotulo =
+    passo === 'separar'
+      ? 'Separar'
+      : passo === 'pago'
+        ? (pagamentoModo === 'na_retirada' ? 'Pagou e levou' : 'Marcar pago')
+        : 'Entregue';
+  const valor = passo === 'separar' ? 'separado' : passo;
+
+  return (
+    <form action={acao} className="flex shrink-0 flex-col items-end gap-1">
+      <input type="hidden" name="pedido_id" value={pedidoId} />
+      <div className="flex items-center gap-2">
+        {separado ? (
+          <SubmitButton name="acao" value="desfazer_separado" variant="outline" size="sm" pendingLabel="…">
+            Desfazer
+          </SubmitButton>
+        ) : null}
+        <SubmitButton name="acao" value={valor} size="sm" pendingLabel="…">
+          {rotulo}
+        </SubmitButton>
+      </div>
+      {estado.erro ? <span className="text-xs text-destructive">{estado.erro}</span> : null}
+    </form>
+  );
+}
