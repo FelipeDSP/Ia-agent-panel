@@ -1,4 +1,4 @@
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { exigirToolDaRota } from '@/lib/tools/contratacao';
 
 /**
@@ -10,7 +10,7 @@ import { exigirToolDaRota } from '@/lib/tools/contratacao';
 export default async function LayoutPedidos({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro();
   await exigirToolDaRota(usuario.tenantId, '/painel/pedidos');
   return <>{children}</>;
 }

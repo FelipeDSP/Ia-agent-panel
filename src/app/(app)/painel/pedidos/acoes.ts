@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { ERRO_NAO_CONTRATADA, temToolContratada } from '@/lib/tools/contratacao';
 import { TOOL_VENDAS } from '@/lib/tools/vendas-config';
@@ -28,7 +28,7 @@ const MOTIVOS: Record<string, string> = {
  * entra nesta linha.
  */
 export async function marcarPedido(_estado: EstadoPedido, fd: FormData): Promise<EstadoPedido> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('marcar_pedido');
   if (!(await temToolContratada(usuario.tenantId, TOOL_VENDAS))) return { erro: ERRO_NAO_CONTRATADA };
 
   const pedidoId = String(fd.get('pedido_id') ?? '').trim();

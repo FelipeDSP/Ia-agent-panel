@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { ERRO_NAO_CONTRATADA, temToolContratada } from '@/lib/tools/contratacao';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarProduto } from '@/lib/vendas/schema';
@@ -58,7 +58,7 @@ export async function salvarProduto(
   estadoAnterior: EstadoProduto,
   fd: FormData,
 ): Promise<EstadoProduto> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_catalogo');
   // Superficie de tool: a action e entrada propria. Esconder o menu e
   // recusar a rota nao cobre uma chamada RPC direta.
   if (!(await temToolContratada(usuario.tenantId, 'vendas'))) {
@@ -137,7 +137,7 @@ export async function salvarProduto(
  * e o contador `produto_sku_seq` nunca anda para trás.
  */
 export async function excluirProduto(id: string): Promise<EstadoProduto> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_catalogo');
   // Superficie de tool: a action e entrada propria. Esconder o menu e
   // recusar a rota nao cobre uma chamada RPC direta.
   if (!(await temToolContratada(usuario.tenantId, 'vendas'))) {

@@ -1,4 +1,4 @@
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { Alert } from '@/components/ui/alert';
 import { CRITERIO_NA_BASE, DICAS_BASE, TRECHOS_POR_BUSCA } from '@/lib/orientacao';
 import { agruparDocumentos, type ChunkDaLista } from '@/lib/conhecimento/agrupar';
@@ -9,7 +9,7 @@ import { AbasConhecimento } from './abas';
 import { GestaoConhecimento } from './componentes';
 
 export default async function PaginaConhecimento() {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_base');
   const supabase = await criarClienteServidor();
 
   // Chunks ativos do tenant. Agrupamos por origem em JS para formar a lista de

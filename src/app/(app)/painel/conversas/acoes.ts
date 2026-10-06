@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { invocarLimparMemoria } from '@/lib/limpar-memoria';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
@@ -25,7 +25,7 @@ export async function definirStatusConversa(
   conversationId: number,
   novoStatus: string,
 ): Promise<EstadoConversa> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('pausar_retomar');
 
   if (!STATUS_VALIDOS.has(novoStatus)) {
     return { erro: 'Status inválido.' };
@@ -91,7 +91,7 @@ export async function definirStatusConversa(
 export async function limparMemoriaConversas(
   alvo: number[] | 'todas',
 ): Promise<EstadoConversa> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('limpar_memoria');
   const supabase = await criarClienteServidor();
 
   // 'todas': o serviço corta todas as conversas do tenant. Não precisa

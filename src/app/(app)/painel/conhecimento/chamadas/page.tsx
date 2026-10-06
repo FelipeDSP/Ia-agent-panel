@@ -1,5 +1,5 @@
 import { Alert } from '@/components/ui/alert';
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { chamadasDeAtendente, type PassoTransferencia } from '@/lib/conhecimento/lacunas';
 
@@ -19,7 +19,7 @@ import { ListaChamadas, ListaAprendido, type Aprendido } from './componentes';
  * como manda a regra 1.
  */
 export default async function PaginaChamadas() {
-  await exigirTenantAdmin();
+  await exigirMembro('editar_base');
   const supabase = await criarClienteServidor();
 
   // 60 dias: a retenção do trace é menor que isso, então o limite real é ela.

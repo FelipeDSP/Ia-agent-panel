@@ -13,6 +13,7 @@ import {
   Receipt,
   Settings,
   Tags,
+  Users,
   X,
   Activity,
 } from 'lucide-react';
@@ -48,6 +49,7 @@ const ICONES: Record<string, typeof Building2> = {
   BarChart3,
   Settings,
   Tags,
+  Users,
 };
 
 /**

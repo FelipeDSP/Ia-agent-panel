@@ -1,8 +1,9 @@
 import { Sidebar } from '@/components/sidebar';
-import { exigirUsuario } from '@/lib/auth';
+import { exigirUsuario, capacidadesDoUsuario } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { toolsContratadas } from '@/lib/tools/contratacao';
 import { menuDoPainel, type ItemMenuPainel } from '@/lib/tools/registro';
+import { podeTudo } from '@/lib/usuarios/capacidades';
 
 export default async function LayoutAplicacao({
   children,
@@ -32,7 +33,15 @@ export default async function LayoutAplicacao({
       .maybeSingle();
 
     nomeTenant = data?.nome ?? null;
-    itensPainel = menuDoPainel(await toolsContratadas(usuario.tenantId));
+    // 06/10: o agente vê o que a FUNÇÃO dele alcança. O admin não paga a
+    // consulta das capacidades — `capacidadesDoUsuario` responde na hora para
+    // quem pode tudo.
+    const ehAdmin = podeTudo(usuario.papel);
+    itensPainel = menuDoPainel(
+      await toolsContratadas(usuario.tenantId),
+      ehAdmin ? null : await capacidadesDoUsuario(usuario),
+      ehAdmin,
+    );
   }
 
   return (

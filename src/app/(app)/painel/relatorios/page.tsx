@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import {
   atendimento,
   clientesQueVoltaram,
@@ -69,7 +69,7 @@ function Metrica({
 }
 
 export default async function PaginaRelatorios() {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('ver_consumo');
   const supabase = await criarClienteServidor();
 
   const desde = new Date(Date.now() - DIAS * 24 * 60 * 60 * 1000).toISOString();

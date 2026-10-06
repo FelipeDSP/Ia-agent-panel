@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { ERRO_NAO_CONTRATADA, temToolContratada } from '@/lib/tools/contratacao';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { LIMITE_BYTES, MIMES_ACEITOS } from '@/lib/vendas/foto';
@@ -49,7 +49,7 @@ export async function salvarFotoProduto(
   _estado: EstadoFoto,
   fd: FormData,
 ): Promise<EstadoFoto> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_catalogo');
   // Superficie de tool: a action e entrada propria. Esconder o menu e
   // recusar a rota nao cobre uma chamada RPC direta.
   if (!(await temToolContratada(usuario.tenantId, 'foto_produto'))) {
@@ -118,7 +118,7 @@ export async function removerFotoProduto(
   _estado: EstadoFoto,
   fd: FormData,
 ): Promise<EstadoFoto> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_catalogo');
   // Superficie de tool: a action e entrada propria. Esconder o menu e
   // recusar a rota nao cobre uma chamada RPC direta.
   if (!(await temToolContratada(usuario.tenantId, 'foto_produto'))) {

@@ -8,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 function Metrica({ rotulo, valor }: { rotulo: string; valor: number | string }) {
@@ -23,13 +23,13 @@ function Metrica({ rotulo, valor }: { rotulo: string; valor: number | string }) 
 }
 
 export default async function PaginaPainel() {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro();
   const supabase = await criarClienteServidor();
 
   /*
    * O `.eq('id', usuario.tenantId)` e redundante com o RLS de proposito.
    * CLAUDE.md regra 6: RLS e a rede de seguranca, nao a primeira linha de
-   * defesa. E o tenantId vem do JWT (exigirTenantAdmin), nunca da URL.
+   * defesa. E o tenantId vem do JWT (exigirMembro), nunca da URL.
    */
   const { data: tenant } = await supabase
     .from('tenants')

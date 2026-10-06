@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 import { ControlePausa, LimparMemoria } from './controles';
@@ -25,7 +25,7 @@ export default async function PaginaConversa({
 }: {
   params: Promise<{ conversationId: string }>;
 }) {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('ver_conversas');
   const { conversationId } = await params;
   const idNum = Number(conversationId);
   if (!Number.isFinite(idNum)) notFound();

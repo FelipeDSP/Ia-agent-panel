@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 import { Alert } from '@/components/ui/alert';
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { temToolContratada } from '@/lib/tools/contratacao';
 
@@ -38,7 +38,7 @@ function AbasCatalogo({ atual }: { atual: 'produtos' | 'categorias' }) {
 }
 
 export default async function PaginaCategorias() {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_catalogo');
 
   if (!(await temToolContratada(usuario.tenantId, 'vendas'))) {
     return (

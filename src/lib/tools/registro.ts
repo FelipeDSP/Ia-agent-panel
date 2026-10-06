@@ -287,7 +287,12 @@ export const ROTAS_SEMPRE_VISIVEIS = [
   // a que horas o procuram, quantas conversas o agente levou sozinho, quanto
   // virou pedido. Número de mensagens deixa de ser o protagonista.
   { href: '/painel/relatorios', rotulo: 'Relatórios', icone: 'BarChart3' },
-  { href: '/painel/configuracoes', rotulo: 'Configurações', icone: 'Settings' },
+  // 06/10: a equipe da conta. `somenteAdmin` porque o agente não administra
+  // os colegas — e, se aparecesse para ele, seria um item que a rota recusa.
+  // Não é tool: ninguém contrata "ter equipe"; o que a agência vende é o
+  // número de assentos (`tenants.max_agentes`, migração 81).
+  { href: '/painel/equipe', rotulo: 'Equipe', icone: 'Users', somenteAdmin: true },
+  { href: '/painel/configuracoes', rotulo: 'Configurações', icone: 'Settings', somenteAdmin: true },
 ] as const;
 
 /**
@@ -342,7 +347,12 @@ export type ItemMenuPainel = { href: string; rotulo: string; icone: string };
  * A mesma escolha vale no guard de rota (`exigirToolDaRota`): falha fecha.
  * Divergir aqui produziria menu que mostra o que a rota recusa.
  */
-export function menuDoPainel(contratadas: ReadonlySet<string>): ItemMenuPainel[] {
+export function menuDoPainel(
+  contratadas: ReadonlySet<string>,
+  /** O que este usuário pode. `null` = admin (pode tudo), que é o caso comum. */
+  capacidades: ReadonlySet<string> | null = null,
+  ehAdmin = true,
+): ItemMenuPainel[] {
   const condicionais = Object.entries(REGISTRO_TOOLS).flatMap(([nome, def]) =>
     contratadas.has(nome) ? (def.rotasPainel ?? []).filter((r) => r.menu !== false).map(({ href, rotulo, icone }) => ({ href, rotulo, icone })) : [],
   );
@@ -353,5 +363,36 @@ export function menuDoPainel(contratadas: ReadonlySet<string>): ItemMenuPainel[]
   const fixas = [...ROTAS_SEMPRE_VISIVEIS];
   const corte = fixas.findIndex((i) => i.href === '/painel/conversas');
   const pos = corte === -1 ? fixas.length : corte;
-  return [...fixas.slice(0, pos), ...condicionais, ...fixas.slice(pos)];
+  const todos = [...fixas.slice(0, pos), ...condicionais, ...fixas.slice(pos)];
+
+  // O agente vê o que a FUNÇÃO dele alcança. Mesma escolha das tools: falha
+  // fecha — `capacidades` vazio esconde tudo o que é condicional, e o que
+  // sobra é a Visão geral. Mostrar demais levaria o agente a clicar num item
+  // que a rota recusa com 404.
+  if (ehAdmin) return todos;
+  const pode = (href: string) => {
+    const cap = CAPACIDADE_DA_ROTA[href];
+    return cap === undefined ? true : (capacidades?.has(cap) ?? false);
+  };
+  return todos.filter((i) => !ehSomenteAdmin(i.href) && pode(i.href));
+}
+
+/**
+ * Qual capacidade abre cada rota do painel. Rota ausente = qualquer membro
+ * da conta entra (a Visão geral e Pedidos, que o agente precisa abrir para
+ * trabalhar).
+ *
+ * ESTE MAPA E O GUARD DA PÁGINA SÃO UM PAR DERIVADO: o que está aqui tem de
+ * ser o mesmo `exigirMembro('...')` que a página chama, senão o menu mostra o
+ * que a rota nega. `teste:equipe-do-cliente` lê os dois e compara.
+ */
+export const CAPACIDADE_DA_ROTA: Record<string, string> = {
+  '/painel/conversas': 'ver_conversas',
+  '/painel/conhecimento': 'editar_base',
+  '/painel/relatorios': 'ver_consumo',
+  '/painel/catalogo': 'editar_catalogo',
+};
+
+export function ehSomenteAdmin(href: string): boolean {
+  return ROTAS_SEMPRE_VISIVEIS.some((r) => r.href === href && 'somenteAdmin' in r && r.somenteAdmin === true);
 }

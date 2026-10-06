@@ -9,14 +9,14 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { rotuloPagamentoModo } from '@/lib/tools/vendas-config';
 import { formatarBRL } from '@/lib/vendas/dinheiro';
 import { StatusPedido, dataCurta } from './componentes';
 
 export default async function PaginaPedidos() {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro();
   const supabase = await criarClienteServidor();
 
   // RLS já escopa por tenant; filtro explícito como segunda camada (regra 6).

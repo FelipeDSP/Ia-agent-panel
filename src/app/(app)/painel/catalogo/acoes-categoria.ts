@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { ERRO_NAO_CONTRATADA, temToolContratada } from '@/lib/tools/contratacao';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
@@ -71,7 +71,7 @@ export async function criarCategoria(
   _estadoAnterior: EstadoCategoria,
   fd: FormData,
 ): Promise<EstadoCategoria> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_catalogo');
   // Superfície de tool: a action é entrada própria.
   if (!(await temToolContratada(usuario.tenantId, 'vendas'))) {
     return { erro: ERRO_NAO_CONTRATADA };
@@ -104,7 +104,7 @@ export async function renomearCategoria(
   _estadoAnterior: EstadoCategoria,
   fd: FormData,
 ): Promise<EstadoCategoria> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_catalogo');
   // Superfície de tool: a action é entrada própria.
   if (!(await temToolContratada(usuario.tenantId, 'vendas'))) {
     return { erro: ERRO_NAO_CONTRATADA };
@@ -140,7 +140,7 @@ export async function renomearCategoria(
 }
 
 export async function removerCategoria(id: string): Promise<EstadoCategoria> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_catalogo');
   // Superfície de tool: a action é entrada própria.
   if (!(await temToolContratada(usuario.tenantId, 'vendas'))) {
     return { erro: ERRO_NAO_CONTRATADA };

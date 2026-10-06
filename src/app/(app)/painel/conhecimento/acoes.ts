@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { revalidatePath } from 'next/cache';
 
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { invocarProcessamento } from '@/lib/ingestao';
 import {
   MSG_JOB_MORTO,
@@ -47,7 +47,7 @@ export async function subirArquivo(
   _estado: EstadoIngestao,
   fd: FormData,
 ): Promise<EstadoIngestao> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_base');
 
   const arquivo = fd.get('arquivo');
   if (!(arquivo instanceof File) || arquivo.size === 0) {
@@ -146,7 +146,7 @@ export async function ingerirTexto(
   _estado: EstadoIngestao,
   fd: FormData,
 ): Promise<EstadoIngestao> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_base');
 
   const titulo = String(fd.get('titulo') ?? '').trim();
   const texto = String(fd.get('texto') ?? '').trim();
@@ -199,7 +199,7 @@ export async function ingerirTexto(
  * apaga os chunks antigos daquele origem e insere os novos.
  */
 export async function reprocessar(jobId: string): Promise<EstadoIngestao> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_base');
   const supabase = await criarClienteServidor();
 
   // RLS ja escopa por tenant; ainda assim filtramos explicito por ele (regra 6).
@@ -240,7 +240,7 @@ export async function reprocessar(jobId: string): Promise<EstadoIngestao> {
  * Filtro de tenant explicito alem do RLS (regra 6): as duas camadas.
  */
 export async function excluirDocumento(origem: string): Promise<EstadoIngestao> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_base');
   const supabase = await criarClienteServidor();
 
   const { data: afetados, error } = await supabase
@@ -283,7 +283,7 @@ export async function excluirDocumento(origem: string): Promise<EstadoIngestao> 
  * registro esconderia o que existe na base.
  */
 export async function dispensarJob(jobId: string): Promise<EstadoIngestao> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_base');
   const supabase = await criarClienteServidor();
 
   const limite = limiteJobMorto();
@@ -319,7 +319,7 @@ export type ChunkConteudo = { indice: number; texto: string };
 export async function verConteudoDocumento(
   origem: string,
 ): Promise<{ chunks: ChunkConteudo[]; erro?: string }> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_base');
   const supabase = await criarClienteServidor();
 
   const { data, error } = await supabase
@@ -389,7 +389,7 @@ async function marcarJobsMortos(
 
 /** Jobs recentes do tenant, para o polling de progresso. */
 export async function listarStatusJobs(): Promise<JobStatus[]> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_base');
   const supabase = await criarClienteServidor();
 
   await marcarJobsMortos(supabase, usuario.tenantId);

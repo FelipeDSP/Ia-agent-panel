@@ -5,14 +5,14 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { desdeJanela } from '@/lib/retencao';
 
 import { ListaConversas } from './lista';
 
 export default async function PaginaConversas() {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('ver_conversas');
   const supabase = await criarClienteServidor();
 
   /*

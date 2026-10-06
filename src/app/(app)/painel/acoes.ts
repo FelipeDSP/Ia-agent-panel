@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro, exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteAdmin } from '@/lib/supabase/admin';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { validarEdicaoTenantAdmin } from '@/lib/tenants/schema';
@@ -119,7 +119,7 @@ export async function salvarConfigTenant(
   _estado: EstadoConfig,
   fd: FormData,
 ): Promise<EstadoConfig> {
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro('editar_prompt');
 
   const validado = validarEdicaoTenantAdmin(fd);
   if (!validado.ok) return { errosCampo: validado.erros };

@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { exigirTenantAdmin } from '@/lib/auth';
+import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { rotuloModalidade, rotuloPagamentoModo } from '@/lib/tools/vendas-config';
 import { formatarBRL } from '@/lib/vendas/dinheiro';
@@ -19,7 +19,7 @@ import { MarcarPedido } from '../marcar';
 
 export default async function PaginaPedido({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const usuario = await exigirTenantAdmin();
+  const usuario = await exigirMembro();
   const supabase = await criarClienteServidor();
 
   // O `id` vem da URL, então é entrada não confiável — daí o filtro explícito
