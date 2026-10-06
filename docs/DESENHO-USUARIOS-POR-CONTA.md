@@ -58,3 +58,119 @@ usuário, o `tenant_admin`.
 
 `marcar_pedido` é a capacidade que os botões pago/retirado de *Pedidos* vão
 checar. Até lá, os botões são só de `tenant_admin`.
+
+---
+
+# Revisão de 06/10/2026 — funções nomeadas, e a permissão SAI do JWT
+
+> Decisão do Felipe, 06/10: *"o admin deve determinar o que cada um pode fazer,
+> ou categorizar por funções e cada função pode fazer X coisa, algo como as
+> funções personalizadas do Chatwoot"*. Isto **substitui** a decisão de 17/09
+> de marcar checkbox por pessoa. O resto da seção 3 continua valendo.
+
+## 6. O que muda
+
+**Função é entidade, não um campo da pessoa.** O admin da conta cria
+"Vendedor", marca as capacidades dela, e atribui a função a quantas pessoas
+quiser. Mudar a função muda todo mundo que a tem — que é o ponto, e é o que
+checkbox por pessoa não dá.
+
+`tenant_funcoes` (tenant_id, nome, capacidades text[]) e
+`usuarios_painel.funcao_id`. As capacidades continuam **fixas, vindas do
+registry no código** — o cliente compõe funções, não inventa capacidade.
+
+## 7. A permissão NÃO vai para o JWT. Esta é a mudança que importa.
+
+O desenho de 17/09 ia espelhar as permissões em `app_metadata` para a RLS ler,
+e já tinha anotado o preço: *"permissão mudada vale no próximo refresh do token
+(~1 h)"*, com o painel forçando refresh ou a tela avisando.
+
+Com função nomeada esse preço cresce de um jeito que inviabiliza: tirar uma
+capacidade da função "Vendedor" teria de reescrever o `app_metadata` de **toda
+pessoa que tem a função**, e ainda assim ninguém perderia o acesso até o token
+dela virar. O admin tira a permissão, vê a tela confirmar, e a pessoa continua
+editando por mais uma hora. Não há aviso que conserte isso.
+
+Então a RLS passa a **ler do banco, na hora**:
+
+```sql
+create function public.auth_capacidades() returns text[]
+  language sql stable security definer set search_path = public as $$
+  select case
+    when public.auth_is_super_admin() then public.todas_as_capacidades()
+    when u.papel = 'tenant_admin'     then public.todas_as_capacidades()
+    else coalesce(f.capacidades, '{}')
+  end
+  from public.usuarios_painel u
+  left join public.tenant_funcoes f on f.id = u.funcao_id
+  where u.id = auth.uid() and u.ativo;
+$$;
+```
+
+- `SECURITY DEFINER` porque `usuarios_painel` tem RLS e a função é chamada de
+  dentro de policy — sem isso, recursão;
+- a função lê **só a linha de `auth.uid()`**: não é um buraco para ver usuário
+  alheio;
+- `STABLE` é o que torna o custo aceitável: o Postgres resolve uma vez por
+  statement, não por linha;
+- **efeito imediato.** Admin tira a capacidade, a próxima requisição já é
+  negada. O chamado "tirei e ele continua editando" deixa de existir.
+
+O JWT continua carregando `papel` e `tenant_id` — esses não mudam com
+frequência e já funcionam. É a CAPACIDADE que sai de lá.
+
+## 8. Toda policy `for all` tem de virar duas
+
+É aqui que mora o trabalho, e é a parte que uma revisão desatenta erra.
+
+As policies de hoje são `for all` com `tenant_id = auth_tenant_id()` — um
+comando só para ler e escrever. Pôr a capacidade nelas **tiraria o SELECT
+junto**: um agente sem `editar_catalogo` deixaria de conseguir até VER o
+catálogo, e a tela quebraria sem ninguém entender por quê.
+
+Então cada uma vira **SELECT por tenant** + **escrita por tenant E
+capacidade**. Medido em 06/10, são 7 tabelas (`categorias`, `conversas`,
+`jobs_ingestao`, `kb_documentos`, `produtos`, `prompt_versoes`,
+`tenant_times`), mais `tenant_tools` (update) e `usuarios_painel`.
+
+## 9. E as SECURITY DEFINER, que a RLS não alcança
+
+**Policy não é a única porta.** Função `SECURITY DEFINER` roda como `postgres`,
+que tem `BYPASSRLS`: a policy mais caprichada do mundo não a vê passar. A lista
+de quem o cliente logado pode chamar sai do catálogo, não da memória:
+
+```sql
+select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.prosecdef
+   and has_function_privilege('authenticated', p.oid, 'execute');
+```
+
+Em 06/10 são seis, e **duas importam**:
+
+- `painel_marcar_pedido(uuid, text)` — **escreve**, e é a porta do botão
+  pago/retirado. Precisa de `marcar_pedido` por dentro;
+- `conversa_historico(bigint)` — lê o diálogo inteiro de uma conversa. Precisa
+  de `ver_conversas`.
+
+(`billing_consumo_mensal`, `billing_volume_mensal` → `ver_consumo`;
+`painel_aprendizado_recente` → `editar_base`; `agendar_podcast` não é deste
+produto.)
+
+Esquecer uma delas é o modo de falha caro: o botão some da tela e a função
+continua atendendo quem chamar direto pelo PostgREST.
+
+## 10. O que o teste tem de provar
+
+Além do isolamento entre tenants, que já é regra:
+
+1. **agente sem a capacidade não escreve** — nem por Server Action, nem por
+   PostgREST direto, nem pela `SECURITY DEFINER`. As três portas, porque são
+   três entradas independentes;
+2. **agente sem a capacidade AINDA LÊ** o que precisa ver (a divisão da
+   seção 8 funcionou);
+3. **tirar a capacidade vale na hora** — mesma conexão, sem token novo. É a
+   prova de que a seção 7 entregou o que prometeu;
+4. **sabotagem**: tirar a checagem de UMA policy, ou de UMA função
+   `SECURITY DEFINER`, deixa vermelho. Se não deixar, o teste não está medindo;
+5. a lista de portas sai do **catálogo** (`pg_policy`, `pg_proc`), não de uma
+   lista escrita à mão — função nova entra sozinha, como em `teste:grants-n8n`.
