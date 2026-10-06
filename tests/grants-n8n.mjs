@@ -174,6 +174,17 @@ try {
       'agendar_podcast',          // formulario publico do site
       'painel_marcar_pedido',     // /painel/pedidos/[id] (69: pago / retirado)
       'painel_aprendizado_recente', // /painel/conhecimento/chamadas (78: o que o aprendizado guardou e recusou)
+      // 80: estas duas NAO sao tela — sao as proprias funcoes de permissao, e
+      // precisam de EXECUTE para `authenticated` porque sao chamadas DE DENTRO
+      // das policies, que rodam como o usuario. Sem o grant, toda policy que as
+      // usa falha por permissao e o painel inteiro para.
+      //
+      // Elas sao SECURITY DEFINER por necessidade (leem `usuarios_painel`, que
+      // tem RLS; sem isso, recursao) e sao seguras por FORMA, nao por confianca:
+      // nao recebem argumento nenhum e so olham a linha de `auth.uid()`. Nao ha
+      // parametro por onde pedir a linha de outra pessoa.
+      'auth_capacidades',
+      'auth_papel',
     ];
     const { rows } = await c.query(
       `select p.proname
@@ -261,7 +272,12 @@ try {
     const PAINEL_AUTHENTICATED = [
       'agendar_podcast', 'billing_consumo_mensal', 'billing_volume_mensal', 'conversa_historico',
       'painel_marcar_pedido', 'painel_aprendizado_recente',
-    ];
+          // 80: as duas funcoes de permissao, pelo mesmo motivo da lista acima —
+      // sao chamadas de dentro das policies, entao `authenticated` precisa de
+      // EXECUTE. Sem argumento e lendo so `auth.uid()`, a forma e segura.
+      'auth_capacidades',
+      'auth_papel',
+];
     const { rows } = await c.query(
       `select p.proname,
               (p.proname like 'api\\_n8n\\_%' or p.proname like 'api\\_agente\\_%') as e_superficie,

@@ -134,7 +134,13 @@ async function main() {
 
   try {
     async function criar(email, tenantId) {
-      const meta = { tenant_id: tenantId, role: 'tenant_admin' };
+      // 06/10: era `role: 'tenant_admin'`, e o trigger `handle_novo_usuario` lê
+      // `papel`. Com a chave errada ele devolvia NEW sem criar a projeção em
+      // `usuarios_painel` — estes usuários rodaram meses SEM linha, e o teste
+      // passava porque a policy antiga só olhava `tenant_id`. A 80 passou a
+      // perguntar o que a pessoa pode, e a ausência apareceu. O usuário agora
+      // nasce como o convite de produção o cria.
+      const meta = { tenant_id: tenantId, papel: 'tenant_admin' };
       let { data, error } = await criarUsuario(admin, {
         email, password: SENHA, email_confirm: true, app_metadata: meta, user_metadata: { nome: email },
       });

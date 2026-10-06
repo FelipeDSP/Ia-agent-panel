@@ -161,6 +161,17 @@ try {
   const tB = (await um(`insert into public.tenants (slug, nome) values ($1,$2) returning id`,
     [`z-fn-b-${Date.now()}`, 'Func B'])).id;
 
+  // A 81 (aplicada em 06/10) poe teto de agentes, e toda conta nasce em ZERO.
+  // O teste ARRANJA o assento que vai usar, em vez de contar com o default —
+  // sem isto ele dependeria de a 81 nao existir, que é afirmar o calendário.
+  // `max_agentes` e coluna da AGENCIA: o `tenants_guard_colunas` barra ate a
+  // conexao de migracao sem claim de super_admin (a mesma armadilha medida na
+  // 75). Que ele tenha barrado aqui e a prova de que o cliente nao se
+  // autoconcede assento.
+  await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
+  await c.query(`update public.tenants set max_agentes = 5 where id = any($1::uuid[])`, [[tA, tB]]);
+  await c.query(`select set_config('request.jwt.claims', '', true)`);
+
   const fVendedor = (await um(
     `insert into public.tenant_funcoes (tenant_id, nome, capacidades) values ($1,'Vendedor',$2) returning id`,
     [tA, ['ver_conversas', 'marcar_pedido', 'editar_catalogo']])).id;
