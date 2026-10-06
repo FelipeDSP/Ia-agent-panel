@@ -23,6 +23,18 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-sidebar: var(--sidebar);
+  /*
+   * 06/10: `--input` e `--popover` eram usados pelo código e NUNCA declarados.
+   * Token inexistente não falha no Tailwind — a classe simplesmente não gera
+   * regra. O resultado foi o popup do `?` transparente e o switch desligado
+   * sem fundo, por meses, sem nada quebrar. `teste:tokens-de-cor` varre isso
+   * agora.
+   *
+   * `--popover` não entra: o lugar onde ele era usado passou a `bg-card`, que
+   * é o que um painel flutuante deve ser neste tema. Declarar um token para
+   * manter uma classe que ninguém mais usa seria o caminho inverso.
+   */
+  --color-input: var(--input);
 }
 
 /* Claro (padrão). */
@@ -36,6 +48,7 @@
   --muted: oklch(0.968 0.005 260);
   --muted-fg: oklch(0.52 0.02 260);
   --border: oklch(0.92 0.006 260);
+  --input: oklch(0.92 0.006 260);
   --ring: oklch(0.754 0.168 66.2);
   --destructive: oklch(0.55 0.2 27);
   --destructive-fg: oklch(0.99 0 0);
@@ -60,6 +73,7 @@
     --muted: oklch(0.26 0.018 265);
     --muted-fg: oklch(0.72 0.015 260);
     --border: oklch(0.3 0.018 265);
+  --input: oklch(0.3 0.018 265);
     --ring: oklch(0.754 0.168 66.2);
     --destructive: oklch(0.65 0.19 27);
     --destructive-fg: oklch(0.99 0 0);
@@ -80,6 +94,7 @@
   --muted: oklch(0.26 0.018 265);
   --muted-fg: oklch(0.72 0.015 260);
   --border: oklch(0.3 0.018 265);
+  --input: oklch(0.3 0.018 265);
   --ring: oklch(0.754 0.168 66.2);
   --destructive: oklch(0.65 0.19 27);
   --destructive-fg: oklch(0.99 0 0);

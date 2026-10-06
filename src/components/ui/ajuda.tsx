@@ -49,9 +49,16 @@ export function Ajuda({ titulo, children }: { titulo: string; children: ReactNod
         <HelpCircle className="h-4 w-4" />
       </button>
       {aberto ? (
+        /*
+         * `bg-card`, NÃO `bg-popover`: este tema não declara `--popover`, e uma
+         * classe de token inexistente não falha — ela simplesmente não pinta
+         * nada. O painel ficou TRANSPARENTE, com o texto da página aparecendo
+         * através dele (visto pelo Felipe em 06/10). `teste:tokens-de-cor`
+         * passou a varrer isso: classe de cor que o tema não declara reprova.
+         */
         <span
           role="note"
-          className="absolute left-0 top-6 z-30 w-[min(22rem,calc(100vw-3rem))] rounded-md border border-border bg-popover p-3 text-sm font-normal leading-relaxed text-muted-foreground shadow-lg [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_strong]:text-foreground"
+          className="absolute left-0 top-6 z-30 block w-[min(22rem,calc(100vw-3rem))] rounded-md border border-border bg-card p-3 text-left text-sm font-normal leading-relaxed text-muted-foreground shadow-lg [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs [&_strong]:text-foreground"
         >
           {children}
         </span>

@@ -77,6 +77,7 @@
     "teste:asaas-classificacao": "node --env-file=.env.local tests/asaas-classificacao.mjs",
     "teste:tool-pedido-fundida": "node --env-file=.env.local tests/tool-pedido-fundida.mjs",
     "teste:tool-schema": "node tests/tool-schema-strict.mjs",
+    "teste:tokens-de-cor": "node tests/tokens-de-cor.mjs",
     "teste:tool-pagamento": "node --env-file=.env.local tests/tool-pagamento.mjs",
     "sonda:asaas-expiracao": "node --env-file=.env.local scripts/sonda-asaas-expiracao.mjs",
     "sonda:a-criar": "node --env-file=.env.local scripts/sonda-a-criar-link-expiracao.mjs",
