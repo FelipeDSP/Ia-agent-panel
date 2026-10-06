@@ -142,5 +142,33 @@ chk('S2: com hora e criação DISCORDANDO, a fila segue a hora', porHora === 'ce
 chk('S2: ...e seguir a criação daria a ordem oposta — a sabotagem muda o resultado',
   [...(discordam?.pedidos ?? [])].sort((a, b) => a.criado_em.localeCompare(b.criado_em))
     .map((p) => p.id).join(',') === 'tarde,cedo');
+console.log('\n== 9. As tres abas tem a MESMA forma ==\n');
+// 06/10: o Felipe olhou as abas e disse "estao muito diferentes umas das
+// outras". Estavam: a fila usava um componente de linha e as outras duas,
+// outro — a mesma informacao mudava de lugar conforme a aba. A propriedade que
+// impede isso de voltar nao e estetica: e que haja UM componente de linha e UM
+// involucro, usados pelas tres.
+const fsMod = await import('node:fs');
+const PAGINA = fsMod.readFileSync('src/app/(app)/painel/pedidos/page.tsx', 'utf8');
+const LINHA = fsMod.readFileSync('src/app/(app)/painel/pedidos/linha.tsx', 'utf8');
+
+const usosLinha = (PAGINA.match(/<LinhaPedido\b/g) ?? []).length;
+chk('a varredura achou usos do componente de linha', usosLinha > 0, String(usosLinha));
+chk('as tres abas usam o MESMO componente de linha', usosLinha >= 3, usosLinha + ' usos');
+
+const usosBloco = (PAGINA.match(/<Bloco\b/g) ?? []).length;
+chk('as tres abas usam o MESMO involucro', usosBloco >= 3, usosBloco + ' usos');
+
+// A lista sai do que a pagina DEFINE, nao de um nome que eu espere encontrar.
+const proprios = [...PAGINA.matchAll(/^function (Linha\w+)/gm)].map((m) => m[1]);
+chk('a pagina nao define componente de linha proprio (linha.tsx e o unico)',
+  proprios.length === 0, proprios.join(','));
+
+chk('a coluna da acao existe sempre, para as linhas nao dancarem entre abas',
+  /w-\[8\.5rem\]/.test(LINHA));
+chk('o link e so no numero, nunca na linha inteira (botao dentro de link nao vale)',
+  !/<Link[^>]*>\s*<div/.test(LINHA));
+
+
 console.log(`\n${falhas.length ? 'FALHOU' : 'passaram'}: ${ok} ok, ${falhas.length} falhas`);
 if (falhas.length) { for (const f of falhas) console.log('  - ' + f); process.exit(1); }

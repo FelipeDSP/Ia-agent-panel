@@ -1,5 +1,6 @@
 import { ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
 import { Ajuda } from '@/components/ui/ajuda';
 import { Alert } from '@/components/ui/alert';
@@ -7,13 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { exigirMembro } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { lerHorarioAgente } from '@/lib/tenants/horario-agente';
-import { rotuloPagamentoModo } from '@/lib/tools/vendas-config';
-import { formatarBRL } from '@/lib/vendas/dinheiro';
 
-import { StatusPedido, dataCurta } from './componentes';
-import { PassoDoPedido } from './marcar';
 import { Busca } from './busca';
-import { casaBusca, horaLocal, montarFila, naFila, type PedidoDaFila } from './fila';
+import { casaBusca, montarFila, naFila, type PedidoDaFila } from './fila';
+import { LinhaPedido } from './linha';
 
 const ABAS = [
   ['fila', 'A fazer'],
@@ -35,15 +33,12 @@ export default async function PaginaPedidos({
   const supabase = await criarClienteServidor();
 
   // O fuso da loja: a fila agrupa por DIA, e "hoje" em Ariquemes não é "hoje"
-  // em São Paulo. Falha fecha no padrão, como o agente faz.
+  // em São Paulo. Sem horário configurado, o padrão é o mesmo do agente.
   const { data: tenant } = await supabase
     .from('tenants')
     .select('horario_agente')
     .eq('id', usuario.tenantId)
     .maybeSingle();
-  // `lerHorarioAgente` devolve null quando o cliente não configurou horário —
-  // a maioria. O fuso cai no padrão do serviço, o mesmo que o agente usa para
-  // dizer que horas são (`FUSO_PADRAO`).
   const tz = lerHorarioAgente(tenant?.horario_agente ?? null)?.timezone ?? 'America/Sao_Paulo';
 
   // RLS já escopa por tenant; filtro explícito como segunda camada (regra 6).
@@ -61,7 +56,7 @@ export default async function PaginaPedidos({
     return (
       <Alert variant="destructive">
         Não foi possível carregar os pedidos.
-        {/^.*(quando_em|separado_em).*$/.test(error.message)
+        {/quando_em|separado_em/.test(error.message)
           ? ' A migração 83 ainda não foi aplicada neste banco.'
           : ''}
       </Alert>
@@ -86,21 +81,18 @@ export default async function PaginaPedidos({
 
   const filtrados = todos.filter((p) => casaBusca(p, termo));
   const fila = montarFila(filtrados, new Date(), tz);
-  const naFilaN = todos.filter(naFila).length;
-
   const historico = filtrados
     .filter((p) => p.retirado_em || p.status === 'cancelado' || p.status === 'expirado')
     .slice(0, 100);
   const rascunhos = filtrados.filter((p) => p.status === 'rascunho');
+  const naFilaN = todos.filter(naFila).length;
 
   return (
     <div className="flex flex-col gap-6">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">Pedidos</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {naFilaN === 0
-            ? 'Nada para preparar agora.'
-            : `${naFilaN} pedido(s) para preparar.`}
+          {naFilaN === 0 ? 'Nada para preparar agora.' : `${naFilaN} pedido(s) para preparar.`}
         </p>
       </header>
 
@@ -119,6 +111,10 @@ export default async function PaginaPedidos({
 
       <Busca valor={termo} aba={aba} />
 
+      {/* AS TRÊS ABAS SÃO O MESMO BLOCO: título, contagem, ajuda, e linhas com
+          o mesmo esqueleto. Só muda o conteúdo. Antes a fila tinha uma forma e
+          as outras duas tinham outra — e quem trabalha nas três o dia inteiro
+          tinha de reaprender a ler a cada clique (observação do Felipe, 06/10). */}
       {aba === 'fila' ? (
         fila.length === 0 ? (
           <Vazio
@@ -131,74 +127,107 @@ export default async function PaginaPedidos({
           />
         ) : (
           fila.map((g) => (
-            <Card key={g.chave}>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-1.5 text-base">
-                  <span className={g.chave === 'atrasado' ? 'text-destructive' : undefined}>
-                    {g.rotulo}
-                  </span>
-                  <span className="text-sm font-normal text-muted-foreground">
-                    ({g.pedidos.length})
-                  </span>
-                  {g.chave === 'sem_horario' ? (
-                    <Ajuda titulo="Sem horário combinado">
-                      O agente pergunta quando o cliente vem buscar e grava a hora. Estes aqui
-                      fecharam sem ninguém combinar — ou são de antes de o agente passar a
-                      perguntar.
-                      <br />
-                      <br />
-                      Abra o pedido para ver a conversa e combinar.
-                    </Ajuda>
-                  ) : null}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col divide-y divide-border">
-                {g.pedidos.map((p) => (
-                  <LinhaFila key={p.id} p={p} tz={tz} />
-                ))}
-              </CardContent>
-            </Card>
+            <Bloco
+              key={g.chave}
+              titulo={g.rotulo}
+              n={g.pedidos.length}
+              alerta={g.chave === 'atrasado'}
+              ajuda={
+                g.chave === 'sem_horario' ? (
+                  <>
+                    O agente pergunta quando o cliente vem buscar e grava a hora. Estes fecharam sem
+                    ninguém combinar — ou são de antes de o agente passar a perguntar.
+                    <br />
+                    <br />
+                    Abra o pedido para ver a conversa e combinar.
+                  </>
+                ) : null
+              }
+            >
+              {g.pedidos.map((p) => (
+                <LinhaPedido key={p.id} p={p} tz={tz} mostrarHora acao="passo" />
+              ))}
+            </Bloco>
           ))
         )
       ) : null}
 
       {aba === 'historico' ? (
-        <Card>
-          <CardContent className="flex flex-col divide-y divide-border pt-6">
-            {historico.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum pedido encerrado ainda.</p>
-            ) : (
-              historico.map((p) => <LinhaSimples key={p.id} p={p} />)
-            )}
-          </CardContent>
-        </Card>
+        <Bloco
+          titulo="Já saíram"
+          n={historico.length}
+          ajuda={
+            <>
+              Pedidos que terminaram: entregues ao cliente, cancelados, ou que expiraram sem
+              pagamento.
+              <br />
+              <br />
+              Os 100 mais recentes.
+            </>
+          }
+        >
+          {historico.length === 0 ? (
+            <p className="py-3 text-sm text-muted-foreground">Nenhum pedido encerrado ainda.</p>
+          ) : (
+            historico.map((p) => (
+              <LinhaPedido key={p.id} p={p} tz={tz} mostrarHora={false} acao="nenhuma" />
+            ))
+          )}
+        </Bloco>
       ) : null}
 
       {aba === 'rascunhos' ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-1.5 text-base">
-              Em aberto
-              <Ajuda titulo="Pedidos em aberto">
-                Carrinho que o agente ainda está montando numa conversa. Os itens podem mudar, e
-                por isso ele <strong>não</strong> entra na fila de preparo — o cliente ainda não
-                fechou.
-                <br />
-                <br />
-                Se um ficou parado há dias, a conversa provavelmente morreu.
-              </Ajuda>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col divide-y divide-border">
-            {rascunhos.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum carrinho em aberto.</p>
-            ) : (
-              rascunhos.map((p) => <LinhaSimples key={p.id} p={p} />)
-            )}
-          </CardContent>
-        </Card>
+        <Bloco
+          titulo="Em aberto"
+          n={rascunhos.length}
+          ajuda={
+            <>
+              Carrinho que o agente ainda está montando numa conversa. Os itens podem mudar, e por
+              isso ele <strong>não</strong> entra na fila de preparo — o cliente ainda não fechou.
+              <br />
+              <br />
+              Se um ficou parado há dias, a conversa provavelmente morreu.
+            </>
+          }
+        >
+          {rascunhos.length === 0 ? (
+            <p className="py-3 text-sm text-muted-foreground">Nenhum carrinho em aberto.</p>
+          ) : (
+            rascunhos.map((p) => (
+              <LinhaPedido key={p.id} p={p} tz={tz} mostrarHora={false} acao="nenhuma" />
+            ))
+          )}
+        </Bloco>
       ) : null}
     </div>
+  );
+}
+
+/** O mesmo invólucro para toda aba e todo grupo da fila. */
+function Bloco({
+  titulo,
+  n,
+  ajuda,
+  alerta,
+  children,
+}: {
+  titulo: string;
+  n: number;
+  ajuda?: ReactNode;
+  alerta?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5 text-base">
+          <span className={alerta ? 'text-destructive' : undefined}>{titulo}</span>
+          <span className="text-sm font-normal text-muted-foreground">({n})</span>
+          {ajuda ? <Ajuda titulo={titulo}>{ajuda}</Ajuda> : null}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col divide-y divide-border">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -211,56 +240,5 @@ function Vazio({ titulo, texto }: { titulo: string; texto: string }) {
         <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{texto}</p>
       </div>
     </div>
-  );
-}
-
-function LinhaFila({ p, tz }: { p: PedidoDaFila; tz: string }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-      <div className="flex min-w-0 items-center gap-4">
-        <span className="w-14 shrink-0 text-right font-medium tabular-nums">
-          {p.quando_em ? horaLocal(p.quando_em, tz) : '—'}
-        </span>
-        <div className="min-w-0">
-          <Link href={`/painel/pedidos/${p.id}`} className="font-medium underline-offset-4 hover:underline">
-            {p.numero ? `Pedido nº ${p.numero}` : 'Pedido'}
-          </Link>
-          {p.retirada_nome ? <span className="ml-2">{p.retirada_nome}</span> : null}
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {p.itens} {p.itens === 1 ? 'item' : 'itens'} · {formatarBRL(p.total_centavos)}
-            {p.pagamento_modo ? ` · ${rotuloPagamentoModo(p.pagamento_modo)}` : ''}
-            {p.separado_em ? ' · separado' : ''}
-          </p>
-        </div>
-      </div>
-      <PassoDoPedido
-        pedidoId={p.id}
-        passo={p.separado_em ? (p.status === 'aguardando_pagamento' ? 'pago' : 'retirado') : 'separar'}
-        pagamentoModo={p.pagamento_modo}
-        separado={Boolean(p.separado_em)}
-      />
-    </div>
-  );
-}
-
-function LinhaSimples({ p }: { p: PedidoDaFila }) {
-  return (
-    <Link
-      href={`/painel/pedidos/${p.id}`}
-      className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0 hover:bg-muted/40"
-    >
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium">{p.numero ? `Pedido nº ${p.numero}` : 'Pedido em aberto'}</span>
-          <StatusPedido status={p.status} retiradoEm={p.retirado_em} />
-        </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {p.itens} {p.itens === 1 ? 'item' : 'itens'}
-          {p.retirada_nome ? ` · retira: ${p.retirada_nome}` : ''} · conversa {p.conversation_id} ·{' '}
-          {dataCurta(p.criado_em)}
-        </p>
-      </div>
-      <div className="font-medium tabular-nums">{formatarBRL(p.total_centavos)}</div>
-    </Link>
   );
 }
