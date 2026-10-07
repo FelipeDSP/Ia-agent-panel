@@ -412,9 +412,37 @@ try {
   const disparou = await dispararamSob(alvos);
   console.log(`      dispararam: ${disparou.join(', ') || '(nenhuma)'}`);
 
-  chk('1. a regra DISPARA na conversa 20 do emporio (o laço de 5.624 mensagens)',
-    disparou.includes('emporio#20'), `disparou em: ${disparou.join(', ') || 'nada'}`);
-  chk('2. ZERO falsos positivos nas outras conversas reais',
+  // 07/10/2026 — ESTA ASSERÇÃO ERA SOBRE O ESTADO DO MUNDO, e o mundo mudou.
+  //
+  // Ela usava a conversa 20 do Empório (o laço real de agosto) como fixture. A
+  // regra compara o CONTEÚDO das últimas entradas, e a retenção (migração 67,
+  // texto por 45 dias) acabou de apagar o texto daquela conversa: em 07/10 há
+  // 5.258 linhas com `conteudo` nulo no banco. O teste ficou vermelho sem
+  // defeito nenhum — vermelho porque o sistema funcionou, que é a forma mais
+  // rápida de todo mundo parar de olhar a suíte (CLAUDE.md).
+  //
+  // O conserto é o corolário de sempre: o teste ARRANJA o laço que vai medir,
+  // em vez de torcer para produção ainda ter um. O `semear` já existia aqui.
+  // A varredura sobre as conversas REAIS continua, mas só para o que não
+  // depende de texto preservado: zero falsos positivos.
+  const laco = await semear(`${Math.random().toString(16).slice(2, 8)}-laco`, 9_540_001,
+    [['oi, tem bolo?', 9], ['oi, tem bolo?', 7], ['oi, tem bolo?', 5], ['oi, tem bolo?', 3], ['oi, tem bolo?', 1]]);
+  const rLaco = await portao(laco.t, laco.conv);
+  chk('1. a regra DISPARA num laço ARRANJADO pelo teste (5 entradas iguais em 10 min)',
+    rLaco.rows.length === 1 && rLaco.rows[0].anomalia === true,
+    rLaco.erro ?? JSON.stringify(rLaco.rows[0]));
+
+  // Contraprova: sem a repetição, a mesma conversa NÃO dispara. Sem ela,
+  // "disparou" passaria com uma regra que acusa qualquer conversa.
+  const normal = await semear(`${Math.random().toString(16).slice(2, 8)}-normal`, 9_540_002,
+    [['oi, tem bolo?', 9], ['e torta?', 7], ['quanto custa?', 5], ['pode separar', 3], ['obrigado', 1]]);
+  const rNormal = await portao(normal.t, normal.conv);
+  chk('1b. contraprova: conversa SEM repetição não dispara',
+    rNormal.rows.length === 1 && rNormal.rows[0].anomalia === false,
+    rNormal.erro ?? JSON.stringify(rNormal.rows[0]));
+  // A conv 20 continua tolerada aqui: se a retenção ainda não tiver alcançado
+  // uma parte dela, disparar é CERTO, não falso positivo.
+  chk('2. ZERO falsos positivos nas conversas reais',
     disparou.filter((d) => d !== 'emporio#20').length === 0,
     `falsos positivos: ${disparou.filter((d) => d !== 'emporio#20').join(', ')}`);
 

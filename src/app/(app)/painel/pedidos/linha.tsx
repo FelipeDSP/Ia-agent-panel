@@ -89,11 +89,20 @@ export function LinhaPedido({
         </p>
       </div>
 
-      <span className="shrink-0 font-medium tabular-nums">{formatarBRL(p.total_centavos)}</span>
+      <span className="shrink-0 whitespace-nowrap font-medium tabular-nums">
+        {formatarBRL(p.total_centavos)}
+      </span>
 
-      {/* A coluna existe sempre: sem ela, as linhas com e sem botão ficariam
-          com larguras diferentes e o valor dançaria de uma para a outra. */}
-      <div className="flex w-[8.5rem] shrink-0 justify-end">
+      {/*
+       * `min-w`, NÃO `w`. A coluna existe sempre para o valor não dançar entre
+       * as linhas — mas um pedido JÁ SEPARADO tem DOIS botões ("Desfazer" e o
+       * próximo passo), e com largura fixa eles transbordavam por cima do
+       * valor: a tela imprimia `R$D1e2s,f0a0zer`, as duas coisas no mesmo
+       * lugar (visto pelo Felipe em 06/10). Largura mínima alinha o caso comum
+       * e deixa o caso de dois botões crescer, empurrando o nome — que é
+       * `min-w-0 flex-1` e encolhe de propósito.
+       */}
+      <div className="flex min-w-[8.5rem] shrink-0 justify-end gap-2">
         {acao === 'passo' ? (
           <PassoDoPedido
             pedidoId={p.id}

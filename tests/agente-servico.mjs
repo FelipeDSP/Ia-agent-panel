@@ -656,8 +656,19 @@ try {
       /CONFIRMADO/.test(v7d.estado ?? '') && (await passosDe(t7d.id)).some((p) => p.nome === 'estado_do_sistema' && /CONFIRMADO/.test(p.saida?.texto ?? '')), String(v7d.estado));
 
     // 7e. contraprova da regra 3: em conversa SEM pagamento, o mesmo texto é BARRADO.
+    //
+    // 07/10: o turno passou a CHAMAR a tool antes de mentir, e isso não é
+    // enfeite. Desde hoje o portão só considera "escreveu neste turno" quando
+    // uma tool de pedido rodou — antes ele inferia isso do carimbo da linha, e
+    // o `pedidoFechado` acima, que escreve direto no banco, fazia o papel da
+    // tool por acidente. Sem a chamada, quem barra é a regra 1 (afirmou efeito
+    // sem ter escrito), e a contraprova da regra 3 deixaria de medir a regra 3.
+    // O cenário fiel é o agente CONFERIR o pedido e ainda assim afirmar o
+    // pagamento.
     const pedB = await pedidoFechado(401, 7000, 7002);
-    roteiro.push({ texto: 'Sim! O pagamento do pedido nº 7002 foi confirmado. Obrigado!' });
+    roteiro.push(
+      { tool: 'gerenciar_pedido', args: { acao: 'ver', produto_id: null, quantidade: null, observacao: null, metadados: null, pagamento: null, nome_retirada: null, quando: null } },
+      { texto: 'Sim! O pagamento do pedido nº 7002 foi confirmado. Obrigado!' });
     const f7e = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 401, content: 'caiu?' }));
     await vencer(); await umCiclo(depsWorker);
     const t7e = await turnoDaFila(f7e.filaId);

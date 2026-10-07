@@ -129,13 +129,20 @@ const DEVEM_SOBREVIVER = [
 ];
 for (const [nome, re] of DEVEM_SOBREVIVER) chk(`o aviso sobrevive: ${nome}`, re.test(PAGINA));
 
-console.log('\n=== 5. O componente de ajuda fecha sozinho ===\n');
+console.log('\n=== 5. O componente de ajuda ===\n');
 
+// 06/10, SEGUNDA correcao do mesmo componente: ele deixou de flutuar e passou a
+// EMPURRAR o conteudo ("tem muito texto sobrepondo um o outro", Felipe). Com
+// isso, Escape e clique-fora deixaram de fazer sentido — eram muletas de
+// popover; um bloco em flow fecha no proprio `?`, e `aria-expanded` e o que o
+// leitor de tela precisa.
+//
+// As assercoes de COMPORTAMENTO do componente moram em `teste:ajuda-empurra`,
+// que e dele. Aqui fica so o que esta tela precisa: que o `?` exista e carregue
+// o texto que custou caro.
 const AJUDA = fs.readFileSync(path.join(RAIZ, 'src', 'components', 'ui', 'ajuda.tsx'), 'utf8');
-chk('fecha com Escape', /key === 'Escape'/.test(AJUDA));
-chk('fecha com clique fora', /mousedown/.test(AJUDA) && /contains\(/.test(AJUDA));
-chk('remove os ouvintes ao fechar — senão cada abrir empilha um', /removeEventListener/.test(AJUDA));
-chk('tem rótulo acessível (o botão é só um ícone)', /aria-label=\{`Ajuda:/.test(AJUDA));
+chk('o botao tem rotulo acessivel (e so um icone)', /aria-label=\{`Ajuda:/.test(AJUDA));
+chk('e anuncia aberto/fechado', /aria-expanded=/.test(AJUDA));
 
 console.log(`\n${falhas.length ? 'FALHOU' : 'passaram'}: ${ok} ok, ${falhas.length} falhas`);
 if (falhas.length) { for (const f of falhas) console.log('  - ' + f); process.exit(1); }

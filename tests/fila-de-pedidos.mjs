@@ -164,8 +164,12 @@ const proprios = [...PAGINA.matchAll(/^function (Linha\w+)/gm)].map((m) => m[1])
 chk('a pagina nao define componente de linha proprio (linha.tsx e o unico)',
   proprios.length === 0, proprios.join(','));
 
-chk('a coluna da acao existe sempre, para as linhas nao dancarem entre abas',
-  /w-\[8\.5rem\]/.test(LINHA));
+// `min-w`, nao `w`: com largura FIXA os dois botoes do pedido separado
+// transbordavam por cima do valor (06/10). A coluna continua existindo sempre
+// — e isso que impede o valor de dancar — mas pode crescer.
+chk('a coluna da acao tem largura MINIMA, nao fixa (dois botoes cabem)',
+  /min-w-\[8\.5rem\]/.test(LINHA) && !/[^-]w-\[8\.5rem\]/.test(LINHA));
+chk('o valor nao quebra linha', /whitespace-nowrap/.test(LINHA));
 chk('o link e so no numero, nunca na linha inteira (botao dentro de link nao vale)',
   !/<Link[^>]*>\s*<div/.test(LINHA));
 

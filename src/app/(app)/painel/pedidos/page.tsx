@@ -237,7 +237,7 @@ function Bloco({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-1.5 text-base">
+        <CardTitle className="flex flex-wrap items-center gap-1.5 text-base">
           <span className={alerta ? 'text-destructive' : undefined}>{titulo}</span>
           <span className="text-sm font-normal text-muted-foreground">({n})</span>
           {ajuda ? <Ajuda titulo={titulo}>{ajuda}</Ajuda> : null}

@@ -71,7 +71,7 @@ export default async function PaginaEquipe() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-1.5">
+          <CardTitle className="flex flex-wrap items-center gap-1.5">
             Funções
             <Ajuda titulo="Funções">
               Uma <strong>função</strong> é um conjunto de permissões com nome — &quot;Vendedor&quot;,
@@ -98,7 +98,7 @@ export default async function PaginaEquipe() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-1.5">
+          <CardTitle className="flex flex-wrap items-center gap-1.5">
             Pessoas
             <Ajuda titulo="Pessoas">
               <strong>Senha ninguém digita por ninguém</strong> — nem você. O convite gera um link, e a

@@ -337,7 +337,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
 
     // ---- o portão (o MESMO aplica-portao.js) ----
     const portao = await turno.medir('portao', 'aplica-portao.js', { chars: limpa.texto.length, perfil },
-      () => aplicarPortao({ db, regrasDir: deps.regrasDir, tenantId: tenant.tenant_id, conversationId, perfil, textoModelo: limpa.texto, componentes }),
+      () => aplicarPortao({ db, regrasDir: deps.regrasDir, tenantId: tenant.tenant_id, conversationId, perfil, textoModelo: limpa.texto, componentes, toolsDoTurno: r.tools.map((t) => t.nome) }),
       (s) => ({ veredito: s.veredito, transferir: s.transferir, bruto: s.portao.bruto ?? null }));
 
     // ---- duas barradas seguidas: transfere DE VERDADE ----

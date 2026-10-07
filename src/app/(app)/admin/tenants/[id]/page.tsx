@@ -244,7 +244,7 @@ export default async function PaginaDetalheTenant({
       <>
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">
+            <CardTitle className="flex flex-wrap items-center gap-1.5">
               Prompt
               <Ajuda titulo="Prompt">
                 <strong>Aqui vai QUEM o agente é e COMO ele se comporta:</strong> tom de voz, regras e o
@@ -287,7 +287,7 @@ export default async function PaginaDetalheTenant({
 
             {pausadas && pausadas.length > 0 ? (
               <div className="flex flex-col gap-2">
-                <p className="flex items-center gap-1.5 text-sm font-medium">
+                <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
                   Conversas pausadas ({pausadas.length})
                   <Ajuda titulo="Conversas pausadas">
                     Pausada quer dizer que <strong>um atendente humano assumiu</strong> e o agente parou
@@ -328,7 +328,7 @@ export default async function PaginaDetalheTenant({
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">
+            <CardTitle className="flex flex-wrap items-center gap-1.5">
               Chatwoot
               <Ajuda titulo="Chatwoot">
                 <strong>A caixa (inbox_id) é o que roteia.</strong> O agente é ligado a uma caixa, não à
@@ -367,7 +367,7 @@ export default async function PaginaDetalheTenant({
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">
+            <CardTitle className="flex flex-wrap items-center gap-1.5">
               Agent Bot
               <Ajuda titulo="Agent Bot">
                 No Chatwoot: <strong>Configurações → Bots → o bot da conta → outgoing_url</strong>.
@@ -384,7 +384,7 @@ export default async function PaginaDetalheTenant({
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">
+            <CardTitle className="flex flex-wrap items-center gap-1.5">
               Pagamento (Asaas)
               <Ajuda titulo="Pagamento (Asaas)">
                 A URL da API é derivada do ambiente, e a chave tem de ser do mesmo ambiente — chave de
@@ -423,7 +423,7 @@ export default async function PaginaDetalheTenant({
     modulos: (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-1.5">
+          <CardTitle className="flex flex-wrap items-center gap-1.5">
             Módulos
             <Ajuda titulo="Módulos">
               <strong>Contratar</strong> liga o módulo para este cliente — a Ordem de Serviço vira
@@ -449,7 +449,7 @@ export default async function PaginaDetalheTenant({
       <div className="flex flex-col gap-6">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">
+            <CardTitle className="flex flex-wrap items-center gap-1.5">
               Dono da conta
               <Ajuda titulo="Dono da conta">
                 O <strong>admin</strong> administra a conta inteira: prompt, catálogo, base,
@@ -473,7 +473,7 @@ export default async function PaginaDetalheTenant({
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">
+            <CardTitle className="flex flex-wrap items-center gap-1.5">
               Agentes da conta
               <Ajuda titulo="Agentes da conta">
                 Agente é quem o cliente põe para trabalhar no painel dele — e só faz o que a
@@ -524,7 +524,7 @@ export default async function PaginaDetalheTenant({
       <div className="flex flex-col gap-6">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">
+            <CardTitle className="flex flex-wrap items-center gap-1.5">
               Configuração do agente
               <Ajuda titulo="Configuração do agente">
                 <strong>Memória</strong> é o silêncio na conversa a partir do qual o agente recomeça sem
