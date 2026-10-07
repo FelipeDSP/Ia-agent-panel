@@ -10,7 +10,8 @@ import { Select } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  DIAS_SEMANA, MAX_MENSAGEM, POSTURAS, TIMEZONES_BR, datasParaExibir, type HorarioAgente,
+  DIAS_SEMANA, MAX_JANELAS, MAX_MENSAGEM, POSTURAS, TIMEZONES_BR, datasParaExibir,
+  type HorarioAgente, type JanelaPainel,
 } from '@/lib/tenants/horario-agente';
 
 function ErroCampo({ msg }: { msg?: string }) {
@@ -29,7 +30,26 @@ const CHECK =
 export function FormularioHorario({ horario }: { horario: HorarioAgente | null }) {
   const [estado, acao] = useActionState<EstadoConfig, FormData>(salvarHorarioAgente, {});
   const [ativo, setAtivo] = useState(horario !== null);
-  const h: HorarioAgente = horario ?? { timezone: 'America/Sao_Paulo', dias_semana: [1, 2, 3, 4, 5], hora_inicio: 8, hora_fim: 18, fechados: [], fora_horario: 'aviso' };
+  const h: HorarioAgente = horario ?? {
+    timezone: 'America/Sao_Paulo', dias_semana: [1, 2, 3, 4, 5], hora_inicio: 8, hora_fim: 18,
+    janelas: [{ dias: [1, 2, 3, 4, 5], inicio: '08:00', fim: '18:00' }],
+    fechados: [], fora_horario: 'aviso',
+  };
+
+  /*
+   * 07/10 — as faixas. Nasceu do Empório, que abre ter–sex das 7h às 10h E das
+   * 16h às 19h: com um "abre às / fecha às" só, o que estava gravado era
+   * 7h–19h, e às 12h de uma quarta o agente dizia "estamos abertos".
+   *
+   * Vai ao servidor como UM campo JSON, não como `janela_0_inicio`: índice em
+   * nome de campo quebra assim que alguém remove a faixa do meio, e o bug
+   * aparece como dado trocado, não como erro.
+   */
+  const [janelas, setJanelas] = useState<JanelaPainel[]>(h.janelas);
+  const mexer = (i: number, troca: Partial<JanelaPainel>) =>
+    setJanelas((js) => js.map((j, k) => (k === i ? { ...j, ...troca } : j)));
+  const viraDia = (i: number, dia: number) =>
+    mexer(i, { dias: janelas[i]!.dias.includes(dia) ? janelas[i]!.dias.filter((d) => d !== dia) : [...janelas[i]!.dias, dia].sort((a, b) => a - b) });
 
   return (
     <form action={acao} className="flex flex-col gap-5">
@@ -55,30 +75,62 @@ export function FormularioHorario({ horario }: { horario: HorarioAgente | null }
           <ErroCampo msg={estado.errosCampo?.['timezone']} />
         </div>
 
-        <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium">Dias</span>
-          <div className="flex flex-wrap gap-3">
-            {DIAS_SEMANA.map((d) => (
-              <label key={d.valor} className="flex items-center gap-1.5 text-sm">
-                <input type="checkbox" name={`dia_${d.valor}`} defaultChecked={h.dias_semana.includes(d.valor)} className={CHECK} />
-                {d.nome}
-              </label>
-            ))}
-          </div>
-          <ErroCampo msg={estado.errosCampo?.['dias_semana']} />
-        </div>
+        <input type="hidden" name="janelas" value={JSON.stringify(janelas)} />
 
-        <div className="flex gap-4">
-          <div className="flex w-28 flex-col gap-2">
-            <Label htmlFor="h_inicio">Abre às</Label>
-            <Input id="h_inicio" name="hora_inicio" type="number" min="0" max="23" defaultValue={h.hora_inicio} />
-            <ErroCampo msg={estado.errosCampo?.['hora_inicio']} />
-          </div>
-          <div className="flex w-28 flex-col gap-2">
-            <Label htmlFor="h_fim">Fecha às</Label>
-            <Input id="h_fim" name="hora_fim" type="number" min="1" max="24" defaultValue={h.hora_fim} />
-            <ErroCampo msg={estado.errosCampo?.['hora_fim']} />
-          </div>
+        <div className="flex flex-col gap-3">
+          <span className="text-sm font-medium">Faixas de atendimento</span>
+          <p className="text-xs text-muted-foreground">
+            Uma faixa por período em que a loja atende. Quem fecha para o almoço, ou abre
+            de manhã e de tarde, usa duas faixas nos mesmos dias.
+          </p>
+
+          {janelas.map((j, i) => (
+            <div key={i} className="flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-3">
+              <div className="flex flex-wrap gap-x-3 gap-y-2">
+                {DIAS_SEMANA.map((d) => (
+                  <label key={d.valor} className="flex items-center gap-1.5 text-sm">
+                    <input type="checkbox" checked={j.dias.includes(d.valor)} onChange={() => viraDia(i, d.valor)} className={CHECK} />
+                    {d.nome}
+                  </label>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex w-28 flex-col gap-1.5">
+                  <Label htmlFor={`j_${i}_ini`}>Abre às</Label>
+                  <Input id={`j_${i}_ini`} type="time" value={j.inicio} onChange={(e) => mexer(i, { inicio: e.target.value })} />
+                </div>
+                <div className="flex w-28 flex-col gap-1.5">
+                  <Label htmlFor={`j_${i}_fim`}>Fecha às</Label>
+                  <Input id={`j_${i}_fim`} type="time" value={j.fim} onChange={(e) => mexer(i, { fim: e.target.value })} />
+                </div>
+                {/* A última faixa não tem "Remover": sem nenhuma, o servidor
+                    recusa o save, e um botão que leva a um erro é uma armadilha. */}
+                {janelas.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setJanelas((js) => js.filter((_, k) => k !== i))}
+                    className="h-9 rounded-md px-2 text-sm text-muted-foreground underline-offset-4 hover:text-destructive hover:underline"
+                  >
+                    Remover
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ))}
+
+          {janelas.length < MAX_JANELAS ? (
+            <button
+              type="button"
+              onClick={() => setJanelas((js) => [...js, { dias: js[js.length - 1]?.dias ?? [1, 2, 3, 4, 5], inicio: '16:00', fim: '19:00' }])}
+              className="self-start rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
+            >
+              Adicionar faixa
+            </button>
+          ) : null}
+          <ErroCampo msg={estado.errosCampo?.['janelas']} />
+          <ErroCampo msg={estado.errosCampo?.['dias_semana']} />
+          <ErroCampo msg={estado.errosCampo?.['hora_inicio']} />
+          <ErroCampo msg={estado.errosCampo?.['hora_fim']} />
         </div>
 
         <div className="flex max-w-xs flex-col gap-2">

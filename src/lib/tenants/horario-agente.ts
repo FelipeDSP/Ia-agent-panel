@@ -22,7 +22,17 @@ export const POSTURAS = [
 ] as const;
 export type Postura = (typeof POSTURAS)[number]['valor'];
 
+/** Uma faixa de atendimento. `inicio`/`fim` em `HH:MM`, como a tela digita. */
+export type JanelaPainel = { dias: number[]; inicio: string; fim: string };
+
 export type HorarioAgente = Horario & {
+  /**
+   * 07/10: a verdade do horário. Os campos legados (`dias_semana`,
+   * `hora_inicio`, `hora_fim`) continuam gravados como a UNIÃO destas janelas,
+   * para um serviço que ainda não subiu ler algo coerente — ver o cabeçalho de
+   * `agente/src/tenant/horario.ts`.
+   */
+  janelas: JanelaPainel[];
   fechados: string[];
   fora_horario: Postura;
   mensagem?: string;
@@ -30,6 +40,32 @@ export type HorarioAgente = Horario & {
 
 export const MAX_MENSAGEM = 300;
 export const MAX_FECHADOS = 60;
+export const MAX_JANELAS = 14;
+
+/** `"07:00"` → 420. null quando não é `HH` nem `HH:MM` válido. */
+export function minutosDe(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 24) return v * 60;
+  const m = String(v ?? '').trim().match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  const h = Number(m[1]); const min = m[2] ? Number(m[2]) : 0;
+  if (h < 0 || h > 24 || min < 0 || min > 59) return null;
+  const total = h * 60 + min;
+  return total <= 24 * 60 ? total : null;
+}
+
+/** 420 → `"07:00"`. */
+export function hhmm(minutos: number): string {
+  return `${String(Math.floor(minutos / 60)).padStart(2, '0')}:${String(minutos % 60).padStart(2, '0')}`;
+}
+
+function lerJanela(bruto: unknown): JanelaPainel | null {
+  if (!bruto || typeof bruto !== 'object') return null;
+  const j = bruto as Record<string, unknown>;
+  const dias = Array.isArray(j['dias']) ? [...new Set(j['dias'].map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))] : [];
+  const i = minutosDe(j['inicio']); const f = minutosDe(j['fim']);
+  if (dias.length === 0 || i === null || f === null || f <= i) return null;
+  return { dias: dias.sort((a, b) => a - b), inicio: hhmm(i), fim: hhmm(f) };
+}
 
 /** jsonb do banco → forma da tela; null = sempre aberto (sem horário). */
 export function lerHorarioAgente(bruto: unknown): HorarioAgente | null {
@@ -43,6 +79,14 @@ export function lerHorarioAgente(bruto: unknown): HorarioAgente | null {
     dias_semana: [...new Set(dias)],
     hora_inicio: Number.isInteger(ini) && ini >= 0 && ini <= 23 ? ini : 8,
     hora_fim: Number.isInteger(fim) && fim >= 1 && fim <= 24 ? fim : 18,
+    // Mesma regra do serviço: sem `janelas` válidas, a faixa legada É a janela.
+    janelas: (() => {
+      const lidas = Array.isArray(h['janelas']) ? h['janelas'].map(lerJanela).filter((j): j is JanelaPainel => j !== null) : [];
+      if (lidas.length) return lidas;
+      const iniOk = Number.isInteger(ini) && ini >= 0 && ini <= 23 ? ini : 8;
+      const fimOk = Number.isInteger(fim) && fim >= 1 && fim <= 24 ? fim : 18;
+      return [{ dias: [...new Set(dias)], inicio: hhmm(iniOk * 60), fim: hhmm(fimOk * 60) }];
+    })(),
     fechados: Array.isArray(h['fechados']) ? h['fechados'].filter((d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) : [],
     fora_horario: p === 'silencio' || p === 'atender' ? p : 'aviso',
     ...(typeof h['mensagem'] === 'string' && h['mensagem'].trim() ? { mensagem: h['mensagem'].trim() } : {}),
@@ -87,15 +131,69 @@ export function validarHorarioAgente(fd: FormData): Resultado<HorarioAgente | nu
   const timezone = String(fd.get('timezone') ?? '').trim();
   if (!(TIMEZONES_BR as readonly string[]).includes(timezone)) erros['timezone'] = 'Escolha um fuso horário válido.';
 
-  const dias_semana = DIAS_SEMANA.map((d) => d.valor).filter((v) => fd.get(`dia_${v}`) === 'on');
-  if (dias_semana.length === 0) erros['dias_semana'] = 'Selecione ao menos um dia.';
+  /*
+   * 07/10 — as JANELAS. O formulário manda um campo só, `janelas`, com JSON:
+   * a tela permite adicionar e remover faixas, e nome de campo indexado
+   * (`janela_0_inicio`) vira lixo assim que alguém remove a do meio.
+   *
+   * O par legado (`dias_semana`, `hora_inicio`, `hora_fim`) NÃO é mais lido do
+   * formulário: ele é DERIVADO da união das janelas. Ler os dois do form seria
+   * deixar a tela mandar duas verdades que podem discordar — e quem lê o jsonb
+   * (serviço antigo que ainda não subiu) não teria como saber qual vale.
+   *
+   * O caminho legado continua aceito para quem postar o formulário antigo:
+   * sem `janelas`, cai nos campos de sempre, com as mesmas mensagens de erro.
+   */
+  const janelasBrutas = String(fd.get('janelas') ?? '').trim();
+  let janelas: JanelaPainel[] = [];
+  if (janelasBrutas) {
+    let lista: unknown = null;
+    try { lista = JSON.parse(janelasBrutas); } catch { lista = null; }
+    if (!Array.isArray(lista) || lista.length === 0) {
+      erros['janelas'] = 'Informe ao menos um horário de atendimento.';
+    } else if (lista.length > MAX_JANELAS) {
+      erros['janelas'] = `No máximo ${MAX_JANELAS} faixas de horário.`;
+    } else {
+      for (const [i, bruta] of lista.entries()) {
+        const j = lerJanela(bruta);
+        if (!j) {
+          const b = (bruta && typeof bruta === 'object' ? bruta : {}) as Record<string, unknown>;
+          const semDia = !Array.isArray(b['dias']) || b['dias'].length === 0;
+          erros['janelas'] = semDia
+            ? `Faixa ${i + 1}: selecione ao menos um dia.`
+            : `Faixa ${i + 1}: horário inválido. Use HH:MM e um fim maior que o início.`;
+          break;
+        }
+        janelas.push(j);
+      }
+    }
+  }
 
-  const hora_inicio = inteiro(fd, 'hora_inicio');
-  const hora_fim = inteiro(fd, 'hora_fim');
-  if (hora_inicio === null || hora_inicio < 0 || hora_inicio > 23) erros['hora_inicio'] = 'Hora de início entre 0 e 23.';
-  if (hora_fim === null || hora_fim < 1 || hora_fim > 24) erros['hora_fim'] = 'Hora de fim entre 1 e 24.';
-  if (hora_inicio !== null && hora_fim !== null && !erros['hora_inicio'] && !erros['hora_fim'] && hora_inicio >= hora_fim) {
-    erros['hora_fim'] = 'A hora de fim precisa ser maior que a de início.';
+  let dias_semana: number[] = [];
+  let hora_inicio: number | null = null;
+  let hora_fim: number | null = null;
+
+  if (janelas.length > 0) {
+    // Derivados: a união dos dias, a hora mais cedo e a mais tarde. Arredonda
+    // para fora (floor no início, ceil no fim) — quem lê o legado erra para
+    // "aberto demais", que é o que ele já fazia antes das janelas existirem.
+    dias_semana = [...new Set(janelas.flatMap((j) => j.dias))].sort((a, b) => a - b);
+    hora_inicio = Math.floor(Math.min(...janelas.map((j) => minutosDe(j.inicio) as number)) / 60);
+    hora_fim = Math.ceil(Math.max(...janelas.map((j) => minutosDe(j.fim) as number)) / 60);
+  } else if (!erros['janelas']) {
+    dias_semana = DIAS_SEMANA.map((d) => d.valor).filter((v) => fd.get(`dia_${v}`) === 'on');
+    if (dias_semana.length === 0) erros['dias_semana'] = 'Selecione ao menos um dia.';
+
+    hora_inicio = inteiro(fd, 'hora_inicio');
+    hora_fim = inteiro(fd, 'hora_fim');
+    if (hora_inicio === null || hora_inicio < 0 || hora_inicio > 23) erros['hora_inicio'] = 'Hora de início entre 0 e 23.';
+    if (hora_fim === null || hora_fim < 1 || hora_fim > 24) erros['hora_fim'] = 'Hora de fim entre 1 e 24.';
+    if (hora_inicio !== null && hora_fim !== null && !erros['hora_inicio'] && !erros['hora_fim'] && hora_inicio >= hora_fim) {
+      erros['hora_fim'] = 'A hora de fim precisa ser maior que a de início.';
+    }
+    if (hora_inicio !== null && hora_fim !== null && dias_semana.length > 0 && Object.keys(erros).length === 0) {
+      janelas = [{ dias: dias_semana, inicio: hhmm(hora_inicio * 60), fim: hhmm(hora_fim * 60) }];
+    }
   }
 
   const { datas, invalidas } = lerDatasFechadas(String(fd.get('fechados') ?? ''));
@@ -113,6 +211,7 @@ export function validarHorarioAgente(fd: FormData): Resultado<HorarioAgente | nu
     ok: true,
     valor: {
       timezone, dias_semana, hora_inicio: hora_inicio as number, hora_fim: hora_fim as number,
+      janelas,
       fechados: datas, fora_horario, ...(mensagem ? { mensagem } : {}),
     },
   };

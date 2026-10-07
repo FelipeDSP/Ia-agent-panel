@@ -34,7 +34,7 @@ import { ferramentasDoPerfil, temPagamento } from '../tools/index.ts';
 import { lerTimes, secaoTimes, transferirHumano } from '../tools/transferir-humano.ts';
 import { narrarAgora } from './agora.ts';
 import { enviarFotoComLegenda } from '../tools/enviar-foto.ts';
-import { linhaDoPromptFechado, situacao, textoDoAviso } from '../tenant/horario.ts';
+import { linhaDoPromptFechado, secaoHorario, situacao, textoDoAviso } from '../tenant/horario.ts';
 import { lerHorarioDoAgente } from '../tenant/horario-db.ts';
 import type { Asaas } from '../pagamento/asaas.ts';
 import type { Embeddings } from '../tools/contexto.ts';
@@ -201,6 +201,12 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     // fechado não é transcrito nos dois primeiros — custo sem resposta.
     const horario = await lerHorarioDoAgente(db, tenant.tenant_id);
     const sit = situacao(horario, (deps.agora ?? (() => new Date()))());
+    // 07/10: a GRADE da semana vai ao prompt sempre que a conta configurou
+    // horario — aberta ou fechada. Antes so existia a linha de "fechada", e
+    // com a loja aberta o modelo nao tinha de onde tirar "que horas abre?":
+    // respondia pelo que estivesse escrito a mao no system_prompt, que e o
+    // mesmo problema do catalogo no prompt (envelhece calado).
+    const promptHorario = horario ? secaoHorario(horario, sit) : '';
     let promptFechado = '';
     if (!sit.aberto && horario) {
       await turno.passo('portao', 'horario_agente', { saida: { motivo: sit.motivo, postura: horario.foraHorario, proxima: sit.proximaAbertura } });
@@ -275,7 +281,7 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     // 21/09: os times do Chatwoot que o cliente cadastrou (só os verificados)
     // entram como seção — o modelo escolhe pelo assunto; sem times, nada.
     const times = toolsAtivas.includes('transferir_humano') ? await lerTimes(db, tenant.tenant_id).catch(() => []) : [];
-    const secaoDinamica = (oferta ? secaoOferta(oferta) : '') + secaoTimes(times) + promptFechado;
+    const secaoDinamica = (oferta ? secaoOferta(oferta) : '') + secaoTimes(times) + promptHorario + promptFechado;
     const prompt = montarSystemMessage({ perfil, systemPromptDoTenant: tenant.system_prompt, secoesExtras, ...(secaoDinamica ? { secaoDinamica } : {}) });
     await fnValor(db, 'api_agente_prompt_registrar', [tenant.tenant_id, prompt.hash, prompt.texto, `${deps.versaoCodigo}/partes:${versaoDasPartes()}`]);
     await turno.prompt(perfil, prompt.hash);
