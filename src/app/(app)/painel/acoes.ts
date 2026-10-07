@@ -343,6 +343,7 @@ export async function salvarVendas(_estado: EstadoConfig, fd: FormData): Promise
     entrega: validado.valor.entrega,
     pedir_nome: validado.valor.pedir_nome,
     retirada: validado.valor.retirada,
+    retirada_fisica: validado.valor.retirada_fisica,
     eventos: atual.eventos,
     notificacao: atual.notificacao,
   };

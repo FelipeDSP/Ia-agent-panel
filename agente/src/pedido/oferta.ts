@@ -18,12 +18,29 @@ export interface Oferta {
   pedirNome: boolean;
   /** 72: endereço e link do mapa que o serviço manda ao cliente após fechar para retirada. */
   retirada: { endereco: string | null; mapaUrl: string | null };
+  /**
+   * 07/10: esta conta entrega no balcão? Ausente = SIM, que é o que toda conta
+   * viva faz hoje — o default preserva o texto byte a byte para elas.
+   *
+   * Nasceu da conversa 51 do sendbox: o cliente pediu "Treinamento de NR 01" e
+   * o Hércules perguntou se ele queria "retirar no local, pois só trabalhamos
+   * com retirada". A estud.you vende curso on-line; não há balcão. A frase não
+   * veio do prompt dela nem vazou de outro cliente — estava HARDCODED aqui,
+   * entrando no prompt de todo tenant com perfil `vendas`. Era certa para o
+   * Empório (loja física) e sem sentido para qualquer conta que venda algo
+   * digital, inclusive as futuras.
+   */
+  retiradaFisica: boolean;
 }
 
-export const OFERTA_PADRAO: Oferta = { pagamentos: ['link'], entrega: 'nao', notaChatwoot: false, destinoDono: null, pedirNome: false, retirada: { endereco: null, mapaUrl: null } };
+export const OFERTA_PADRAO: Oferta = { pagamentos: ['link'], entrega: 'nao', notaChatwoot: false, destinoDono: null, pedirNome: false, retirada: { endereco: null, mapaUrl: null }, retiradaFisica: true };
 
 /** A mensagem de endereço que vai ao cliente; null quando a conta não cadastrou. */
 export function mensagemDeRetirada(o: Oferta): string | null {
+  // 07/10: sem balcão não há para onde mandar ninguém. A mensagem de endereço
+  // (72) sai ao fechar, em mensagem própria — numa conta digital ela seria o
+  // cliente recebendo um "📍 Retirada:" depois de comprar um curso on-line.
+  if (!o.retiradaFisica) return null;
   if (!o.retirada.endereco) return null;
   return `📍 *Retirada:* ${o.retirada.endereco}` + (o.retirada.mapaUrl ? `\n🗺️ ${o.retirada.mapaUrl}` : '');
 }
@@ -44,6 +61,9 @@ export function lerOferta(config: unknown): Oferta {
     notaChatwoot: n['nota_chatwoot'] === true,
     destinoDono: digitosDe(n['destino']),
     pedirNome: c['pedir_nome'] === true,
+    // `!== false`, não `=== true`: a chave não existe em nenhuma conta de hoje,
+    // e ausente tem de significar o comportamento de hoje.
+    retiradaFisica: c['retirada_fisica'] !== false,
     retirada: (() => {
       const r = (c['retirada'] && typeof c['retirada'] === 'object' ? c['retirada'] : {}) as Record<string, unknown>;
       const endereco = typeof r['endereco'] === 'string' && r['endereco'].trim() ? r['endereco'].trim().slice(0, 300) : null;
@@ -66,16 +86,26 @@ export function secaoOferta(o: Oferta): string {
   // se perdeu. `adicionar` do mesmo item DEFINE a quantidade (não soma) — o
   // que faltava era o modelo saber disso.
   linhas.push('- Para MUDAR a quantidade de um item que já está no pedido ("são 20", "faz 5 em vez de 3"), chame gerenciar_pedido com acao=adicionar, o mesmo produto_id e a quantidade TOTAL nova — ela substitui a anterior. Nunca diga que alterou, anotou ou registrou sem o retorno da ferramenta mostrando a quantidade nova.');
-  linhas.push('- Só RETIRADA no local. Nunca pergunte endereço, nunca prometa entrega, nunca invente taxa.');
-  if (o.entrega === 'atendente') {
-    linhas.push('- Se o cliente quiser ENTREGA: monte o pedido normalmente (adicionar/ver) e, quando ele confirmar os itens, NÃO chame fechar — chame transferir_humano com o resumo "cliente quer entrega" + os itens e o total. Um atendente combina a entrega e o valor.');
+  // 07/10: o bloco de retirada/entrega só faz sentido em conta que tem balcão.
+  // Ver `retiradaFisica` no tipo — era incondicional e virou pergunta sem
+  // sentido para quem vende curso on-line.
+  if (o.retiradaFisica) {
+    linhas.push('- Só RETIRADA no local. Nunca pergunte endereço, nunca prometa entrega, nunca invente taxa.');
+    if (o.entrega === 'atendente') {
+      linhas.push('- Se o cliente quiser ENTREGA: monte o pedido normalmente (adicionar/ver) e, quando ele confirmar os itens, NÃO chame fechar — chame transferir_humano com o resumo "cliente quer entrega" + os itens e o total. Um atendente combina a entrega e o valor.');
+    } else {
+      linhas.push('- Se o cliente quiser ENTREGA: diga que por aqui só há retirada no local e pergunte se quer retirar. Não transfira por isso.');
+    }
   } else {
-    linhas.push('- Se o cliente quiser ENTREGA: diga que por aqui só há retirada no local e pergunte se quer retirar. Não transfira por isso.');
+    linhas.push('- Esta conta não tem balcão: nada aqui é retirado nem entregue por portador. Nunca pergunte se o cliente quer retirar ou receber, nunca peça endereço, nunca fale em buscar, loja, frete ou taxa, e nunca combine hora de retirada.');
   }
   if (o.pedirNome) {
-    linhas.push('- Antes de fechar, pergunte EM NOME DE QUEM fica o pedido (quem vai retirar) e passe em nome_retirada. Sem o nome o fechamento é recusado.');
+    linhas.push(`- Antes de fechar, pergunte EM NOME DE QUEM fica o pedido${o.retiradaFisica ? ' (quem vai retirar)' : ''} e passe em nome_retirada. Sem o nome o fechamento é recusado.`);
   }
-  if (o.retirada.endereco) {
+  // `&& o.retiradaFisica`: o painel recusa endereço sem balcão, mas uma config
+  // incoerente (jsonb editado à mão, conta que desligou o balcão com o endereço
+  // antigo gravado) não pode ressuscitar a linha — foi o que o teste pegou.
+  if (o.retirada.endereco && o.retiradaFisica) {
     linhas.push('- O endereço de retirada é enviado ao cliente automaticamente, em mensagem própria, assim que o pedido fecha — não o repita nem invente outro.');
   }
   // 18/09: a foto vai junto com a resposta (uma mensagem só); a frase do
@@ -87,9 +117,13 @@ export function secaoOferta(o: Oferta): string {
   if (soLink) {
     linhas.push('- Pagamento: só por link (Pix/cartão), na hora. Ao fechar, use pagamento="link".');
   } else if (soRetirada) {
-    linhas.push('- Pagamento: só NA RETIRADA. Ao fechar, use pagamento="na_retirada" e diga que ele paga quando buscar. Não gere link. NUNCA diga que está pago — quem confirma é a loja, no balcão.');
+    linhas.push(o.retiradaFisica
+      ? '- Pagamento: só NA RETIRADA. Ao fechar, use pagamento="na_retirada" e diga que ele paga quando buscar. Não gere link. NUNCA diga que está pago — quem confirma é a loja, no balcão.'
+      : '- Pagamento: só DEPOIS, combinado com a equipe. Ao fechar, use pagamento="na_retirada" e diga que alguém do time acerta o pagamento com ele. Não gere link. NUNCA diga que está pago — quem confirma é a equipe.');
   } else {
-    linhas.push('- Pagamento: o cliente escolhe entre "por link (Pix/cartão) agora" e "na retirada (paga quando buscar)". PERGUNTE antes de fechar e passe a escolha em pagamento="link" ou pagamento="na_retirada". Fechou na retirada: não gere link e nunca diga que está pago.');
+    linhas.push(o.retiradaFisica
+      ? '- Pagamento: o cliente escolhe entre "por link (Pix/cartão) agora" e "na retirada (paga quando buscar)". PERGUNTE antes de fechar e passe a escolha em pagamento="link" ou pagamento="na_retirada". Fechou na retirada: não gere link e nunca diga que está pago.'
+      : '- Pagamento: o cliente escolhe entre "por link (Pix/cartão) agora" e "depois, combinado com a equipe". PERGUNTE antes de fechar e passe a escolha em pagamento="link" ou pagamento="na_retirada". Fechou para depois: não gere link e nunca diga que está pago.');
   }
   return linhas.join('\n') + '\n\n';
 }

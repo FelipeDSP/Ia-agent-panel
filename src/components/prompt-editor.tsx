@@ -8,6 +8,7 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
 import { formatarDataHora } from '@/lib/utils';
 import { CRITERIO_NO_PROMPT, DICAS_PROMPT, MODELO_PROMPT } from '@/lib/orientacao';
+import { avisoDePlaceholders } from '@/lib/tenants/placeholders';
 import {
   restaurarVersaoPrompt,
   salvarPrompt,
@@ -51,6 +52,11 @@ export function PromptEditor({
     setConfirmarModelo(false);
   }
 
+  // Derivado do texto NA CAIXA, não do que foi salvo: o prompt da estud.you já
+  // estava gravado com os marcadores, e um aviso que só aparecesse ao salvar
+  // não contaria nada a quem abre a tela para entender o que o agente faz.
+  const avisoPlaceholders = avisoDePlaceholders(valor);
+
   function restaurar(versaoId: string) {
     setMsgRollback(null);
     iniciar(async () => {
@@ -92,6 +98,8 @@ export function PromptEditor({
           rows={12}
           className="font-mono text-sm leading-relaxed"
         />
+
+        {avisoPlaceholders ? <Alert variant="warning">{avisoPlaceholders}</Alert> : null}
 
         {estado.erro ? <Alert variant="destructive">{estado.erro}</Alert> : null}
         {estado.sucesso ? <Alert variant="success">{estado.sucesso}</Alert> : null}

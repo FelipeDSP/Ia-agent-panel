@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { salvarVendas, type EstadoConfig } from '../acoes';
 import { Alert } from '@/components/ui/alert';
@@ -36,6 +36,10 @@ export function FormularioVendas({
   linkDisponivel: boolean;
 }) {
   const [estado, acao] = useActionState<EstadoConfig, FormData>(salvarVendas, {});
+  // Os dois blocos abaixo só existem com balcão. Ficam escondidos, não
+  // desabilitados: um endereço cinza na tela ainda parece algo que vale, e o
+  // servidor agora recusa endereço sem balcão — a tela tem de concordar com ele.
+  const [temBalcao, setTemBalcao] = useState(config.retirada_fisica);
 
   return (
     <form action={acao} className="flex flex-col gap-5">
@@ -77,6 +81,33 @@ export function FormularioVendas({
         </p>
       </fieldset>
 
+      {/*
+        * 07/10: a pergunta "esta conta tem balcão?" nasceu de o agente da
+        * estud.you perguntar a quem queria um curso on-line se ele preferia
+        * "retirar no local". Não era o prompt dele: a frase estava fixa no
+        * código, no prompt de toda conta que vende. Quem vende algo digital
+        * precisa poder dizer que não tem balcão — e este é o único lugar onde
+        * essa decisão pode ser tomada.
+        */}
+      <fieldset className="flex flex-col gap-3 rounded-xl border border-border p-4">
+        <legend className="px-1 text-sm font-medium">Como o cliente recebe</legend>
+        <label className="flex items-center gap-3 text-sm">
+          <input type="radio" name="retirada_fisica" value="sim" defaultChecked={config.retirada_fisica} onChange={() => setTemBalcao(true)} className={CHECK} />
+          Ele busca no balcão (loja, ponto de retirada)
+        </label>
+        <label className="flex items-center gap-3 text-sm">
+          <input type="radio" name="retirada_fisica" value="nao" defaultChecked={!config.retirada_fisica} onChange={() => setTemBalcao(false)} className={CHECK} />
+          Não tem balcão — o que vendo é entregue fora do chat
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Sem balcão, o agente para de falar em retirar, buscar, endereço e frete, e não
+          combina hora de retirada. Marque esta opção se vende curso on-line, assinatura,
+          serviço ou qualquer coisa que ninguém passa pegar.
+        </p>
+      </fieldset>
+
+      {temBalcao ? (
+      <>
       <fieldset className="flex flex-col gap-3 rounded-xl border border-border p-4">
         <legend className="px-1 text-sm font-medium">Retirada</legend>
         <label className="flex items-start gap-3">
@@ -130,6 +161,8 @@ export function FormularioVendas({
         ) : null}
         <ErroCampo msg={estado.errosCampo?.['entrega']} />
       </fieldset>
+      </>
+      ) : null}
 
       <div>
         <SubmitButton>Salvar vendas</SubmitButton>

@@ -11,6 +11,7 @@
  *     notificacao: { canal: 'waha'|'chatwoot'|'nenhum', sessao?, destino?, nota_chatwoot? },
  *     pedir_nome: boolean,                          // 72: fechar exige o nome de quem retira
  *     retirada: { endereco?, mapa_url? },           // 72: o serviço manda ao cliente ao fechar
+ *     retirada_fisica: boolean,                     // 07/10: ausente = true (tem balcão)
  *     horas_expirar_pagamento?: string }           // da migração 38; não é daqui
  *
  * CANAL (17/09, migração 70): o cliente só diz SE quer WhatsApp e PARA QUAL
@@ -74,6 +75,13 @@ export type ConfigVendas = {
   pedir_nome: boolean;
   /** 72: endereço (e link do mapa) que o serviço manda ao cliente depois de fechar para retirada. */
   retirada: Retirada;
+  /**
+   * 07/10: a conta entrega no balcão? Ausente = true, o comportamento de todas
+   * as contas vivas. Desligado, o agente para de falar em retirar, buscar,
+   * endereço e frete — ver `retiradaFisica` em agente/src/pedido/oferta.ts,
+   * que é quem monta o texto. Aqui só se grava a escolha.
+   */
+  retirada_fisica: boolean;
 };
 
 /** O que o banco assume quando a chave falta — a mesma leitura de `vendas_oferta()`. */
@@ -83,6 +91,7 @@ export const VENDAS_PADRAO: ConfigVendas = {
   eventos: EVENTOS.map((e) => e.valor),
   notificacao: { canal: 'nenhum' },
   pedir_nome: false,
+  retirada_fisica: true,
   retirada: {},
 };
 
@@ -124,6 +133,9 @@ export function lerConfigVendas(bruto: unknown): ConfigVendas {
       ...(n['nota_chatwoot'] === true ? { nota_chatwoot: true } : {}),
     },
     pedir_nome: c['pedir_nome'] === true,
+    // `!== false` (e não `=== true`): nenhuma conta tem a chave hoje, e ausente
+    // precisa significar o que elas já fazem. Mesma leitura do serviço.
+    retirada_fisica: c['retirada_fisica'] !== false,
     retirada: { ...(endereco ? { endereco } : {}), ...(mapa ? { mapa_url: mapa } : {}) },
   };
 }
@@ -144,12 +156,19 @@ export function validarVendasCliente(
   entrega: 'atendente' | 'nao';
   pedir_nome: boolean;
   retirada: Retirada;
+  retirada_fisica: boolean;
 }> {
   const erros: Record<string, string> = {};
+
+  // Radio com dois valores explícitos, não checkbox: checkbox desmarcado não é
+  // enviado, e "campo ausente" significaria `false` aqui e `true` na leitura do
+  // jsonb — as duas pontas discordando sobre o mesmo silêncio.
+  const retirada_fisica = String(fd.get('retirada_fisica') ?? 'sim') !== 'nao';
 
   const pedir_nome = fd.get('pedir_nome') === 'on' || fd.get('pedir_nome') === 'true';
   const endereco = String(fd.get('endereco') ?? '').trim();
   if (endereco.length > MAX_ENDERECO) erros['endereco'] = `Endereço com no máximo ${MAX_ENDERECO} caracteres.`;
+  if (!retirada_fisica && endereco) erros['endereco'] = 'Sem retirada no balcão não há endereço para enviar. Apague o endereço ou volte a marcar que há retirada.';
   const mapa_url = String(fd.get('mapa_url') ?? '').trim();
   if (mapa_url && !urlDeMapaValida(mapa_url)) erros['mapa_url'] = 'Cole o link completo do mapa (começa com https://).';
   if (mapa_url && !endereco) erros['endereco'] = 'Com o link do mapa, informe também o endereço em texto.';
@@ -163,6 +182,7 @@ export function validarVendasCliente(
 
   const entregaBruta = String(fd.get('entrega') ?? 'nao');
   let entrega: 'atendente' | 'nao' = entregaBruta === 'atendente' ? 'atendente' : 'nao';
+  if (!retirada_fisica) entrega = 'nao';
   if (entrega === 'atendente' && !transferirDisponivel) {
     erros['entrega'] = 'Para passar pedidos de entrega a um atendente, a transferência para humano precisa estar ligada.';
     entrega = 'nao';
@@ -177,6 +197,10 @@ export function validarVendasCliente(
       pagamentos,
       entrega,
       pedir_nome,
+      retirada_fisica,
+      // Sem balcão não há entrega a negociar: a pergunta "o que fazer quando
+      // pedem entrega" não existe, e deixar 'atendente' gravado faria o agente
+      // transferir por um assunto que não ocorre nessa conta.
       retirada: { ...(endereco ? { endereco } : {}), ...(mapa_url ? { mapa_url } : {}) },
     },
   };

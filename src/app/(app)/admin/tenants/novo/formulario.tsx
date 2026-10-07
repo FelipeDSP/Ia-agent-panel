@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import { criarTenant, type EstadoAcao } from '../../acoes';
 import { Alert } from '@/components/ui/alert';
@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Textarea } from '@/components/ui/textarea';
 import { MODELOS_PERMITIDOS } from '@/lib/tenants/schema';
+import { avisoDePlaceholders } from '@/lib/tenants/placeholders';
 
 function ErroCampo({ msg }: { msg?: string }) {
   if (!msg) return null;
@@ -18,6 +19,8 @@ function ErroCampo({ msg }: { msg?: string }) {
 
 export function FormularioNovoTenant() {
   const [estado, acao] = useActionState<EstadoAcao, FormData>(criarTenant, {});
+  const [prompt, setPrompt] = useState('');
+  const avisoPrompt = avisoDePlaceholders(prompt);
 
   return (
     <form action={acao} className="flex flex-col gap-5">
@@ -45,8 +48,15 @@ export function FormularioNovoTenant() {
           id="system_prompt"
           name="system_prompt"
           rows={6}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
           placeholder="Você é a assistente virtual da empresa X…"
         />
+        {/* 07/10: é aqui que o prompt da estud.you entrou com
+            `{'{{CATALOGO_DE_CURSOS}}'}` dentro, colado de um sistema que tinha
+            motor de template. Este não tem. Avisar na porta de entrada é mais
+            barato que descobrir pela conversa de um cliente. */}
+        {avisoPrompt ? <Alert variant="warning">{avisoPrompt}</Alert> : null}
         <p className="text-xs text-muted-foreground">
           Pode editar depois; o cliente também poderá, com histórico.
         </p>
