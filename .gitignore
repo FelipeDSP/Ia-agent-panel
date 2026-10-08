@@ -39,3 +39,7 @@ Thumbs.db
 # dumps de rascunho (pg_get_functiondef) — nunca versionados
 .*.sql
 .srv.log
+
+# retratos de "antes" de ajuste em cliente vivo — o prompt anterior ja fica
+# versionado em prompt_versoes; o arquivo e so conveniencia local
+zz-*
