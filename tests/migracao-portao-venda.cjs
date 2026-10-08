@@ -311,14 +311,52 @@ const chk = (nome, cond, detalhe) => {
         // próxima pessoa não gastar a tarde procurando o leitor que não existe.
         const SEM_LEITOR = ['pedido_id'];
 
+        /*
+         * 08/10 — A TERCEIRA ORIGEM: o SERVIÇO.
+         *
+         * Até aqui todo `estado.X` do portão vinha da função. A 85 trouxe
+         * chaves que o banco NÃO tem como responder — "a conta vende?" (a
+         * função sai cedo quando o perfil não é `vendas` e devolve tudo falso,
+         * indistinguível de "vende e não há pedido") e "há pedido fechado fora
+         * da janela?" (que é outra pergunta, feita por outra função).
+         *
+         * A tentação era pôr os quatro nomes numa lista de exceção. Isso
+         * trocaria a guarda por um alvará: qualquer chave futura entraria
+         * escrevendo o nome dela aqui, e a pergunta "quem preenche isso?"
+         * deixaria de ter dono.
+         *
+         * Então a lista é DERIVADA do serviço, do mesmo jeito que a outra é
+         * derivada do portão: `estado['X'] =` em `portao.ts`. Chave lida pelo
+         * portão e não preenchida por ninguém continua reprovando — que é o
+         * defeito que esta guarda existe para pegar.
+         */
+        const servico = fs.readFileSync(path.join(RAIZ, 'agente', 'src', 'turno', 'portao.ts'), 'utf8');
+        const postasPeloServico = [...new Set(
+          [...servico.matchAll(/\bestado\[['"]([a-z_]+)['"]\]\s*=/g)].map((m) => m[1]),
+        )];
+        chk('a extracao achou chaves postas pelo servico (lista vazia reprova antes de comparar)',
+          postasPeloServico.length > 0, `${postasPeloServico.length}: ${postasPeloServico.join(', ')}`);
+
         // lista vazia e erro, nao "nada a conferir" — foi assim que o injetor
         // gravou um SELECT sem coluna nenhuma e a guarda dele aprovou
         chk('a extracao achou leituras `estado.X` no portao', lidas.length > 0, `${lidas.length}`);
         chk('a funcao devolveu colunas (lista vazia aprovaria qualquer leitura)', devolvidas.length > 0, `${devolvidas.length}`);
 
-        const faltando = lidas.filter((x) => !devolvidas.includes(x));
-        chk('toda coluna que o portao LE vem da funcao', faltando.length === 0,
+        // Toda leitura tem de ter uma ORIGEM: a função ou o serviço. Nenhuma
+        // das duas = ninguém preenche, e o portão lê `undefined` em silêncio.
+        const faltando = lidas.filter((x) => !devolvidas.includes(x) && !postasPeloServico.includes(x));
+        chk('toda coluna que o portao LE vem da funcao ou do servico', faltando.length === 0,
           faltando.length ? `faltam: ${faltando.join(', ')}` : '');
+
+        // E o serviço não pode SOBRESCREVER coluna que a função já devolve —
+        // seriam duas verdades para a mesma chave, e a ordem decidiria.
+        // `escreveu_neste_turno` é a exceção conhecida e declarada: o serviço
+        // o ESTREITA de propósito (07/10, o bloco grudado na saudação), e só
+        // nunca o afrouxa.
+        const ESTREITADAS = ['escreveu_neste_turno'];
+        const brigando = postasPeloServico.filter((x) => devolvidas.includes(x) && !ESTREITADAS.includes(x));
+        chk('o servico nao sobrescreve coluna que a funcao ja devolve', brigando.length === 0,
+          brigando.length ? `brigam: ${brigando.join(', ')}` : '');
 
         const sobrando = devolvidas.filter((x) => !lidas.includes(x) && !SEM_LEITOR.includes(x));
         chk('a funcao nao devolve coluna sem leitor (fora das declaradas)', sobrando.length === 0,

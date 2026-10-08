@@ -125,6 +125,8 @@
     "teste:portao-fechamento": "node --env-file=.env.local tests/portao-fechamento.mjs",
     "teste:horario-agente": "node --import ./tests/lib/ts.mjs tests/horario-agente.mjs",
     "teste:horario-janelas": "node --import ./tests/lib/ts.mjs tests/horario-janelas.mjs",
+    "teste:portao-conta-pedido": "node --import ./tests/lib/ts.mjs tests/portao-conta-e-pedido-fechado.mjs",
+    "teste:migracao-pedido-recente": "node --env-file=.env.local tests/migracao-pedido-recente.mjs",
     "teste:avisos-painel": "node --import ./tests/lib/ts.mjs tests/avisos-painel.mjs",
     "teste:oferta-sem-balcao": "node --import ./tests/lib/ts.mjs tests/oferta-sem-balcao.mjs",
     "teste:prompt-placeholders": "node --import ./tests/lib/ts.mjs tests/prompt-placeholders.mjs"

@@ -132,6 +132,43 @@ const barrouAnterior = estado.barrou_anterior === true;
 const pagamentoConfirmado = estado.pagamento_confirmado === true;
 
 // ----------------------------------------------------------------------------
+// 08/10 — DUAS CHAVES NOVAS, POSTAS PELO SERVICO (nao pela funcao do banco)
+// ----------------------------------------------------------------------------
+//
+// A CONTA VENDE? `api_n8n_estado_pedido` nao tem como responder isso: ela sai
+// cedo quando o perfil nao e `vendas` e devolve tudo falso, que e
+// indistinguivel de "vende e nao ha pedido". Quem sabe e o servico, que resolve
+// o perfil a partir das tools contratadas.
+//
+// Por que isto virou chave: o CEEJAAR e uma escola — `busca_conhecimento`,
+// `resolver_conversa`, `transcricao_audio`, `transferir_humano`, nenhuma venda.
+// Mas "pedido" em portugues tambem quer dizer SOLICITACAO, e `RE_CONTEXTO_PEDIDO`
+// casa a palavra. Toda vez que a Clara escrevia "ja encaminhei seu pedido para a
+// secretaria", a regra 1 disparava e o aluno recebia uma mensagem de carrinho de
+// compras. Treze vezes entre 17/09 e 07/10, em 512 mensagens. A pior foi um
+// agradecimento: "sucesso no seu pedido hoje!" virou "ainda nao tenho nenhum
+// item anotado no seu pedido aqui".
+//
+// AUSENTE = TRUE. A chave nao existe em lugar nenhum hoje, e ausente tem de
+// significar o comportamento de hoje — quem nao sabe responder continua sendo
+// tratado como conta que vende, que e o lado seguro (barra mais, nao menos).
+const contaVende = estado.conta_vende !== false;
+
+// O PEDIDO FECHADO QUE EXISTE E NAO FOI TOCADO NESTE TURNO (migracao 85).
+//
+// `temPedido` significa "tocado neste turno", nao "existe". A diferenca mordeu
+// na conversa 56 do Emporio: pedido #7 atualizado as 21:26:43, mensagem de
+// confirmacao gravada as 21:26:50 — a propria confirmacao virou a borda da
+// janela e empurrou o pedido para fora. No turno seguinte a Thais escreveu
+// "Buscar agora" e leu que nao havia pedido nenhum.
+//
+// Mesma forma do `pagamentoConfirmado` logo acima: um fato do banco que torna
+// VERDADEIRA uma frase que, sozinha, pareceria fabricacao.
+const pedidoRecente = estado.pedido_recente === true;
+const pedidoRecenteStatus = estado.pedido_recente_status ?? null;
+const pedidoRecenteNumero = estado.pedido_recente_numero ?? null;
+
+// ----------------------------------------------------------------------------
 // DINHEIRO
 // ----------------------------------------------------------------------------
 const brl = (centavos) =>
@@ -380,16 +417,45 @@ const RE_OUTRA_ACAO_NO_PEDIDO = new RegExp(
   '(anotei|anotad[oa]|adicionei|acrescentei|inclu[ií]|coloquei|registrei|registrad[oa]'
   + '|reservei|reservad[oa]|separei|separad[oa]|removi|tirei|cancelei|cancelad[oa]'
   + '|fech(ei|ado|ada))', 'i');
+// 08/10 — SEGUNDA EXCECAO, a irma da de pagamento: frase que apenas SE REFERE a
+// um pedido fechado que existe no banco nao e fabricacao. "Seu pedido ja esta
+// separado e confirmado para retirada as 17h30" sobre o pedido #7, vivo e
+// `aguardando_pagamento`, e verdade — o que falta e a janela do turno, nao o
+// pedido.
+//
+// O CORTE NAO PODE SER `RE_OUTRA_ACAO_NO_PEDIDO`, e isto foi medido: aquela
+// lista inclui os PARTICIPIOS (`separad[oa]`, `registrad[oa]`, `fech(ado|ada)`),
+// que sao exatamente as palavras com que se descreve o ESTADO de um pedido que
+// ja existe. Com ela, "seu pedido ja esta separado e confirmado" — a frase da
+// Thais, a que motivou tudo — continuava barrada. A primeira versao desta
+// excecao usava aquela lista e nao consertava nada; quem mostrou foi rodar.
+//
+// O que separa "fiz agora" de "ja esta feito" e a PRIMEIRA PESSOA do passado.
+// "Ja anotei mais 3" afirma uma escrita que nao houve e continua caindo na
+// regra 1, mesmo com pedido fechado no banco; "seu pedido esta separado" fala
+// do que existe.
+const RE_ACAO_NOVA_1A_PESSOA = new RegExp(
+  '\\b(anotei|adicionei|acrescentei|inclu[ií]|coloquei|registrei|reservei'
+  + '|separei|removi|tirei|cancelei|fechei|atualizei|alterei|mudei)\\b', 'i');
 const afirmouForaDoPagamento = candidata && frases(textoModelo).some((f) =>
   RE_CONSUMADO.test(f) && RE_CONTEXTO_PEDIDO.test(f) && !RE_NAO_CONSUMADO.test(f)
-  && !(pagamentoConfirmado && (RE_PAGAMENTO_RECEBIDO.test(f) || RE_FALA_DE_PAGAMENTO.test(f)) && !RE_OUTRA_ACAO_NO_PEDIDO.test(f)));
-const regra1Barra = afirmouForaDoPagamento && !escreveuNesteTurno;
+  && !(pagamentoConfirmado && (RE_PAGAMENTO_RECEBIDO.test(f) || RE_FALA_DE_PAGAMENTO.test(f)) && !RE_OUTRA_ACAO_NO_PEDIDO.test(f))
+  && !(pedidoRecente && !RE_ACAO_NOVA_1A_PESSOA.test(f)));
+
+// REGRAS 1 E 2 SO EXISTEM PARA QUEM VENDE. Numa conta sem `vendas` nao ha
+// pedido para fabricar, e o que sobra e a palavra "pedido" no sentido de
+// solicitacao — 13 alunos do CEEJAAR leram uma mensagem de carrinho por isso.
+const regra1Barra = contaVende && afirmouForaDoPagamento && !escreveuNesteTurno;
 
 // REGRA 2 — total afirmado diverge do banco.
 // So avalia com rascunho e total maior que zero: sem isso nao ha com o que
 // comparar, e a mensagem de pre-venda ("o pao de queijo sai por R$ 1,50") deixa
 // de ser candidata a divergencia por nao existir referencia.
-const regra2Avaliavel = candidata && temPedido && totalBanco > 0;
+// `contaVende` aqui tambem. Na pratica `temPedido` ja e sempre false numa conta
+// sem vendas, entao isto nao muda comportamento nenhum hoje — esta escrito para
+// a condicao ser a MESMA das duas regras de venda, e nao depender de um
+// acidente do estado continuar valendo.
+const regra2Avaliavel = contaVende && candidata && temPedido && totalBanco > 0;
 const totais = regra2Avaliavel ? totaisAfirmados(textoModelo) : [];
 const totalAfirmado = totais.length ? Math.max(...totais) : null;
 const regra2Avaliada = regra2Avaliavel && totalAfirmado !== null;
@@ -438,6 +504,28 @@ function mensagemSubstituta() {
     ].join('\n');
   }
   if (!temPedido) {
+    // 08/10 — A SUBSTITUTA AFIRMAVA O QUE O PORTAO NAO SABIA.
+    //
+    // `temPedido` e "tocado neste turno", nao "existe". Com um pedido FECHADO
+    // fora da janela, "ainda nao tenho nenhum item anotado" e mentira — e foi
+    // o que a Thais leu vinte segundos depois de fechar R$ 9,00 (conv 56), e o
+    // Douglas depois de 10 paes de queijo (conv 39). Um portao que existe para
+    // impedir fabricacao nao pode fabricar na mensagem de recusa.
+    //
+    // Sem pedido recente a frase CONTINUA, porque ai ela e verdadeira e util:
+    // `temPedido` false ja cobre o rascunho (a funcao o verifica a parte), e
+    // `pedidoRecente` false fecha o fechado. Nao ha pedido nenhum, e dizer isso
+    // e o conserto que a regra 1 existe para dar.
+    if (pedidoRecente) {
+      return [
+        'Deixa eu confirmar isso direitinho 😊',
+        '',
+        `Seu pedido${pedidoRecenteNumero ? ' no ' + pedidoRecenteNumero : ''} ja esta fechado aqui comigo`
+          + (pedidoRecenteStatus === 'pago' ? ' e o pagamento consta como recebido.' : '.'),
+        '',
+        'Me diz o que voce precisa que eu te ajudo?',
+      ].join('\n');
+    }
     return [
       'Deixa eu confirmar uma coisa antes de seguir 😊',
       '',
@@ -520,6 +608,14 @@ componentes.portao = {
   // com que frequencia o marcador dispara, que e `afirmou_pagamento`.
   afirmou_pagamento: afirmouPagamento,
   pagamento_confirmado: pagamentoConfirmado,
+  // 08/10: as duas chaves novas vao para o trace pelo mesmo motivo do
+  // `regra1_avaliada` acima — "a conta nao vende" e "havia pedido fechado" sao
+  // as razoes pelas quais a regra 1 DEIXA de barrar, e razao que nao fica
+  // gravada nao e investigavel. Foi lendo este campo que os 13 casos do
+  // CEEJAAR apareceram.
+  conta_vende: contaVende,
+  pedido_recente: pedidoRecente,
+  pedido_recente_status: pedidoRecenteStatus,
   candidata,
   afirmou_efeito_consumado: afirmou,
   escreveu_neste_turno: escreveuNesteTurno,

@@ -285,7 +285,10 @@ function sabotar(de, para, rotulo) {
 
 // S0 — tirar a excecao da regra 1: a confirmacao verdadeira volta a ser barrada.
 {
-  const s = sabotar('&& !(pagamentoConfirmado && (RE_PAGAMENTO_RECEBIDO.test(f) || RE_FALA_DE_PAGAMENTO.test(f)) && !RE_OUTRA_ACAO_NO_PEDIDO.test(f)));', '&& true);', 'regra 1 sem a excecao do pagamento');
+  // 08/10: a excecao do pedido fechado entrou logo DEPOIS desta linha, entao
+  // ela deixou de terminar em `;`. O alvo e a excecao DO PAGAMENTO, que e o
+  // que este teste guarda.
+  const s = sabotar('&& !(pagamentoConfirmado && (RE_PAGAMENTO_RECEBIDO.test(f) || RE_FALA_DE_PAGAMENTO.test(f)) && !RE_OUTRA_ACAO_NO_PEDIDO.test(f))', '&& true', 'regra 1 sem a excecao do pagamento');
   if (s) {
     const r = rodar(s, { texto: AFIRMA_PAGAMENTO_DO_PEDIDO, estado: pago({ escreveu_neste_turno: false }) });
     chk('S0: sem a excecao, a confirmacao VERDADEIRA e barrada pela regra 1 (a §5b pega)', r._portao.veredito === 'barrado_regra_1', r._portao.veredito);

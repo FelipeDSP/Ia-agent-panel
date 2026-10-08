@@ -75,6 +75,40 @@ export async function aplicarPortao(p: {
   const estreitou = escreveuPelaJanela && !rodouToolDePedido;
   if (estreitou) estado['escreveu_neste_turno'] = false;
 
+  /*
+   * 08/10 — DUAS CHAVES QUE O BANCO NÃO TEM COMO RESPONDER.
+   *
+   * O `estado` é o `select *` da função, mas quem o entrega ao portão é este
+   * arquivo — e é aqui que entra o que a função não sabe. Não é atalho: a
+   * assinatura de `api_n8n_estado_pedido` é `RETURNS TABLE`, e acrescentar
+   * coluna exigiria `drop function` + `create`, derrubando a chamada viva
+   * entre a migração e o deploy do serviço.
+   *
+   * 1. A CONTA VENDE? A função sai cedo quando o perfil não é `vendas` e
+   *    devolve tudo falso — indistinguível de "vende e não há pedido". O
+   *    perfil é resolvido aqui, a partir das tools contratadas.
+   *
+   *    O CEEJAAR é uma escola e não vende nada. Mas "pedido" em português
+   *    também é SOLICITAÇÃO, e "já encaminhei seu pedido para a secretaria"
+   *    caía na regra 1: treze alunos, entre 17/09 e 07/10, receberam "ainda
+   *    não tenho nenhum item anotado no seu pedido aqui".
+   *
+   * 2. HÁ PEDIDO FECHADO NESTA CONVERSA? (migração 85.) `tem_pedido` é
+   *    "tocado neste turno". Na conversa 56 do Empório a mensagem de
+   *    confirmação foi gravada 7,2 s DEPOIS da linha do pedido e virou a borda
+   *    da janela — no turno seguinte a Thaís leu que não havia pedido.
+   *
+   *    A chamada é condicionada a `vendas`: numa conta que não vende ela
+   *    devolveria vazio sempre, e seria uma ida ao banco por turno de graça.
+   */
+  estado['conta_vende'] = p.perfil === 'vendas';
+  if (p.perfil === 'vendas') {
+    const recente = await fnUma<Record<string, unknown>>(p.db, 'api_agente_pedido_recente', [p.tenantId, p.conversationId, 24]);
+    estado['pedido_recente'] = recente?.['existe'] === true;
+    estado['pedido_recente_status'] = recente?.['status'] ?? null;
+    estado['pedido_recente_numero'] = recente?.['numero'] ?? null;
+  }
+
   const saida = rodarRegra(corpoRegra(p.regrasDir, 'aplica-portao.js'), { json: estado }, {
     'Estima Tokens': { output: p.textoModelo, componentes_json: JSON.stringify(p.componentes) },
   });
