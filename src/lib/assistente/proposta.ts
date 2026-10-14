@@ -100,6 +100,75 @@ function lerJanela(v: unknown): Janela | null {
 export type Descartada = { tipo: string; motivo: string };
 
 /**
+ * A INTENÇÃO — o que o modelo devolve na conversa, antes de a proposta existir.
+ *
+ * POR QUE EXISTE, e isto saiu de medir, não de projetar: a primeira versão
+ * pedia ao modelo a proposta COMPLETA no mesmo sopro da conversa, com o prompt
+ * reescrito inteiro dentro de uma string JSON e o `baseHash` copiado do
+ * contexto. Seis execuções contra a conta do CEEJAAR deram três
+ * comportamentos — pediu permissão para propor, propôs copiando as palavras do
+ * exemplo, e não propôs nada — e baixar a temperatura para 0,2 não consertou:
+ * ainda era 1 em 3. Reescrever 12,5 KB de prompt dentro de um JSON, junto com
+ * a resposta em texto, é trabalho que o modelo evita.
+ *
+ * Então são DOIS passos. A conversa devolve a intenção (de que tipo, com que
+ * título, por quê, e o que mudar em uma frase); o código materializa, pedindo
+ * ao modelo SÓ o prompt reescrito, numa chamada que não tem outra tarefa.
+ *
+ * Dois ganhos de brinde, e o primeiro vale mais que o motivo original:
+ *
+ *   - o `baseHash` passa a ser preenchido pelo CÓDIGO, que leu o prompt do
+ *     banco neste turno. O modelo não tem como errá-lo nem inventá-lo;
+ *   - o turno que não propõe nada não paga a reescrita.
+ */
+export type Intencao = {
+  tipo: TipoDeProposta;
+  titulo: string;
+  porque: string;
+  /** Para `prompt`: o que mudar, em uma frase. Guia a segunda chamada. */
+  mudanca?: string;
+  /** Para `horario`: as faixas já vêm aqui — são pequenas e não precisam de reescrita. */
+  janelas?: Janela[];
+};
+
+export function lerIntencoes(bruto: unknown): { intencoes: Intencao[]; descartadas: Descartada[] } {
+  const intencoes: Intencao[] = [];
+  const descartadas: Descartada[] = [];
+  if (!Array.isArray(bruto)) return { intencoes, descartadas };
+
+  for (const item of bruto.slice(0, 5)) {
+    if (!item || typeof item !== 'object') { descartadas.push({ tipo: '(não é objeto)', motivo: 'formato' }); continue; }
+    const o = item as Record<string, unknown>;
+    const tipo = String(o['tipo'] ?? '');
+    const titulo = String(o['titulo'] ?? '').trim().slice(0, 160);
+    const porque = String(o['porque'] ?? '').trim().slice(0, 600);
+    if (!(tipo in TIPOS)) { descartadas.push({ tipo: tipo || '(sem tipo)', motivo: 'tipo que o painel não sabe aplicar' }); continue; }
+    if (!titulo) { descartadas.push({ tipo, motivo: 'sem título para o cliente ler' }); continue; }
+
+    if (tipo === 'prompt') {
+      const mudanca = String(o['mudanca'] ?? '').trim().slice(0, 600);
+      if (!mudanca) { descartadas.push({ tipo, motivo: 'não disse o que mudar no prompt' }); continue; }
+      intencoes.push({ tipo: 'prompt', titulo, porque, mudanca });
+      continue;
+    }
+    if (tipo === 'horario') {
+      const cru = Array.isArray(o['janelas']) ? o['janelas'] : [];
+      if (cru.length === 0) { descartadas.push({ tipo, motivo: 'nenhuma faixa de horário' }); continue; }
+      if (cru.length > MAX_JANELAS) { descartadas.push({ tipo, motivo: `mais de ${MAX_JANELAS} faixas` }); continue; }
+      const janelas = cru.map(lerJanela);
+      if (janelas.some((j) => j === null)) { descartadas.push({ tipo, motivo: 'faixa de horário inválida' }); continue; }
+      intencoes.push({ tipo: 'horario', titulo, porque, janelas: janelas as Janela[] });
+    }
+  }
+  return { intencoes, descartadas };
+}
+
+/** Os `{{...}}` de um texto. O sistema não substitui nenhum: o agente fala o marcador. */
+export function marcadores(texto: string): number {
+  return [...String(texto ?? '').matchAll(/\{\{[^{}]{1,200}\}\}/g)].length;
+}
+
+/**
  * Lê o que o modelo devolveu e separa proposta válida de lixo.
  *
  * DESCARTE É VISÍVEL, não silencioso. Uma proposta que o código não entende
@@ -107,7 +176,23 @@ export type Descartada = { tipo: string; motivo: string };
  * algo que eu não sei aplicar" — que é um sintoma que alguém relata. Descarte
  * calado seria o assistente parecendo concordar e não fazer nada.
  */
-export function lerPropostas(bruto: unknown): { propostas: Proposta[]; descartadas: Descartada[] } {
+export function lerPropostas(
+  bruto: unknown,
+  /**
+   * O prompt atual, quando quem chama o tem.
+   *
+   * Serve a UMA guarda, e ela é mecânica: **proposta de prompt não pode
+   * ACRESCENTAR marcador `{{...}}`.** Este sistema não tem motor de template —
+   * o agente fala o marcador em voz alta para o cliente —, e escrever
+   * `{{HORARIO}}` achando que alguém preenche é o erro que todo mundo comete
+   * aqui, modelo incluído: foi o defeito nº 1 das contas reais e está escrito
+   * nas instruções justamente porque é intuitivo.
+   *
+   * Reduzir ou manter passa. Só AUMENTAR é recusado, e por isso a guarda não
+   * atrapalha proposta que mexe noutra coisa e deixa os marcadores quietos.
+   */
+  ctx?: { promptAtual?: string },
+): { propostas: Proposta[]; descartadas: Descartada[] } {
   const propostas: Proposta[] = [];
   const descartadas: Descartada[] = [];
   if (!Array.isArray(bruto)) return { propostas, descartadas };
@@ -128,6 +213,14 @@ export function lerPropostas(bruto: unknown): { propostas: Proposta[]; descartad
       if (texto.length > MAX_PROMPT_CHARS) { descartadas.push({ tipo, motivo: `prompt acima de ${MAX_PROMPT_CHARS} caracteres` }); continue; }
       const baseHash = String(o['baseHash'] ?? '');
       if (!/^[0-9a-f]{16}$/.test(baseHash)) { descartadas.push({ tipo, motivo: 'sem o hash do prompt em que se baseou' }); continue; }
+      if (typeof ctx?.promptAtual === 'string') {
+        const antes = marcadores(ctx.promptAtual);
+        const depois = marcadores(texto);
+        if (depois > antes) {
+          descartadas.push({ tipo, motivo: `o prompt proposto ACRESCENTA marcador {{...}} (${antes} -> ${depois}), e o agente fala marcador em voz alta` });
+          continue;
+        }
+      }
       propostas.push({ tipo: 'prompt', titulo, porque, texto, baseHash });
       continue;
     }

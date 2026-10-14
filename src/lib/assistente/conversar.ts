@@ -1,9 +1,9 @@
 import 'server-only';
 
 import { detectar, ordenar, type Achado } from './deteccoes';
-import { contexto, instrucoes, separarPropostas } from './contexto';
+import { contexto, instrucoes, instrucoesDeReescrita, separarPropostas } from './contexto';
 import type { ModeloAssistente, UsoTokens } from './modelo';
-import { lerPropostas, type Descartada, type Proposta } from './proposta';
+import { hashPrompt, lerIntencoes, lerPropostas, type Descartada, type Proposta } from './proposta';
 import { montarRetrato } from './snapshot';
 
 /**
@@ -33,6 +33,8 @@ export type Resultado = {
   achados: Achado[];
   uso: UsoTokens;
   modelo: string;
+  /** A conversa foi cortada no teto de saída — a tela avisa em vez de calar. */
+  truncado: boolean;
   /** O que o retrato não conseguiu ler — vai à tela, não ao silêncio. */
   errosDeLeitura: string[];
 };
@@ -71,15 +73,53 @@ export async function conversar(
   });
 
   const { texto, bruto } = separarPropostas(r.texto);
-  const { propostas, descartadas } = lerPropostas(bruto);
+  const { intencoes, descartadas } = lerIntencoes(bruto);
+  const uso = { ...r.uso };
+
+  /*
+   * A MATERIALIZAÇÃO. A conversa disse O QUE mudar; aqui a proposta ganha
+   * corpo, e quem preenche o `baseHash` é o CÓDIGO — com o prompt que ele
+   * acabou de ler do banco. O modelo não tem como errá-lo nem inventá-lo, e a
+   * validação final continua sendo `lerPropostas`, a mesma que `aplicar` roda
+   * do outro lado.
+   *
+   * Uma chamada por intenção de prompt (no máximo três, pelo teto das
+   * instruções). Reescrita que volta vazia ou que quebra a guarda do marcador
+   * vira descarte com motivo, nunca proposta silenciosamente ruim.
+   */
+  const brutas: unknown[] = [];
+  for (const i of intencoes) {
+    if (i.tipo === 'horario') {
+      brutas.push({ tipo: 'horario', titulo: i.titulo, porque: i.porque, janelas: i.janelas });
+      continue;
+    }
+    const rr = await deps.modelo.responder({
+      instrucoes: instrucoesDeReescrita(),
+      mensagens: [{
+        papel: 'user',
+        texto: `MUDANÇA A FAZER: ${i.mudanca}\n\nPROMPT ATUAL (${retrato.prompt.length} caracteres):\n\n${retrato.prompt}`,
+      }],
+    });
+    uso.entrada += rr.uso.entrada;
+    uso.saida += rr.uso.saida;
+    const novo = rr.texto.trim();
+    if (!novo) { descartadas.push({ tipo: 'prompt', motivo: 'a reescrita voltou vazia' }); continue; }
+    if (rr.truncado) { descartadas.push({ tipo: 'prompt', motivo: 'a reescrita foi cortada no meio (prompt muito longo)' }); continue; }
+    brutas.push({ tipo: 'prompt', titulo: i.titulo, porque: i.porque, texto: novo, baseHash: hashPrompt(retrato.prompt) });
+  }
+
+  // `promptAtual` liga a guarda do marcador: proposta que ACRESCENTA `{{...}}`
+  // é descartada, com motivo visível na tela.
+  const final = lerPropostas(brutas, { promptAtual: retrato.prompt });
 
   return {
     texto,
-    propostas,
-    descartadas,
+    propostas: final.propostas,
+    descartadas: [...descartadas, ...final.descartadas],
     achados,
-    uso: r.uso,
+    uso,
     modelo: r.modelo,
+    truncado: r.truncado === true,
     errosDeLeitura: retrato.erros,
   };
 }

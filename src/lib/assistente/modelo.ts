@@ -20,11 +20,30 @@ export type UsoTokens = { entrada: number; saida: number };
 
 export type ModeloAssistente = {
   responder(p: { instrucoes: string; mensagens: { papel: 'user' | 'assistant'; texto: string }[] }):
-  Promise<{ texto: string; uso: UsoTokens; modelo: string }>;
+  Promise<{ texto: string; uso: UsoTokens; modelo: string; truncado?: boolean }>;
 };
 
 /** O modelo do assistente. Não é o do agente: quem escreve prompt precisa ser melhor que quem responde "tem bolo?". */
 export const MODELO_PADRAO = 'gpt-4.1';
+
+/**
+ * TEMPERATURA BAIXA, e isto saiu de medição, não de gosto.
+ *
+ * Três chamadas iguais contra a conta do CEEJAAR deram três comportamentos: na
+ * primeira ele pediu permissão para propor ("quer ver como fica?"), na segunda
+ * propôs, na terceira só conversou e não emitiu o bloco. A tarefa aqui é
+ * metade conselho e metade FORMATO — o bloco `<propostas>` com JSON válido —, e
+ * formato com temperatura 1.0 é moeda ao ar.
+ */
+export const TEMPERATURA = 0.2;
+
+/**
+ * Teto de saída alto de propósito: uma proposta de prompt contém o prompt
+ * INTEIRO reescrito. O do CEEJAAR tem 12,5 KB, que deu 3.679 tokens de saída
+ * numa das medições. Sem teto declarado, a resposta pode ser cortada no meio —
+ * e o que se perde primeiro é o bloco do fim, que é justamente a proposta.
+ */
+export const MAX_SAIDA = 12_000;
 
 export function criarModeloOpenAI(apiKey: string, modelo = MODELO_PADRAO): ModeloAssistente {
   return {
@@ -36,6 +55,8 @@ export function criarModeloOpenAI(apiKey: string, modelo = MODELO_PADRAO): Model
           model: modelo,
           instructions: p.instrucoes,
           input: p.mensagens.map((m) => ({ role: m.papel, content: m.texto })),
+          temperature: TEMPERATURA,
+          max_output_tokens: MAX_SAIDA,
           store: false,
         }),
       });
@@ -50,6 +71,8 @@ export function criarModeloOpenAI(apiKey: string, modelo = MODELO_PADRAO): Model
         output_text?: string;
         output?: { content?: { text?: string }[] }[];
         usage?: { input_tokens?: number; output_tokens?: number };
+        status?: string;
+        incomplete_details?: { reason?: string };
       };
       // `output_text` é o atalho; o caminho longo existe porque ele não vem em
       // toda versão da API e ficar sem texto por isso seria tela em branco.
@@ -59,6 +82,10 @@ export function criarModeloOpenAI(apiKey: string, modelo = MODELO_PADRAO): Model
         texto: String(texto ?? ''),
         uso: { entrada: j.usage?.input_tokens ?? 0, saida: j.usage?.output_tokens ?? 0 },
         modelo,
+        // Cortado no teto: o que se perde e o FIM da resposta, que e onde mora
+        // o bloco de propostas. Quem chama precisa poder dizer isso na tela em
+        // vez de o cliente ver conselho sem a correcao prometida.
+        truncado: j.status === 'incomplete' && j.incomplete_details?.reason === 'max_output_tokens',
       };
     },
   };

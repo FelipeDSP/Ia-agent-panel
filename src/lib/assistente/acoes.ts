@@ -110,19 +110,27 @@ export async function aplicar(
 
   let bruto: unknown = null;
   try { bruto = JSON.parse(String(fd.get('proposta') ?? '')); } catch { bruto = null; }
-  const { propostas, descartadas } = lerPropostas(Array.isArray(bruto) ? bruto : [bruto]);
+  const lista = Array.isArray(bruto) ? bruto : [bruto];
+  const supabase = await criarClienteServidor();
+
+  // O prompt atual é lido ANTES de validar, porque ele entra na validação: é
+  // com ele que a guarda do marcador compara. Ler depois faria a revalidação
+  // aqui ser mais fraca que a da leitura do modelo, e o navegador fica no meio
+  // das duas.
+  const { data: dTenant, error: eTenant } = await supabase.from('tenants')
+    .select('system_prompt, horario_agente').eq('id', usuario.tenantId).maybeSingle();
+  if (eTenant) return { erro: `Não consegui ler a configuração atual: ${eTenant.message}` };
+  const linha = dTenant as { system_prompt: string | null; horario_agente: unknown } | null;
+  const promptAtual = linha?.system_prompt ?? '';
+
+  const { propostas, descartadas } = lerPropostas(lista, { promptAtual });
   const proposta = propostas[0];
   if (!proposta) {
     return { erro: descartadas[0] ? `Não sei aplicar isso: ${descartadas[0].motivo}.` : 'Proposta inválida.' };
   }
 
-  const supabase = await criarClienteServidor();
-
   if (proposta.tipo === 'prompt') {
-    const { data, error } = await supabase.from('tenants')
-      .select('system_prompt').eq('id', usuario.tenantId).maybeSingle();
-    if (error) return { erro: `Não consegui ler o prompt atual: ${error.message}` };
-    const atual = (data as { system_prompt: string | null } | null)?.system_prompt ?? '';
+    const atual = promptAtual;
     if (hashPrompt(atual) !== proposta.baseHash) {
       return { erro: 'O prompt mudou desde esta sugestão. Peça ao assistente de novo para ele olhar o texto atual.' };
     }
@@ -135,12 +143,9 @@ export async function aplicar(
   // Horário: a proposta muda as FAIXAS, não o fuso. O fuso é escolha do cliente
   // e fica onde está — mandar o modelo escolher fuso seria dar a ele uma decisão
   // que ninguém pediu, e errá-la move o expediente inteiro.
-  const { data, error } = await supabase.from('tenants')
-    .select('horario_agente').eq('id', usuario.tenantId).maybeSingle();
-  if (error) return { erro: `Não consegui ler o horário atual: ${error.message}` };
   // `lerHorarioAgente` é quem sabe normalizar o jsonb e qual é o fuso padrão;
   // cavar o jsonb aqui criaria uma segunda opinião sobre isso.
-  const atual = lerHorarioAgente((data as { horario_agente: unknown } | null)?.horario_agente ?? null);
+  const atual = lerHorarioAgente(linha?.horario_agente ?? null);
   const timezone = atual?.timezone ?? 'America/Sao_Paulo';
 
   const f = new FormData();
