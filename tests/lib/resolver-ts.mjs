@@ -28,14 +28,34 @@
  * que mora nesses arquivos, que é justamente onde vive o que fala com serviço
  * externo.
  */
+/*
+ * O ALIAS `@/` — o mesmo de `tsconfig.json` (`"@/*": ["./src/*"]`).
+ *
+ * Acrescentado em 14/10, quando o assistente do painel virou o primeiro teste a
+ * importar um arquivo de `src/` que usa o alias (`snapshot.ts` puxa
+ * `@/lib/tenants/horario-agente`). Sem isto a saída é
+ * `Cannot find package '@/lib'`, que parece dependência faltando e é só o
+ * alias do Next não existir fora do Next.
+ *
+ * Mapeado a partir da RAIZ DO REPOSITÓRIO calculada deste arquivo, não de
+ * `process.cwd()`: teste rodado de outro diretório resolveria para o lugar
+ * errado, e o erro seria "não encontrei" num arquivo que está lá.
+ */
+const RAIZ_SRC = new URL('../../src/', import.meta.url);
+
 export async function resolve(especificador, contexto, proximo) {
   if (especificador === 'server-only') {
     return { url: 'data:text/javascript,export{}', shortCircuit: true };
   }
+  if (especificador.startsWith('@/')) {
+    const alvo = new URL(especificador.slice(2), RAIZ_SRC).href;
+    // Reentra pelo caminho normal para herdar o fallback de extensão abaixo.
+    return resolve(alvo.startsWith('file:') ? alvo : especificador, contexto, proximo);
+  }
   try {
     return await proximo(especificador, contexto);
   } catch (erro) {
-    if (!especificador.startsWith('.')) throw erro;
+    if (!especificador.startsWith('.') && !especificador.startsWith('file:')) throw erro;
     for (const sufixo of ['.ts', '/index.ts', '.tsx']) {
       try {
         return await proximo(especificador + sufixo, contexto);

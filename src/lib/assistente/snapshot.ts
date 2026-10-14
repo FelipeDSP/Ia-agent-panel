@@ -24,10 +24,18 @@ import { chaveDeOrigem, type RetratoConta } from './deteccoes';
  * ordem dos deploys) não pode ser o fim da conversa.
  */
 
+/**
+ * O mínimo que esta função usa do cliente Supabase.
+ *
+ * Escrito à mão, e não `SupabaseClient`, para o teste poder injetar um dublê
+ * sem levantar banco. Os argumentos são `any[]` de propósito: a assinatura real
+ * de `select` é genérica e encadeada, e qualquer tentativa de descrevê-la aqui
+ * fica incompatível com o cliente de verdade — foi o que aconteceu quando o
+ * primeiro consumidor apareceu (o assistente, 14/10) e o passo 1 nunca tinha
+ * sido chamado com o cliente real.
+ */
 type Supa = {
-  from: (t: string) => {
-    select: (c: string, o?: unknown) => any;
-  };
+  from: (t: string) => { select: (...a: any[]) => any };
 };
 
 /** Quantos dias de respostas barradas entram no retrato. */

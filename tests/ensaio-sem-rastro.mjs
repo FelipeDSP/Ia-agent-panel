@@ -42,6 +42,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
+import { diferencas, retratoDoTenant, tabelasDoTenant } from './lib/retrato-tenant.mjs';
+
 import { executarTurno } from '../agente/src/turno/executar.ts';
 import { chatwootMudo, CONVERSA_DE_ENSAIO } from '../agente/src/turno/ensaio.ts';
 import { TOOLS_SO_LEITURA } from '../agente/src/tools/index.ts';
@@ -114,30 +116,35 @@ const msg = (texto) => [{
   phone: '5569999990000', chatwoot_account_id: 1, chatwoot_inbox_id: 1, message_id: null,
 }];
 
+/**
+ * CHECKSUM, NÃO CONTAGEM — e `tenants` incluída.
+ *
+ * A primeira versão deste retrato contava linhas das tabelas com `tenant_id`.
+ * Duas cegueiras, as duas achadas pela sabotagem do teste irmão do assistente:
+ * contagem não vê UPDATE, e `tenants` não tem `tenant_id` (a chave é `id`),
+ * então a tabela do prompt e do horário ficava fora de um retrato que eu
+ * considerava completo. Ver `tests/lib/retrato-tenant.mjs`.
+ */
 let TABELAS = [];
-const retrato = async () => {
-  const o = {};
-  for (const t of TABELAS) o[t] = (await q(`select count(*)::int n from public.${t} where tenant_id=$1`, [tenantId]))[0].n;
-  return o;
-};
-const cresceram = (a, b) => TABELAS.filter((t) => a[t] !== b[t]);
+const retrato = () => retratoDoTenant(q, tenantId, TABELAS);
+const cresceram = (a, b) => diferencas(a, b);
 
 try {
   // ---- a lista de tabelas sai do catálogo, não da minha memória -------------
-  TABELAS = (await q(`select c.relname from pg_class c
-      join pg_namespace n on n.oid = c.relnamespace
-      join pg_attribute a on a.attrelid = c.oid and a.attname = 'tenant_id' and a.attnum > 0
-     where n.nspname = 'public' and c.relkind = 'r' order by 1`)).map((r) => r.relname);
+  TABELAS = await tabelasDoTenant(q);
+  const NOMES = TABELAS.map((t) => t.tabela);
 
   console.log('\n=== 0. A varredura alcança o que precisa ===\n');
   // Guarda que reprova a lista VAZIA antes de comparar: uma varredura que não
   // acha nada aprova qualquer coisa, e foi assim que a extração de colunas do
   // portão nasceu aprovando um SELECT sem coluna (09/09).
-  chk(`o catálogo devolveu tabelas com tenant_id (${TABELAS.length})`, TABELAS.length >= 20, String(TABELAS.length));
+  chk(`a varredura achou tabelas (${NOMES.length})`, NOMES.length >= 20, String(NOMES.length));
+  chk('...e inclui `tenants`, pela coluna `id` (a que a contagem deixava de fora)',
+    TABELAS.some((t) => t.tabela === 'tenants' && t.coluna === 'id'));
   for (const t of ['mensagens_log', 'conversas', 'agente_fila', 'pedidos', 'prompt_versoes'])
-    chk(`...e inclui \`${t}\``, TABELAS.includes(t));
+    chk(`...e inclui \`${t}\``, NOMES.includes(t));
   for (const t of TABELAS_DE_TRACE)
-    chk(`a tabela de trace \`${t}\` existe (senão a licença é para um nome morto)`, TABELAS.includes(t));
+    chk(`a tabela de trace \`${t}\` existe (senão a licença é para um nome morto)`, NOMES.includes(t));
 
   const [t] = await q(`insert into public.tenants (nome, slug, system_prompt, modelo)
       values ($1, $1, 'Você é um atendente da loja de teste.', 'gpt-4.1-mini') returning id`, [SLUG]);
@@ -155,7 +162,7 @@ try {
       from public.tenants where id = $1`, [tenantId]))[0];
 
   // =========================================================================
-  console.log('\n=== 1. O ensaio NÃO escreve (26 tabelas, não 3) ===\n');
+  console.log('\n=== 1. O ensaio NÃO escreve (toda tabela do tenant, por checksum) ===\n');
 
   const antes = await retrato();
   const envios = [];
@@ -169,14 +176,14 @@ try {
     JSON.stringify({ status: r.status, motivo: r.motivo }));
   const indevidas = mudou.filter((x) => !TABELAS_DE_TRACE.includes(x));
   chk('nenhuma tabela fora do trace mudou', indevidas.length === 0,
-    indevidas.map((x) => `${x}: ${antes[x]} -> ${depois[x]}`).join(', '));
+    indevidas.join(', '));
   // Nomeadas uma a uma porque são as que o cliente VÊ na tela:
   for (const t of ['mensagens_log', 'conversas', 'agente_fila', 'prompt_versoes', 'pedidos'])
-    chk(`\`${t}\` intacta`, antes[t] === depois[t], `${antes[t]} -> ${depois[t]}`);
+    chk(`\`${t}\` intacta (conteúdo, não contagem)`, antes[t] === depois[t], `${antes[t]} -> ${depois[t]}`);
   // CONTRAPROVA de que o retrato mede algo: o trace TEM de ter crescido.
-  chk('o trace cresceu (senão o retrato estaria cego)',
-    TABELAS_DE_TRACE.every((x) => depois[x] > antes[x]),
-    TABELAS_DE_TRACE.map((x) => `${x}: ${antes[x]} -> ${depois[x]}`).join(', '));
+  chk('o trace MUDOU (senão o retrato estaria cego)',
+    TABELAS_DE_TRACE.every((x) => depois[x] !== antes[x]),
+    TABELAS_DE_TRACE.filter((x) => depois[x] === antes[x]).join(', '));
 
   console.log('\n--- e o cliente não é cobrado pelo ensaio ---\n');
   // Decisão do Felipe quando o assistente foi aprovado: "o custo vai ser
@@ -187,7 +194,7 @@ try {
   const corpoBilling = (await q(`select prosrc from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public' and p.proname = 'billing_consumo_mensal'`))[0]?.prosrc ?? '';
-  const fontesDoBilling = TABELAS.filter((t) => corpoBilling.includes(`public.${t}`));
+  const fontesDoBilling = NOMES.filter((t) => corpoBilling.includes(`public.${t}`));
   chk('as fontes do consumo saíram do corpo da função (lista vazia não aprova)',
     fontesDoBilling.length > 0, JSON.stringify(fontesDoBilling));
   const cobradas = fontesDoBilling.filter((t) => antes[t] !== depois[t]);
@@ -290,9 +297,14 @@ try {
   chk('...e o wrapper de sistema também (é o prompt montado, não só o campo)',
     (visto.systemMessage ?? '').includes('INSTRUÇÕES DE SISTEMA'), (visto.systemMessage ?? '').slice(0, 80));
 } finally {
+  // Reprova quando não limpa: em 14/10 o teste irmão (`assistente-conversa`)
+  // saiu VERDE com 62 asserções imprimindo "removido: NAO", e o tenant de
+  // teste ficou em produção. Arrumação que não mede se arrumou é a mesma
+  // armadilha do helper que não muta e devolve sucesso.
   if (tenantId) {
-    const d = await pool.query(`delete from public.tenants where id = $1 and slug like 'zz-ensaio-%' returning id`, [tenantId]);
-    console.log(`\n(tenant efêmero removido: ${d.rowCount === 1 ? 'sim' : 'NAO - ' + SLUG})`);
+    await pool.query(`delete from public.tenants where id = $1 and slug like 'zz-ensaio-%'`, [tenantId]);
+    const sobrou = (await pool.query('select count(*)::int n from public.tenants where id = $1', [tenantId])).rows[0].n;
+    chk('o tenant efêmero foi REMOVIDO', sobrou === 0, `ainda existe: ${SLUG} (${tenantId})`);
   }
   await pool.end();
 }
