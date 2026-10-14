@@ -177,6 +177,53 @@ async function alinharMaiorRepeticao() {
 }
 
 /**
+ * O LIMIAR SAI DO ARQUIVO DA MIGRAÇÃO, não da função aplicada.
+ *
+ * Ele serve para CLASSIFICAR as conversas reais (ver `maiorIlhaPorConversa`), e
+ * a sabotagem S2 troca o 5 por 2 na função APLICADA. Se a classificação lesse o
+ * limiar da função, mudaria junto com a sabotagem e S2 passaria a aprovar — a
+ * sabotagem deixaria de medir. O arquivo é versionado e S2 não o toca.
+ */
+const LIMIAR = Number(/c_repeticoes\s+constant integer\s+:=\s*(\d+);/.exec(M53)?.[1] ?? 0);
+
+/**
+ * O tamanho da MAIOR sequência de entradas iguais consecutivas de cada conversa
+ * — a mesma conta de ilhas do alinhamento, devolvendo o número em vez de mover
+ * linhas. Não depende do alinhamento: deslocar a conversa inteira por uma
+ * constante preserva ordem e intervalos, então a ilha é a mesma.
+ *
+ * É o que permite dizer, SEM reimplementar a regra, quais conversas não têm
+ * repetição suficiente para disparar. Isto conta repetição e nada mais; a regra
+ * também exige a janela de 10 minutos e decide sozinha — por isso a
+ * classificação é usada em UM sentido só (ver a asserção 2).
+ */
+async function maiorIlhaPorConversa() {
+  const r = await c.query(`
+    with e as (
+      select l.tenant_id, l.conversation_id, l.criado_em,
+             public.texto_normalizado(l.conteudo) txt,
+             row_number() over (partition by l.tenant_id, l.conversation_id
+                                order by l.criado_em) rn,
+             row_number() over (partition by l.tenant_id, l.conversation_id,
+                                             public.texto_normalizado(l.conteudo)
+                                order by l.criado_em) rn_txt
+        from public.mensagens_log l
+       where l.direcao = 'entrada'
+    ),
+    ilhas as (
+      select tenant_id, conversation_id, count(*) tam,
+             max(criado_em) - min(criado_em) span
+        from e group by tenant_id, conversation_id, txt, (rn - rn_txt)
+    )
+    select distinct on (i.tenant_id, i.conversation_id)
+           t.slug, i.conversation_id conv, i.tam::int tam,
+           extract(epoch from i.span)::int span_s
+      from ilhas i join public.tenants t on t.id = i.tenant_id
+     order by i.tenant_id, i.conversation_id, i.tam desc`);
+  return new Map(r.rows.map((x) => [`${x.slug}#${x.conv}`, { tam: x.tam, spanS: x.span_s }]));
+}
+
+/**
  * Roda o portão em todas as conversas reais sob um alinhamento, e desfaz tudo.
  * O savepoint é o que permite medir N=5 e N=2 partindo do MESMO histórico
  * intocado — sem ele o segundo alinhamento trabalharia sobre os restos do
@@ -440,11 +487,73 @@ try {
   chk('1b. contraprova: conversa SEM repetição não dispara',
     rNormal.rows.length === 1 && rNormal.rows[0].anomalia === false,
     rNormal.erro ?? JSON.stringify(rNormal.rows[0]));
-  // A conv 20 continua tolerada aqui: se a retenção ainda não tiver alcançado
-  // uma parte dela, disparar é CERTO, não falso positivo.
-  chk('2. ZERO falsos positivos nas conversas reais',
-    disparou.filter((d) => d !== 'emporio#20').length === 0,
-    `falsos positivos: ${disparou.filter((d) => d !== 'emporio#20').join(', ')}`);
+  /*
+   * 14/10/2026 — E ERA SOBRE O ESTADO DO MUNDO DE NOVO, um nível acima.
+   *
+   * A nota de 07/10 logo acima consertou a METADE que dependia de produção
+   * ainda TER um laço. Esta metade dependia do contrário: de produção NÃO ter
+   * nenhum outro. Era `disparou.filter(d => d !== 'emporio#20').length === 0`
+   * — uma lista de exceção com um nome dentro, escrita quando a conv 20 era o
+   * único laço do banco.
+   *
+   * Em 14/10, três conversas reais laçaram DE VERDADE: dois dos nossos agentes
+   * se responderam por 22 minutos (`emporio#32` com 96 turnos, `sendbox#82`
+   * com 83, `sendbox#88`). A regra as pegou — duas estavam pausadas em
+   * produção com `motivo_pausa = 'anomalia'` no instante em que este teste
+   * rodou. E o teste chamou isso de FALSO POSITIVO, ficando vermelho porque o
+   * sistema funcionou, que é a forma mais rápida de todo mundo parar de olhar
+   * a suíte.
+   *
+   * O conserto é o corolário de sempre: o teste não pode depender de algo que
+   * um cliente (ou um robô do outro lado) muda sozinho. A propriedade que
+   * realmente se quer é mais fraca e verdadeira para sempre:
+   *
+   *     a regra não dispara em conversa que NÃO tem repetição suficiente.
+   *
+   * Então a classificação vem do histórico, não de uma lista de nomes, e é
+   * usada em UM sentido só. Conversa com ilha < LIMIAR que dispara é defeito
+   * (falso positivo de verdade). Conversa com ilha >= LIMIAR é laço pelo
+   * próprio dado: disparar é CERTO e não disparar também pode ser certo (a
+   * janela de 10 min é da regra, e a ilha pode estar esparsa), então ela sai
+   * como AVISO, com os números — aviso informa sem treinar ninguém a ignorar
+   * vermelho.
+   */
+  sus(`o limiar foi lido do arquivo da migração (${LIMIAR})`, LIMIAR >= 2, `${LIMIAR}`);
+  const ilhas = await maiorIlhaPorConversa();
+  const chaves = alvos.map((a) => `${a.slug}#${a.conv}`);
+  const semRepeticao = chaves.filter((k) => (ilhas.get(k)?.tam ?? 0) < LIMIAR);
+  const comLaco = chaves.filter((k) => (ilhas.get(k)?.tam ?? 0) >= LIMIAR);
+  // Rejeita a lista VAZIA antes de comparar: se toda conversa do banco tivesse
+  // um laço, "zero falsos positivos" seria verdade por não haver o que medir.
+  sus(`há conversas SEM repetição para medir (${semRepeticao.length} de ${chaves.length})`,
+    semRepeticao.length >= 10, `${semRepeticao.length}`);
+
+  const falsos = disparou.filter((d) => semRepeticao.includes(d));
+  chk(`2. ZERO falsos positivos: nenhuma conversa com menos de ${LIMIAR} repetições dispara`,
+    falsos.length === 0, `falsos positivos: ${falsos.join(', ')}`);
+
+  /*
+   * O AVISO É SÓ DO QUE DISPAROU, e isso não é economia de tela.
+   *
+   * A primeira versão avisava sobre toda conversa com ilha >= LIMIAR: saíram 25
+   * linhas, e a maioria não é laço nenhum — `emporio#2` tem 6x "olá! como posso
+   * te ajudar hoje?" espalhados por semanas, que é só a mesma saudação. Ilha
+   * grande sem a janela não é laço, e aviso de 25 linhas por execução é ruído
+   * que ensina a não ler o aviso.
+   *
+   * Quem disparou, disparou com a regra inteira — contagem E janela —, então é
+   * laço de fato e é curto. O resto fica numa linha de contagem.
+   */
+  const lacosPegos = disparou.filter((d) => comLaco.includes(d));
+  if (lacosPegos.length) {
+    console.log(`      ! AVISO: a regra PAUSARIA ${lacosPegos.length} conversa(s) real(is) — laço no dado, não falha deste teste:`);
+    for (const k of lacosPegos) {
+      const i = ilhas.get(k);
+      console.log(`          ${k}: ${i.tam}x a mesma entrada em ${i.spanS}s`);
+    }
+    console.log('        Vale olhar no Chatwoot: em 14/10 eram dois agentes nossos se respondendo.');
+  }
+  console.log(`      (${comLaco.length} conversa(s) têm ilha >= ${LIMIAR} em algum ponto do histórico; ${lacosPegos.length} alcançam a janela da regra)`);
 
   console.log('\n-- 5. O portão devolve SEMPRE uma linha --\n');
   // Zero linhas faria o nó do n8n parar o fluxo em silêncio e NENHUM tenant
@@ -578,7 +687,12 @@ try {
 
     // MESMO arranjo da seção 4 — o alinhamento não conhece o limiar, então a
     // única coisa que mudou entre as duas medições é o 5 ter virado 2.
-    const fp = (await dispararamSob(alvos)).filter((d) => d !== 'emporio#20');
+    // O `semRepeticao` vem do LIMIAR do arquivo (5), que esta sabotagem não
+    // toca — ela mexe na função aplicada (2). Se a classificação lesse o
+    // limiar da função, ela cairia para 2 junto e as conversas de 2, 3 e 4
+    // repetições passariam a ser "laço esperado": a sabotagem aprovaria a si
+    // mesma. É a mesma armadilha de confirmar grant contra a própria lista.
+    const fp = (await dispararamSob(alvos)).filter((d) => semRepeticao.includes(d));
     chk('S2 com 2 repetições, aparecem falsos positivos nas conversas reais (o teste reprova)',
       fp.length > 0,
       `falsos positivos sob sabotagem: ${fp.join(', ') || 'NENHUM'} — se for nenhum, o limiar não está sendo medido`);
