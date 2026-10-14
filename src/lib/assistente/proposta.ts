@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 /**
  * A PROPOSTA — o que o assistente pode pedir, e o que ele nunca consegue fazer.
  *
@@ -76,10 +74,13 @@ export const TIPOS: Record<TipoDeProposta, { rotulo: string; onde: string }> = {
   horario: { rotulo: 'Mudar o horário de atendimento', onde: 'Configurações → Horário' },
 };
 
-/** O hash de um prompt, para o `baseHash`. Curto: é comparação, não segredo. */
-export function hashPrompt(texto: string): string {
-  return createHash('sha256').update(String(texto ?? ''), 'utf8').digest('hex').slice(0, 16);
-}
+/*
+ * O `hashPrompt` MORA EM `hash.ts`, não aqui, e isso não é organização: é o
+ * build. Este arquivo é importado por `conversa.tsx`, que é componente de
+ * cliente, e um componente de cliente arrasta todo o grafo de imports para o
+ * navegador — o `node:crypto` que ficava aqui derrubou o `npm run build` com
+ * `UnhandledSchemeError`. Ver o comentário de `hash.ts`.
+ */
 
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -144,6 +145,22 @@ export function lerIntencoes(bruto: unknown): { intencoes: Intencao[]; descartad
     const porque = String(o['porque'] ?? '').trim().slice(0, 600);
     if (!(tipo in TIPOS)) { descartadas.push({ tipo: tipo || '(sem tipo)', motivo: 'tipo que o painel não sabe aplicar' }); continue; }
     if (!titulo) { descartadas.push({ tipo, motivo: 'sem título para o cliente ler' }); continue; }
+    /*
+     * UMA POR TIPO, e isto não é estética: medido em 14/10, "deixa meu prompt
+     * mais curto" trouxe DUAS propostas de prompt no mesmo turno. As duas
+     * nascem do mesmo prompt atual, então as duas carregam o mesmo `baseHash`
+     * — aprovar a primeira faz a segunda ser recusada pelo próprio guard de
+     * prompt-mudou. Seriam dois botões na tela com um deles condenado desde o
+     * começo, e o cliente descobriria isso clicando.
+     *
+     * Fica a primeira. A segunda vira descarte com motivo, e o cliente pede de
+     * novo se quiser a outra mudança — agora sobre o texto já corrigido, que é
+     * o que ele teria de fazer de qualquer jeito.
+     */
+    if (intencoes.some((i) => i.tipo === tipo)) {
+      descartadas.push({ tipo, motivo: `só uma mudança de ${tipo} por vez: as duas partiriam do mesmo texto e a segunda seria recusada` });
+      continue;
+    }
 
     if (tipo === 'prompt') {
       const mudanca = String(o['mudanca'] ?? '').trim().slice(0, 600);

@@ -292,6 +292,11 @@ export const ROTAS_SEMPRE_VISIVEIS = [
   // Não é tool: ninguém contrata "ter equipe"; o que a agência vende é o
   // número de assentos (`tenants.max_agentes`, migração 81).
   { href: '/painel/equipe', rotulo: 'Equipe', icone: 'Users', somenteAdmin: true },
+  // 14/10: o assistente de configuração. NÃO é tool e nunca vai ser — não há
+  // o que contratar, ele existe para toda conta e o custo do modelo é da
+  // agência (decisão do Felipe). `somenteAdmin` porque ele mexe em prompt e
+  // horário: quem atende pela conta não reconfigura o agente que ele usa.
+  { href: '/painel/assistente', rotulo: 'Assistente', icone: 'Sparkles', somenteAdmin: true },
   { href: '/painel/configuracoes', rotulo: 'Configurações', icone: 'Settings', somenteAdmin: true },
 ] as const;
 

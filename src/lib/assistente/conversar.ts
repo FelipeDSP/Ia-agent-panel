@@ -3,7 +3,8 @@ import 'server-only';
 import { detectar, ordenar, type Achado } from './deteccoes';
 import { contexto, instrucoes, instrucoesDeReescrita, separarPropostas } from './contexto';
 import type { ModeloAssistente, UsoTokens } from './modelo';
-import { hashPrompt, lerIntencoes, lerPropostas, type Descartada, type Proposta } from './proposta';
+import { hashPrompt } from './hash';
+import { lerIntencoes, lerPropostas, type Descartada, type Proposta } from './proposta';
 import { montarRetrato } from './snapshot';
 
 /**

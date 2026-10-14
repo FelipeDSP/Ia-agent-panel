@@ -8,7 +8,8 @@ import { salvarPrompt } from '@/lib/tenants/prompt-acoes';
 
 import { conversar, type Resultado } from './conversar';
 import { modeloDoAmbiente } from './modelo';
-import { hashPrompt, lerPropostas, TIPOS } from './proposta';
+import { hashPrompt } from './hash';
+import { lerPropostas, TIPOS } from './proposta';
 
 /**
  * As duas entradas do assistente, e a assimetria entre elas é o desenho.

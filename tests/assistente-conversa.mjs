@@ -40,7 +40,8 @@ import { carregarEnv } from '../scripts/lib/env.mjs';
 import { diferencas, retratoDoTenant, tabelasDoTenant } from './lib/retrato-tenant.mjs';
 import { conversar, MAX_HISTORICO } from '../src/lib/assistente/conversar.ts';
 import { contexto, instrucoes, instrucoesDeReescrita, separarPropostas } from '../src/lib/assistente/contexto.ts';
-import { hashPrompt, lerPropostas, marcadores, MAX_PROMPT_CHARS, TIPOS } from '../src/lib/assistente/proposta.ts';
+import { hashPrompt } from '../src/lib/assistente/hash.ts';
+import { lerIntencoes, lerPropostas, marcadores, MAX_PROMPT_CHARS, TIPOS } from '../src/lib/assistente/proposta.ts';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 carregarEnv();
@@ -200,6 +201,30 @@ try {
   chk('CONTRAPROVA: proposta válida passa, dos dois tipos', bom.propostas.length === 2, JSON.stringify(bom.descartadas));
   chk('...e a proposta NÃO tem campo de tenant (não há como apontar para outra conta)',
     bom.propostas.every((x) => !('tenantId' in x) && !('tenant_id' in x)), JSON.stringify(bom.propostas[0]));
+
+  console.log('\n--- uma proposta por tipo, por turno ---\n');
+
+  /*
+   * Medido em 14/10 na tela: "deixa meu prompt mais curto" trouxe DUAS
+   * propostas de prompt. As duas partem do mesmo texto atual, logo carregam o
+   * mesmo `baseHash` — aprovar uma faz a outra ser recusada pelo guard de
+   * prompt-mudou. Dois botões, um condenado desde o começo.
+   */
+  const duas = lerIntencoes([
+    { tipo: 'prompt', titulo: 'Encurtar', porque: 'a', mudanca: 'encurte' },
+    { tipo: 'prompt', titulo: 'Tirar marcador', porque: 'b', mudanca: 'tire o marcador' },
+    { tipo: 'horario', titulo: 'Abrir sábado', porque: 'c', janelas: [{ dias: [6], inicio: '08:00', fim: '12:00' }] },
+  ]);
+  chk('duas intenções do MESMO tipo viram uma', duas.intencoes.filter((i) => i.tipo === 'prompt').length === 1,
+    JSON.stringify(duas.intencoes.map((i) => i.tipo)));
+  chk('...a primeira é a que fica', duas.intencoes[0]?.titulo === 'Encurtar', JSON.stringify(duas.intencoes[0]));
+  chk('...a segunda vira descarte com motivo',
+    /uma mudança de prompt por vez/i.test(duas.descartadas[0]?.motivo ?? ''), JSON.stringify(duas.descartadas));
+  // CONTRAPROVA: tipos DIFERENTES continuam convivendo — eles não disputam o
+  // mesmo texto, e recusar os dois juntos tiraria metade do valor do turno.
+  chk('CONTRAPROVA: tipos diferentes convivem no mesmo turno',
+    duas.intencoes.length === 2 && duas.intencoes[1]?.tipo === 'horario',
+    JSON.stringify(duas.intencoes.map((i) => i.tipo)));
 
   console.log('\n--- a guarda do marcador: a proposta não pode piorar isso ---\n');
 
