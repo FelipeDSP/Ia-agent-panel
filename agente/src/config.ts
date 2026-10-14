@@ -16,6 +16,8 @@ export interface Config {
   webhookToken: string;
   /** Segredo do endpoint `POST /limpar-memoria` (o painel manda `x-limpeza-secret`). */
   limpezaSecret: string;
+  /** Segredo do `POST /testar` (o ensaio). `null` = ensaio desligado, e o endpoint diz isso. */
+  testeSecret: string | null;
   /** OpenAI: modelo, embeddings (KB) e transcrição. */
   openaiApiKey: string;
   /** O `x-foto-secret` da Edge Function `foto-produto`; sem ele a tool de foto recusa com motivo próprio. */
@@ -85,6 +87,12 @@ export function lerConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webhookToken: obrigatorio('WEBHOOK_TOKEN'),
     limpezaSecret: obrigatorio('LIMPEZA_SECRET'),
     openaiApiKey: obrigatorio('OPENAI_API_KEY'),
+    // 14/10 — OPCIONAL de proposito. Se fosse `obrigatorio`, o servico deixaria
+    // de subir ate alguem por a variavel no Coolify, e um deploy que nao sobe
+    // por causa de uma funcionalidade NOVA derruba o atendimento de todo mundo
+    // por uma coisa que ninguem estava usando. Sem ela, o `POST /testar`
+    // responde 503 dizendo o que falta; o resto do servico nem percebe.
+    testeSecret: env.TESTE_SECRET?.trim() || null,
     fotoSecret: env.FOTO_SECRET?.trim() || null,
     supabaseUrl: env.SUPABASE_URL?.trim() || null,
     ingestaoSecret: env.INGESTAO_SECRET?.trim() || null,

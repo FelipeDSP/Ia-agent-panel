@@ -41,7 +41,15 @@ let parando = false;
 
 const servidor = criarServidor({
   db: pool, waha, regrasDir: cfg.regrasDir,
-  webhookToken: cfg.webhookToken, limpezaSecret: cfg.limpezaSecret, versaoCodigo: cfg.versaoCodigo, chatwoot,
+  webhookToken: cfg.webhookToken, limpezaSecret: cfg.limpezaSecret, testeSecret: cfg.testeSecret,
+  versaoCodigo: cfg.versaoCodigo, chatwoot,
+  // O ensaio recebe as MESMAS dependencias do laco da fila, menos o Chatwoot —
+  // esse ele troca por um mudo. E o que faz o teste medir o agente de verdade
+  // em vez de medir uma montagem paralela.
+  depsTurno: {
+    db: pool, waha, modelo, embeddings, transcritor, regrasDir: cfg.regrasDir,
+    versaoCodigo: cfg.versaoCodigo, fotoSecret: cfg.fotoSecret, fetchFn: fetch, asaas,
+  },
   filaViva: () => Date.now() - ultimoCiclo < Math.max(cfg.intervaloFilaMs * 5, 15_000),
 });
 servidor.listen(cfg.porta, () => log('info', 'http.ouvindo', { porta: cfg.porta, worker: cfg.workerId, versao: cfg.versaoCodigo }));

@@ -23,6 +23,22 @@ import { ferramentaGerarLinkPagamento } from './gerar-link-pagamento.ts';
  * de `catalogo_tools` (61) e entra SÓ quando contratada+ativa e há Asaas no
  * serviço — uma tool = um contrato (regra de superfície do CLAUDE.md).
  */
+/**
+ * As ferramentas que NÃO deixam rastro: só leem.
+ *
+ * O ensaio (`POST /testar`) roda o turno de verdade — prompt real, base real,
+ * catálogo real, portão real — e por isso não pode dar as ferramentas que
+ * escrevem. `gerenciar_pedido` criaria pedido; `transferir_humano` pausaria a
+ * conversa e avisaria gente; `resolver_conversa` encerraria no Chatwoot;
+ * `enviar_foto_produto` mandaria imagem ao cliente; `gerar_link_pagamento`
+ * abriria cobrança no Asaas. Nenhuma delas tem desfazer barato.
+ *
+ * A lista é por INCLUSÃO, não por exclusão. Ferramenta nova nasce fora do
+ * ensaio até alguém olhar e decidir — o inverso faria toda tool futura entrar
+ * no teste por esquecimento, e o esquecimento aqui escreve em cliente.
+ */
+export const TOOLS_SO_LEITURA = ['busca_conhecimento', 'consultar_catalogo'] as const;
+
 export function ferramentasDoPerfil(ctx: ContextoTool, perfil: Perfil, toolsAtivas: string[] = []): FerramentaDoModelo[] {
   const basicas = [ferramentaBuscaConhecimento(ctx), ferramentaTransferirHumano(ctx), ferramentaResolverConversa(ctx)];
   if (perfil === 'basico') return basicas;

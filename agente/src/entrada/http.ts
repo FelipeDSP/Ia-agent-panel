@@ -25,6 +25,10 @@ import { receberWebhookAsaas } from '../pagamento/webhook.ts';
 export interface DepsHttp extends DepsReceber {
   webhookToken: string;
   limpezaSecret: string;
+  /** `null` desliga o `POST /testar` — e o endpoint DIZ que esta desligado. */
+  testeSecret: string | null;
+  /** O que o ensaio precisa para rodar o turno (tudo menos o Chatwoot, que ele troca). */
+  depsTurno?: Omit<import('../turno/executar.ts').Deps, 'chatwoot'>;
   /** Diz se o worker está vivo (última passada há menos de N s). */
   filaViva: () => boolean;
   /** O Chatwoot, para o webhook do Asaas avisar o cliente. */
@@ -114,6 +118,34 @@ export function criarServidor(deps: DepsHttp): http.Server {
       } catch (e) {
         log('erro', 'limpar_memoria.falhou', { erro: erroTexto(e) });
         return responder(res, 500, { ok: false });
+      }
+    }
+
+    if (req.method === 'POST' && partes[0] === 'testar') {
+      // 503 e nao 401 quando falta o segredo: "nao configurado" e "credencial
+      // errada" sao coisas diferentes, e confundi-las faz quem esta ligando a
+      // funcionalidade procurar o erro no lugar errado.
+      if (!deps.testeSecret) return responder(res, 503, { ok: false, motivo: 'ensaio_nao_configurado', falta: 'TESTE_SECRET' });
+      if (req.headers['x-teste-secret'] !== deps.testeSecret) return responder(res, 401, { ok: false });
+      if (!deps.depsTurno) return responder(res, 503, { ok: false, motivo: 'ensaio_indisponivel' });
+      let body: { tenant_id?: string; pergunta?: string; historico?: { papel: string; texto: string }[] };
+      try { body = JSON.parse(await lerCorpo(req)); } catch { return responder(res, 400, { ok: false, motivo: 'corpo_invalido' }); }
+      if (!body.tenant_id) return responder(res, 400, { ok: false, motivo: 'tenant_id ausente' });
+      if (!body.pergunta?.trim()) return responder(res, 400, { ok: false, motivo: 'pergunta ausente' });
+      try {
+        const { ensaiar } = await import('../turno/ensaio.ts');
+        const r = await ensaiar(deps.depsTurno, {
+          tenantId: body.tenant_id,
+          pergunta: body.pergunta,
+          historico: (body.historico ?? [])
+            .filter((m) => m && typeof m.texto === 'string')
+            .map((m) => ({ papel: m.papel === 'agente' ? 'agente' as const : 'cliente' as const, texto: m.texto })),
+        });
+        log('info', 'ensaio', { tenant: body.tenant_id, ok: r.ok, turno: r.turnoId });
+        return responder(res, 200, r);
+      } catch (e) {
+        log('erro', 'ensaio.falhou', { erro: erroTexto(e) });
+        return responder(res, 500, { ok: false, motivo: erroTexto(e) });
       }
     }
 

@@ -131,7 +131,8 @@
     "teste:migracao-tenant-por-conta": "node --env-file=.env.local tests/migracao-tenant-por-conta.mjs",
     "teste:avisos-painel": "node --import ./tests/lib/ts.mjs tests/avisos-painel.mjs",
     "teste:oferta-sem-balcao": "node --import ./tests/lib/ts.mjs tests/oferta-sem-balcao.mjs",
-    "teste:prompt-placeholders": "node --import ./tests/lib/ts.mjs tests/prompt-placeholders.mjs"
+    "teste:prompt-placeholders": "node --import ./tests/lib/ts.mjs tests/prompt-placeholders.mjs",
+    "teste:ensaio": "node --import ./tests/lib/ts.mjs tests/ensaio-sem-rastro.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

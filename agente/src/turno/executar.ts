@@ -30,7 +30,7 @@ import { Turno } from '../trace.ts';
 import { resolverPerfil } from '../perfil.ts';
 import { montarSystemMessage, versaoDasPartes } from '../agente/prompt.ts';
 import type { Modelo, MensagemHistorico } from '../agente/modelo.ts';
-import { ferramentasDoPerfil, temPagamento } from '../tools/index.ts';
+import { TOOLS_SO_LEITURA, ferramentasDoPerfil, temPagamento } from '../tools/index.ts';
 import { lerTimes, secaoTimes, transferirHumano } from '../tools/transferir-humano.ts';
 import { narrarAgora } from './agora.ts';
 import { enviarFotoComLegenda } from '../tools/enviar-foto.ts';
@@ -145,7 +145,43 @@ const AVISO_PADRAO_MIDIA = 'Ainda não consigo ouvir áudio por aqui. Pode escre
 /** O que o cliente lê quando o portão barra duas vezes seguidas e a transferência entrou. */
 export const TEXTO_PORTAO_TRANSFERIU = 'Não consegui registrar isso direitinho por aqui 😕 Já chamei um atendente para cuidar do seu pedido com você — só um instante que alguém te responde.';
 
-export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversationId: number; filaIds: string[]; mensagens: MensagemDaFila[] }): Promise<ResultadoTurno> {
+/**
+ * ENSAIO (14/10) — o turno de verdade, sem efeito colateral.
+ *
+ * Nasceu do custo de responder "minha mudanca funcionou?". Para testar a Acqua
+ * na sexta foi preciso achar a conversa no Chatwoot, cortar a memoria por
+ * funcao de banco, descobrir que ela estava PAUSADA por mensagem humana,
+ * retomar, mandar pela API e esperar a ida e volta do WhatsApp. Isso por
+ * mudanca.
+ *
+ * O ensaio roda o MESMO caminho — mesmo prompt, mesma base, mesmo catalogo,
+ * mesmo portao —, e e por isso que ele vale: um teste que monta o prompt por
+ * conta propria mede o teste, nao o agente. O que muda sao quatro desvios, e
+ * todos eles para NAO escrever:
+ *
+ *   1. a memoria vem do pedido, nao de `api_agente_memoria` (a conversa do
+ *      cliente nao e lida nem tocada);
+ *   2. so as ferramentas de leitura entram (`TOOLS_SO_LEITURA`);
+ *   3. nada vai para `mensagens_log`;
+ *   4. nada vai para o Chatwoot.
+ *
+ * O TRACE FICA, com `acao = 'ensaio'`. E ele a razao de o ensaio existir: ver
+ * que a busca devolveu, quais tools rodaram e o que o portao decidiu e o que
+ * resolveu os defeitos desta semana. A coluna `acao` nao tem CHECK, entao o
+ * valor novo nao pede migracao.
+ */
+export interface Ensaio {
+  /**
+   * O historico da sessao de teste, no lugar da memoria da conversa real.
+   * No vocabulario INTERNO (`human`/`ai`), igual ao que `api_agente_memoria`
+   * devolve — quem traduz de `cliente`/`agente` e a borda, em `ensaio.ts`.
+   * Fazer o contrario espalharia duas linguagens pelo turno.
+   */
+  historico: MensagemHistorico[];
+}
+
+export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversationId: number; filaIds: string[]; mensagens: MensagemDaFila[]; ensaio?: Ensaio }): Promise<ResultadoTurno> {
+  const ensaio = p.ensaio ?? null;
   const { db, tenant } = { db: deps.db, tenant: p.tenant };
   const { conversationId, mensagens } = p;
   const primeira = mensagens[0];
@@ -154,12 +190,15 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
 
   const turno = await Turno.abrir(db, {
     tenantId: tenant.tenant_id, conversationId, filaId: p.filaIds[0] ?? null,
-    acao: mensagens.some((m) => m.acao === 'bloqueado') ? 'bloqueado' : mensagens.every((m) => m.acao === 'midia') ? 'midia' : 'processar',
+    acao: ensaio ? 'ensaio' : mensagens.some((m) => m.acao === 'bloqueado') ? 'bloqueado' : mensagens.every((m) => m.acao === 'midia') ? 'midia' : 'processar',
     perfil: null, modelo: tenant.modelo, promptHash: null,
   });
   await turno.passo('entrada', 'mensagens', { entrada: { quantidade: mensagens.length, acoes: mensagens.map((m) => m.acao), fila_ids: p.filaIds } });
 
   const registrar = async (textoEntrada: string, resposta: string, tokens: { entrada: number; saida: number }, audio: number | null, componentes: Record<string, unknown> | null) => {
+    // Ensaio nao escreve em `mensagens_log`: a memoria do cliente nao pode
+    // ganhar uma conversa que nunca existiu.
+    if (ensaio) return { entradaId: null, saidaId: null };
     const entradaId = await fnValor<string>(db, 'api_n8n_registrar_mensagem',
       [tenant.tenant_id, conversationId, 'entrada', textoEntrada, 0, 0, tenant.modelo, audio, turno.id, null]);
     const saidaId = await fnValor<string>(db, 'api_n8n_registrar_mensagem',
@@ -169,8 +208,16 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
   };
 
   try {
-    const sync = await turno.medir('registro', 'api_n8n_conversa_sync', { conversationId },
-      () => fnUma<{ historico_chars?: number | string | null }>(db, 'api_n8n_conversa_sync', [tenant.tenant_id, conversationId, primeira.contact_name, primeira.phone]));
+    // `conversa_sync` faz UPSERT em `conversas` — e no ensaio isso criava uma
+    // linha de conversa (id -1) que apareceria na tela de Conversas do cliente.
+    // Pego pela propria checagem de "nao deixou rastro" do teste do ensaio:
+    // `conversas: 74 -> 75`. Sexto desvio, e o unico que escapou na primeira
+    // leitura — prova de que a lista de efeitos colaterais nao se faz de
+    // memoria, se faz medindo antes e depois.
+    const sync = ensaio
+      ? await turno.medir('registro', 'ensaio.sem_sync', { conversationId }, async () => ({ historico_chars: 0 }))
+      : await turno.medir('registro', 'api_n8n_conversa_sync', { conversationId },
+        () => fnUma<{ historico_chars?: number | string | null }>(db, 'api_n8n_conversa_sync', [tenant.tenant_id, conversationId, primeira.contact_name, primeira.phone]));
 
     // 17/09: o aviso ao dono sai pela inbox do agente, então o dono vira contato
     // nela — e a resposta dele ao aviso chegaria aqui como se fosse cliente. A
@@ -288,9 +335,12 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
     // 66: silêncio da memória e formas de pagamento são do tenant (agência-only).
     // Sem a função (66 não aplicada), valem os defaults de sempre: 40 min, {PIX}.
     const cfgAgente = await lerConfigDoAgente(db, tenant.tenant_id);
-    const memoria = await turno.medir('memoria', 'api_agente_memoria', { conversationId, silencio_min: cfgAgente.memoriaSilencioMinutos },
-      () => fnTodas<MensagemHistorico & { criado_em: Date }>(db, 'api_agente_memoria', [tenant.tenant_id, conversationId, cfgAgente.memoriaSilencioMinutos, cfgAgente.memoriaJanelaPares]),
-      (r) => ({ mensagens: r.length }));
+    const memoria = ensaio
+      ? await turno.medir('memoria', 'ensaio.historico', { mensagens: ensaio.historico.length },
+        async () => ensaio.historico.map((m) => ({ ...m, criado_em: new Date() })), (r) => ({ mensagens: r.length }))
+      : await turno.medir('memoria', 'api_agente_memoria', { conversationId, silencio_min: cfgAgente.memoriaSilencioMinutos },
+        () => fnTodas<MensagemHistorico & { criado_em: Date }>(db, 'api_agente_memoria', [tenant.tenant_id, conversationId, cfgAgente.memoriaSilencioMinutos, cfgAgente.memoriaJanelaPares]),
+        (r) => ({ mensagens: r.length }));
     await turno.passo('entrada', 'prompt', { entrada: { perfil, tools_ativas: toolsAtivas, prompt_hash: prompt.hash, memoria: memoria.length, texto: textoEntrada } });
 
     // ---- o estado do sistema que o modelo precisa saber como FATO ----
@@ -310,7 +360,12 @@ export async function executarTurno(deps: Deps, p: { tenant: Tenant; conversatio
 
     // ---- o modelo ----
     const ctx = { db, tenant, conversationId, accountId, chatwoot: deps.chatwoot, waha: deps.waha, embeddings: deps.embeddings, regrasDir: deps.regrasDir, fotoSecret: deps.fotoSecret, fetchFn: deps.fetchFn, asaas: deps.asaas, pagamentoFormas: cfgAgente.pagamentoFormas, aceitaLink: oferta?.pagamentos.includes('link') ?? true, timezone: (horario as { timezone?: string | null } | null)?.timezone ?? null, ...(deps.agora ? { agora: deps.agora } : {}), fotoPendente: null as FotoPendente | null };
-    const ferramentas = ferramentasDoPerfil(ctx, perfil, toolsAtivas);
+    const todasFerramentas = ferramentasDoPerfil(ctx, perfil, toolsAtivas);
+    // No ensaio, so as que leem. Lista por INCLUSAO: tool nova fica de fora ate
+    // alguem decidir, porque o esquecimento aqui escreve em cliente.
+    const ferramentas = ensaio
+      ? todasFerramentas.filter((f) => (TOOLS_SO_LEITURA as readonly string[]).includes(f.nome))
+      : todasFerramentas;
     const r = await deps.modelo.responder({
       modelo: tenant.modelo ?? 'gpt-4.1-mini', temperatura: tenant.temperatura, systemMessage: prompt.texto, estadoDoSistema,
       historico: memoria.map((m) => ({ papel: m.papel, texto: m.texto })), mensagemDoCliente: textoEntrada, ferramentas,
