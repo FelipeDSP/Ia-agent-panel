@@ -64,11 +64,40 @@ export async function montarRetrato(
     return (data ?? []) as { tool_nome: string; contratado: boolean; ativo: boolean; config: unknown }[];
   }, []);
 
+  /*
+   * O catálogo entra com UNIDADE e CATEGORIA desde 15/10, porque o assistente
+   * passou a poder propor produto: sem a unidade ele proporia "un" para o pão
+   * que se vende por quilo, e sem o nome da categoria não teria como dizer
+   * onde o produto novo entra — `validarProduto` exige uma.
+   */
   const produtos = await tentar('catálogo', async () => {
     const { data, error } = await supabase.from('produtos')
-      .select('nome, preco_centavos, disponivel').eq('tenant_id', tenantId).is('deletado_em', null);
+      .select('nome, preco_centavos, disponivel, unidade, categorias(nome)')
+      .eq('tenant_id', tenantId).is('deletado_em', null);
     if (error) throw new Error(error.message);
-    return (data ?? []) as { nome: string; preco_centavos: number; disponivel: boolean }[];
+    type Linha = {
+      nome: string; preco_centavos: number; disponivel: boolean; unidade: string | null;
+      categorias: { nome: string } | { nome: string }[] | null;
+    };
+    return ((data ?? []) as Linha[]).map((p) => ({
+      nome: p.nome,
+      preco_centavos: p.preco_centavos,
+      disponivel: p.disponivel,
+      unidade: p.unidade ?? 'un',
+      categoria: (Array.isArray(p.categorias) ? p.categorias[0]?.nome : p.categorias?.nome) ?? null,
+    }));
+  }, []);
+
+  /*
+   * As categorias são lidas À PARTE das dos produtos porque uma categoria
+   * recém-criada e ainda vazia precisa aparecer: é justamente nela que o
+   * produto novo vai entrar.
+   */
+  const categorias = await tentar('categorias', async () => {
+    const { data, error } = await supabase.from('categorias')
+      .select('nome').eq('tenant_id', tenantId).order('nome');
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as { nome: string }[]).map((c) => c.nome);
   }, []);
 
   /*
@@ -142,6 +171,7 @@ export async function montarRetrato(
     toolsAtivas: tools.filter((t) => t.contratado && t.ativo).map((t) => t.tool_nome).sort(),
     vendas: cfg ? { pagamentos: cfg.pagamentos, retirada_fisica: cfg.retirada_fisica } : null,
     produtos,
+    categorias,
     documentos,
     barradas,
     erros,

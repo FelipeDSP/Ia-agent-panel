@@ -4,6 +4,9 @@ import { exigirTenantAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 import { lerHorarioAgente } from '@/lib/tenants/horario-agente';
 import { salvarHorarioAgente } from '@/app/(app)/painel/acoes';
+import { criarCategoria } from '@/app/(app)/painel/catalogo/acoes-categoria';
+import { salvarProduto } from '@/app/(app)/painel/catalogo/acoes';
+import { ingerirTexto } from '@/app/(app)/painel/conhecimento/acoes';
 import { salvarPrompt } from '@/lib/tenants/prompt-acoes';
 
 import { formularioDeHorario } from './aplicar-horario';
@@ -170,6 +173,77 @@ export async function aplicar(
     f.set('system_prompt', proposta.texto);
     const r = await salvarPrompt(usuario.tenantId, {}, f);
     return r.erro ? { erro: r.erro } : { sucesso: `${TIPOS.prompt.rotulo}: feito.` };
+  }
+
+  if (proposta.tipo === 'categoria') {
+    const f = new FormData();
+    f.set('nome', proposta.nome);
+    const r = await criarCategoria({}, f);
+    return r.erro ? { erro: r.erro } : { sucesso: `Categoria "${proposta.nome}" criada.` };
+  }
+
+  if (proposta.tipo === 'conhecimento') {
+    const f = new FormData();
+    f.set('titulo', proposta.nomeDoDocumento);
+    f.set('texto', proposta.texto);
+    // `ingerirTexto` é SÍNCRONA: ela espera a Edge Function fatiar o texto e
+    // gravar os embeddings, e só devolve sucesso com o job concluído. Por isso
+    // o botão demora alguns segundos aqui, e por isso o texto tem teto.
+    const r = await ingerirTexto({}, f);
+    return r.erro ? { erro: r.erro } : { sucesso: r.sucesso ?? 'Conteúdo adicionado à base.' };
+  }
+
+  if (proposta.tipo === 'produto') {
+    /*
+     * O modelo não manipula UUID: ele diz NOMES, e o código resolve. Mesma
+     * razão do dia da semana por nome — identificador é trabalho de código.
+     *
+     * Duas resoluções, e cada uma recusa com motivo em vez de improvisar:
+     *
+     *  - CATEGORIA inexistente não vira categoria nova por conta própria. Criar
+     *    categoria é outra proposta, que o cliente aprova à parte: senão
+     *    aprovar "cadastre o pão" encheria o catálogo de categorias que ele não
+     *    pediu, e categoria é o que o agente FALA ao cliente dele;
+     *  - ALVO (o produto a alterar) que não existe mais vira recusa, nunca um
+     *    cadastro novo. Criar por engano um "Pão francês" duplicado é
+     *    exatamente o defeito que o assistente aponta nas contas dos outros.
+     */
+    const [{ data: cats, error: eCat }, { data: prods, error: eProd }] = await Promise.all([
+      supabase.from('categorias').select('id, nome').eq('tenant_id', usuario.tenantId),
+      supabase.from('produtos').select('id, nome').eq('tenant_id', usuario.tenantId).is('deletado_em', null),
+    ]);
+    if (eCat || eProd) return { erro: `Não consegui ler seu catálogo: ${(eCat ?? eProd)?.message}` };
+
+    const mesmoNome = (a: string, b: string) => a.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      === b.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+    const cat = ((cats ?? []) as { id: string; nome: string }[]).find((c) => mesmoNome(c.nome, proposta.categoria));
+    if (!cat) {
+      return {
+        erro: `Você ainda não tem a categoria "${proposta.categoria}". Peça ao assistente para criá-la primeiro, ou crie em Catálogo → Categorias.`,
+      };
+    }
+
+    const f = new FormData();
+    if (proposta.alvo) {
+      const alvo = ((prods ?? []) as { id: string; nome: string }[]).find((p) => mesmoNome(p.nome, proposta.alvo!));
+      if (!alvo) return { erro: `Não achei o produto "${proposta.alvo}" no seu catálogo. Ele pode ter sido renomeado ou removido.` };
+      f.set('id', alvo.id);
+    }
+    f.set('nome', proposta.nome);
+    f.set('preco', proposta.preco);
+    f.set('unidade', proposta.unidade);
+    f.set('categoria_id', cat.id);
+    f.set('descricao', proposta.descricao ?? '');
+    if (proposta.disponivel) f.set('disponivel', 'on');
+    // `estoque` vazio = não controla estoque, que é o padrão da tela. O SKU é
+    // do banco (trigger) e não vai no formulário, nem na criação nem na edição.
+    f.set('estoque', '');
+
+    const r = await salvarProduto({}, f);
+    if (r.erro) return { erro: r.erro };
+    if (r.errosCampo) return { erro: Object.values(r.errosCampo)[0] ?? 'Produto inválido.' };
+    return { sucesso: proposta.alvo ? `"${proposta.nome}" atualizado no catálogo.` : `"${proposta.nome}" cadastrado no catálogo.` };
   }
 
   /*

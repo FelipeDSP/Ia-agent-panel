@@ -90,8 +90,12 @@ export async function conversar(
    */
   const brutas: unknown[] = [];
   for (const i of intencoes) {
-    if (i.tipo === 'horario') {
-      brutas.push({ tipo: 'horario', titulo: i.titulo, porque: i.porque, janelas: i.janelas });
+    // Tudo que não é prompt já veio pronto da conversa: faixa de horário,
+    // categoria, produto e texto de base são pequenos e o modelo os escreve de
+    // primeira. Pedir de novo seria pagar uma chamada para repetir o que já
+    // está na mão — e dar ao modelo uma segunda chance de divergir de si mesmo.
+    if (i.tipo === 'pronta') {
+      brutas.push(i.valor);
       continue;
     }
     const rr = await deps.modelo.responder({

@@ -32,6 +32,17 @@
  * torna essa frase inofensiva: não existe proposta que a atenda.
  */
 
+import { parsearPrecoParaCentavos } from '@/lib/vendas/dinheiro';
+import { UNIDADES } from '@/lib/vendas/schema';
+
+/** Tetos dos tipos novos. Os de produto e base espelham os da tela e da ação. */
+export const MAX_NOME_CATEGORIA = 60;
+export const MAX_NOME_PRODUTO = 120;
+export const MAX_DESCRICAO_PRODUTO = 2_000;
+/** `ingerirTexto` recusa abaixo de 20 e acima de 50 mil. */
+export const MIN_TEXTO_BASE = 20;
+export const MAX_TEXTO_BASE = 50_000;
+
 /** Teto do prompt proposto. Prompt gigante é custo em TODA mensagem do agente. */
 export const MAX_PROMPT_CHARS = 20_000;
 /** O mesmo teto de faixas da tela de horário — um dia com mais de 14 faixas é erro. */
@@ -60,6 +71,43 @@ export type Proposta =
     titulo: string;
     porque: string;
     janelas: Janela[];
+  }
+  | {
+    tipo: 'categoria';
+    titulo: string;
+    porque: string;
+    /** O nome da categoria nova. Produto exige categoria, então às vezes ela vem antes. */
+    nome: string;
+  }
+  | {
+    tipo: 'produto';
+    titulo: string;
+    porque: string;
+    /**
+     * O produto a ALTERAR, pelo nome que ele tem hoje; `null` cria um novo.
+     *
+     * Por nome e não por id pelo mesmo motivo do dia da semana: o modelo não
+     * manipula UUID. Quem resolve nome → id é o código, com o catálogo do
+     * tenant em mãos — e se o nome não existir mais, a aplicação recusa com
+     * motivo em vez de criar um produto duplicado por engano.
+     */
+    alvo: string | null;
+    nome: string;
+    /** Em reais, como o cliente digita na tela ("18,90"). A conversão para centavos é da tela. */
+    preco: string;
+    unidade: string;
+    /** Nome da categoria; o código resolve para o id do tenant. */
+    categoria: string;
+    descricao: string | null;
+    disponivel: boolean;
+  }
+  | {
+    tipo: 'conhecimento';
+    titulo: string;
+    porque: string;
+    /** O título do documento na base — o que o cliente vê na lista. */
+    nomeDoDocumento: string;
+    texto: string;
   };
 
 export type TipoDeProposta = Proposta['tipo'];
@@ -72,7 +120,25 @@ export type TipoDeProposta = Proposta['tipo'];
 export const TIPOS: Record<TipoDeProposta, { rotulo: string; onde: string }> = {
   prompt: { rotulo: 'Mudar o prompt do agente', onde: 'Prompt' },
   horario: { rotulo: 'Mudar o horário de atendimento', onde: 'Configurações → Horário' },
+  categoria: { rotulo: 'Criar uma categoria', onde: 'Catálogo → Categorias' },
+  produto: { rotulo: 'Cadastrar ou alterar um produto', onde: 'Catálogo' },
+  conhecimento: { rotulo: 'Acrescentar à base de conhecimento', onde: 'Base de conhecimento' },
 };
+
+/**
+ * O que NÃO está aqui, e não é esquecimento:
+ *
+ *  - APAGAR qualquer coisa (produto, categoria, documento). Descontratar não
+ *    apaga dado e o assistente também não: um "remova os produtos repetidos"
+ *    mal interpretado leva embora o cadastro que o cliente fez à mão, e
+ *    recontratar não traz de volta. Apagar continua na tela, com confirmação;
+ *  - CONTRATAR ou descontratar módulo, que é decisão comercial da agência e o
+ *    trigger do banco barra de qualquer forma;
+ *  - mexer no PORTÃO ou em qualquer defesa do agente.
+ *
+ * Tipo novo entra aqui de propósito, lido por alguém, e `teste:assistente`
+ * exige que ele tenha rótulo, onde se aplica, validação e caminho de aplicação.
+ */
 
 /*
  * O `hashPrompt` MORA EM `hash.ts`, não aqui, e isso não é organização: é o
@@ -157,19 +223,47 @@ export type Descartada = { tipo: string; motivo: string };
  *     banco neste turno. O modelo não tem como errá-lo nem inventá-lo;
  *   - o turno que não propõe nada não paga a reescrita.
  */
-export type Intencao = {
-  tipo: TipoDeProposta;
-  titulo: string;
-  porque: string;
-  /** Para `prompt`: o que mudar, em uma frase. Guia a segunda chamada. */
-  mudanca?: string;
-  /** Para `horario`: as faixas já vêm aqui — são pequenas e não precisam de reescrita. */
-  janelas?: Janela[];
-};
+export type Intencao =
+  /** `prompt` é o único que precisa da segunda chamada: `mudanca` a guia. */
+  | { tipo: 'prompt'; titulo: string; porque: string; mudanca: string }
+  /**
+   * Todo o resto já nasce pronto na conversa. Uma faixa de horário, um nome de
+   * categoria, um produto e um texto de base são pequenos e o modelo os
+   * escreve de primeira — materializar seria pedir de novo o que já veio.
+   */
+  | { tipo: 'pronta'; valor: Proposta };
+
+/**
+ * Os tipos em que DUAS propostas no mesmo turno brigam entre si:
+ *
+ *  - `prompt`: as duas nascem do mesmo texto e carregam o mesmo `baseHash`.
+ *    Aprovar a primeira faz a segunda ser recusada pelo guard de prompt-mudou —
+ *    dois botões com um condenado desde o começo;
+ *  - `horario`: as janelas enviadas SUBSTITUEM todas as atuais, então a
+ *    segunda proposta apagaria o que a primeira acabou de gravar.
+ *
+ * O resto NÃO briga, e a trava chegou a atrapalhar: medido em 15/10, o pedido
+ * "aceito pix, fica na rua X, encomenda leva 2 dias — põe na base" gerou TRÊS
+ * documentos e a trava matou dois, entregando um de 48 caracteres no lugar dos
+ * três fatos que o dono acabara de dizer. Cadastrar dois produtos ou criar duas
+ * categorias também é pedido legítimo e corriqueiro.
+ */
+const EXCLUSIVOS = new Set<string>(['prompt', 'horario']);
 
 export function lerIntencoes(bruto: unknown): { intencoes: Intencao[]; descartadas: Descartada[] } {
   const intencoes: Intencao[] = [];
   const descartadas: Descartada[] = [];
+  /*
+   * Os tipos JÁ propostos neste turno, pelo nome REAL ('produto', 'horario'),
+   * não pelo rótulo interno da intenção. Desde que tudo que não é prompt virou
+   * `tipo: 'pronta'`, comparar com `i.tipo` deixou de casar com nada e a trava
+   * passou calada — que é o modo de falha preferido de toda trava.
+   *
+   * Tipos DIFERENTES convivem de propósito: criar a categoria e cadastrar o
+   * produto nela, no mesmo turno, é o caminho inteiro de quem está montando o
+   * catálogo.
+   */
+  const jaVistos = new Set<string>();
   if (!Array.isArray(bruto)) return { intencoes, descartadas };
 
   for (const item of bruto.slice(0, 5)) {
@@ -192,10 +286,11 @@ export function lerIntencoes(bruto: unknown): { intencoes: Intencao[]; descartad
      * novo se quiser a outra mudança — agora sobre o texto já corrigido, que é
      * o que ele teria de fazer de qualquer jeito.
      */
-    if (intencoes.some((i) => i.tipo === tipo)) {
-      descartadas.push({ tipo, motivo: `só uma mudança de ${tipo} por vez: as duas partiriam do mesmo texto e a segunda seria recusada` });
+    if (EXCLUSIVOS.has(tipo) && jaVistos.has(tipo)) {
+      descartadas.push({ tipo, motivo: `só uma mudança de ${tipo} por vez: as duas partiriam do mesmo estado e a segunda seria recusada` });
       continue;
     }
+    jaVistos.add(tipo);
 
     if (tipo === 'prompt') {
       const mudanca = String(o['mudanca'] ?? '').trim().slice(0, 600);
@@ -203,16 +298,91 @@ export function lerIntencoes(bruto: unknown): { intencoes: Intencao[]; descartad
       intencoes.push({ tipo: 'prompt', titulo, porque, mudanca });
       continue;
     }
-    if (tipo === 'horario') {
-      const cru = Array.isArray(o['janelas']) ? o['janelas'] : [];
-      if (cru.length === 0) { descartadas.push({ tipo, motivo: 'nenhuma faixa de horário' }); continue; }
-      if (cru.length > MAX_JANELAS) { descartadas.push({ tipo, motivo: `mais de ${MAX_JANELAS} faixas` }); continue; }
-      const janelas = cru.map(lerJanela);
-      if (janelas.some((j) => j === null)) { descartadas.push({ tipo, motivo: 'faixa de horário inválida' }); continue; }
-      intencoes.push({ tipo: 'horario', titulo, porque, janelas: janelas as Janela[] });
-    }
+    const r = lerNaoPrompt(tipo as Exclude<TipoDeProposta, 'prompt'>, o, titulo, porque);
+    if (!r.ok) { descartadas.push({ tipo, motivo: r.motivo }); continue; }
+    intencoes.push({ tipo: 'pronta', valor: r.valor });
   }
   return { intencoes, descartadas };
+}
+
+/**
+ * Os tipos que NÃO são `prompt`: a intenção e a proposta final são a MESMA
+ * coisa, porque não há nada a materializar — uma faixa de horário, um nome de
+ * categoria e um texto de base já vêm prontos da conversa. Só o prompt precisa
+ * da segunda chamada que reescreve.
+ *
+ * Por isso a validação deles mora aqui, uma vez: `lerIntencoes` e
+ * `lerPropostas` chamam esta função. Antes do terceiro tipo a duplicação era
+ * de uma só, e já estava errada — cinco cópias da mesma regra é quantas
+ * oportunidades de divergirem.
+ */
+function lerNaoPrompt(
+  tipo: Exclude<TipoDeProposta, 'prompt'>,
+  o: Record<string, unknown>,
+  titulo: string,
+  porque: string,
+): { ok: true; valor: Proposta } | { ok: false; motivo: string } {
+  if (tipo === 'horario') {
+    const cru = Array.isArray(o['janelas']) ? o['janelas'] : [];
+    if (cru.length === 0) return { ok: false, motivo: 'nenhuma faixa de horário' };
+    if (cru.length > MAX_JANELAS) return { ok: false, motivo: `mais de ${MAX_JANELAS} faixas` };
+    const janelas = cru.map(lerJanela);
+    if (janelas.some((j) => j === null)) return { ok: false, motivo: 'faixa de horário inválida' };
+    return { ok: true, valor: { tipo: 'horario', titulo, porque, janelas: janelas as Janela[] } };
+  }
+
+  if (tipo === 'categoria') {
+    const nome = String(o['nome'] ?? '').trim().slice(0, MAX_NOME_CATEGORIA);
+    if (!nome) return { ok: false, motivo: 'categoria sem nome' };
+    return { ok: true, valor: { tipo: 'categoria', titulo, porque, nome } };
+  }
+
+  if (tipo === 'produto') {
+    const nome = String(o['nome'] ?? '').trim();
+    if (!nome) return { ok: false, motivo: 'produto sem nome' };
+    if (nome.length > MAX_NOME_PRODUTO) return { ok: false, motivo: `nome acima de ${MAX_NOME_PRODUTO} caracteres` };
+
+    // O preço passa pelo MESMO parser da tela de catálogo. Validar aqui com
+    // regra própria deixaria passar o que a tela recusa — e o cliente veria o
+    // botão falhar depois de aprovar.
+    const preco = String(o['preco'] ?? '').trim();
+    const p = parsearPrecoParaCentavos(preco);
+    if (!p.ok) return { ok: false, motivo: `preço inválido: ${p.erro}` };
+
+    const unidade = String(o['unidade'] ?? 'un').trim() || 'un';
+    if (!UNIDADES.some((u) => u.valor === unidade)) {
+      return { ok: false, motivo: `unidade "${unidade}" não existe na lista do painel` };
+    }
+
+    const categoria = String(o['categoria'] ?? '').trim();
+    if (!categoria) return { ok: false, motivo: 'produto sem categoria (o painel exige uma)' };
+
+    const descricaoBruta = String(o['descricao'] ?? '').trim();
+    if (descricaoBruta.length > MAX_DESCRICAO_PRODUTO) {
+      return { ok: false, motivo: `descrição acima de ${MAX_DESCRICAO_PRODUTO} caracteres` };
+    }
+    const alvoBruto = String(o['alvo'] ?? '').trim();
+    return {
+      ok: true,
+      valor: {
+        tipo: 'produto', titulo, porque,
+        alvo: alvoBruto || null,
+        nome, preco, unidade, categoria,
+        descricao: descricaoBruta || null,
+        disponivel: o['disponivel'] !== false,
+      },
+    };
+  }
+
+  // conhecimento
+  const nomeDoDocumento = String(o['nomeDoDocumento'] ?? '').trim().slice(0, 200);
+  if (!nomeDoDocumento) return { ok: false, motivo: 'documento sem título' };
+  const texto = String(o['texto'] ?? '').trim();
+  // Os mesmos limites de `ingerirTexto`: recusar aqui dá um motivo que o
+  // cliente entende, em vez de o botão falhar depois de ele aprovar.
+  if (texto.length < MIN_TEXTO_BASE) return { ok: false, motivo: `texto curto demais para virar base (mínimo ${MIN_TEXTO_BASE} caracteres)` };
+  if (texto.length > MAX_TEXTO_BASE) return { ok: false, motivo: `texto longo demais para colar (máximo ${MAX_TEXTO_BASE} caracteres); melhor subir como arquivo` };
+  return { ok: true, valor: { tipo: 'conhecimento', titulo, porque, nomeDoDocumento, texto } };
 }
 
 /** Os `{{...}}` de um texto. O sistema não substitui nenhum: o agente fala o marcador. */
@@ -277,15 +447,9 @@ export function lerPropostas(
       continue;
     }
 
-    if (tipo === 'horario') {
-      const cru = Array.isArray(o['janelas']) ? o['janelas'] : [];
-      if (cru.length === 0) { descartadas.push({ tipo, motivo: 'nenhuma faixa de horário' }); continue; }
-      if (cru.length > MAX_JANELAS) { descartadas.push({ tipo, motivo: `mais de ${MAX_JANELAS} faixas` }); continue; }
-      const janelas = cru.map(lerJanela);
-      if (janelas.some((j) => j === null)) { descartadas.push({ tipo, motivo: 'faixa de horário inválida' }); continue; }
-      propostas.push({ tipo: 'horario', titulo, porque, janelas: janelas as Janela[] });
-      continue;
-    }
+    const r = lerNaoPrompt(tipo as Exclude<TipoDeProposta, 'prompt'>, o, titulo, porque);
+    if (!r.ok) { descartadas.push({ tipo, motivo: r.motivo }); continue; }
+    propostas.push(r.valor);
   }
   return { propostas, descartadas };
 }

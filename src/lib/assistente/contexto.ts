@@ -1,5 +1,7 @@
 import { ordenar, type Achado, type RetratoConta } from './deteccoes';
-import { MAX_PROMPT_CHARS, TIPOS } from './proposta';
+import { UNIDADES } from '@/lib/vendas/schema';
+
+import { MAX_PROMPT_CHARS, MAX_TEXTO_BASE, MIN_TEXTO_BASE, TIPOS } from './proposta';
 
 /**
  * O CONTEXTO do assistente: o que ele sabe antes de falar, e como ele sabe.
@@ -120,8 +122,30 @@ proposta, termine com UM bloco assim, e nada depois dele:
 
 <propostas>
 [{"tipo":"prompt","titulo":"<o que muda, em poucas palavras>","porque":"<o efeito concreto NESTA conta>","mudanca":"<o que mudar no prompt, em uma frase imperativa>"},
- {"tipo":"horario","titulo":"<...>","porque":"<...>","janelas":[{"dias":["seg","ter","qua","qui","sex"],"inicio":"08:00","fim":"18:00"}]}]
+ {"tipo":"horario","titulo":"<...>","porque":"<...>","janelas":[{"dias":["seg","ter","qua","qui","sex"],"inicio":"08:00","fim":"18:00"}]},
+ {"tipo":"categoria","titulo":"<...>","porque":"<...>","nome":"<nome da categoria>"},
+ {"tipo":"produto","titulo":"<...>","porque":"<...>","alvo":null,"nome":"<nome>","preco":"18,90","unidade":"kg","categoria":"<nome de uma categoria>","descricao":"","disponivel":true},
+ {"tipo":"conhecimento","titulo":"<...>","porque":"<...>","nomeDoDocumento":"<título do documento>","texto":"<o conteúdo>"}]
 </propostas>
+
+TODA proposta, de qualquer tipo, tem "tipo", "titulo" e "porque". Sem título
+ela é descartada e o dono não vê botão nenhum. Além desses três, cada tipo tem
+os seus:
+- "prompt": "mudanca" — o que mudar, em uma frase. Você NÃO escreve o prompt aqui;
+- "horario": "janelas", cada uma com "dias", "inicio" e "fim";
+- "categoria": "nome". Serve para quando o catálogo ainda não tem onde pôr um
+  produto — o painel exige categoria em todo produto;
+- "produto": "nome", "preco" (em reais, como se digita: "18,90"), "unidade"
+  (uma destas: ${UNIDADES.map((u) => u.valor).join(', ')}), "categoria" (o NOME de
+  uma das categorias do CONTEXTO), "descricao" (pode ser ""), "disponivel"
+  (true/false) e "alvo": o nome ATUAL do produto quando for ALTERAR um que já
+  existe, ou null para cadastrar um novo. NUNCA invente preço nem unidade: se o
+  dono não disse quanto custa, pergunte antes de propor;
+- "conhecimento": "nomeDoDocumento" e "texto" (entre ${MIN_TEXTO_BASE} e
+  ${MAX_TEXTO_BASE} caracteres). É para o que o agente precisa SABER e não cabe
+  no prompt: endereço, formas de pagamento, política de troca, perguntas
+  frequentes. A base é consultada só quando faz falta, então não custa tokens
+  em toda mensagem — ao contrário do prompt.
 
 VOCÊ NÃO REESCREVE O PROMPT AQUI. Diga em "mudanca" o que mudar, em uma frase —
 quem reescreve é um segundo passo, que vai receber o prompt atual e a sua frase.
@@ -183,9 +207,14 @@ export function contexto(c: RetratoConta & { nome?: string | null }, achados: Ac
   }
 
   p.push(`### Catálogo (${c.produtos.length} ${c.produtos.length === 1 ? 'produto' : 'produtos'})`);
+  // As categorias vão SEMPRE, inclusive quando não há nenhuma: "nenhuma" é a
+  // informação que faz o assistente propor criar uma antes do produto.
+  p.push('Categorias cadastradas: ' + (c.categorias?.length ? c.categorias.map(limpar).join(', ') : '(nenhuma)'));
   if (c.produtos.length) {
     dado('Produtos', c.produtos.slice(0, MAX_LISTA)
-      .map((x) => `${limpar(x.nome)} — ${reais(x.preco_centavos)}${x.disponivel ? '' : ' (indisponível)'}`).join('\n')
+      .map((x) => `${limpar(x.nome)} — ${reais(x.preco_centavos)} por ${limpar(x.unidade ?? 'un')}`
+        + (x.categoria ? ` [${limpar(x.categoria)}]` : ' [sem categoria]')
+        + (x.disponivel ? '' : ' (indisponível)')).join('\n')
       + (c.produtos.length > MAX_LISTA ? `\n... e outros ${c.produtos.length - MAX_LISTA}` : ''));
   }
 

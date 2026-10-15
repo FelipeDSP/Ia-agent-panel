@@ -288,12 +288,40 @@ function CartaoProposta({ proposta, promptAtual }: { proposta: Proposta; promptA
       <p className="text-xs text-muted-foreground">{proposta.porque}</p>
       <p className="text-[11px] text-muted-foreground">Onde se aplica: {rotulo.onde}</p>
 
+      {/*
+        Cada tipo mostra O QUE VAI SER GRAVADO, em português e por extenso. Não
+        é enfeite: foi o dia da semana escrito "sáb" que denunciou o modelo
+        propondo sexta, e é o preço na tela que deixa o dono ver um 1,89 onde
+        devia estar 18,90 antes de o agente cotar errado para um cliente dele.
+      */}
       {proposta.tipo === 'horario' ? (
         <ul className="flex flex-col gap-0.5 font-mono text-[11px]">
           {proposta.janelas.map((j, i) => (
             <li key={i}>{j.dias.map((d) => DIAS[d]).join(', ')} — {j.inicio} às {j.fim}</li>
           ))}
         </ul>
+      ) : proposta.tipo === 'categoria' ? (
+        <p className="font-mono text-[11px]">{proposta.nome}</p>
+      ) : proposta.tipo === 'produto' ? (
+        <div className="flex flex-col gap-0.5 font-mono text-[11px]">
+          <p>
+            {proposta.alvo ? <span className="text-muted-foreground">{proposta.alvo} → </span> : null}
+            {proposta.nome}
+          </p>
+          <p>R$ {proposta.preco} por {proposta.unidade} · {proposta.categoria}</p>
+          {proposta.descricao ? <p className="text-muted-foreground">{proposta.descricao}</p> : null}
+          {proposta.disponivel ? null : <p className="text-muted-foreground">marcado como indisponível</p>}
+        </div>
+      ) : proposta.tipo === 'conhecimento' ? (
+        <div className="flex flex-col gap-1">
+          <p className="font-mono text-[11px]">{proposta.nomeDoDocumento}</p>
+          <div className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-2 text-[11px]">
+            {proposta.texto}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {proposta.texto.length} caracteres. Entra na base e passa a ser consultado quando fizer falta.
+          </p>
+        </div>
       ) : (
         <>
           <button

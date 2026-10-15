@@ -43,7 +43,10 @@ import { diferencas, retratoDoTenant, tabelasDoTenant } from './lib/retrato-tena
 import { conversar, MAX_HISTORICO } from '../src/lib/assistente/conversar.ts';
 import { contexto, instrucoes, instrucoesDeReescrita, separarPropostas } from '../src/lib/assistente/contexto.ts';
 import { hashPrompt } from '../src/lib/assistente/hash.ts';
-import { lerIntencoes, lerPropostas, marcadores, MAX_PROMPT_CHARS, TIPOS } from '../src/lib/assistente/proposta.ts';
+import {
+  lerIntencoes, lerPropostas, marcadores,
+  MAX_DESCRICAO_PRODUTO, MAX_NOME_PRODUTO, MAX_PROMPT_CHARS, MAX_TEXTO_BASE, MIN_TEXTO_BASE, TIPOS,
+} from '../src/lib/assistente/proposta.ts';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 carregarEnv();
@@ -205,6 +208,71 @@ try {
   chk('...e a proposta NÃO tem campo de tenant (não há como apontar para outra conta)',
     bom.propostas.every((x) => !('tenantId' in x) && !('tenant_id' in x)), JSON.stringify(bom.propostas[0]));
 
+  console.log('\n=== 3b. Catálogo e base: o que o assistente passou a poder (15/10) ===\n');
+
+  /*
+   * O Felipe testou a bolha e viu que ela não conseguia cadastrar produto —
+   * "ele deveria poder configurar bastante coisa". Entraram três tipos:
+   * `categoria`, `produto` e `conhecimento`. Cada um desemboca numa ação que a
+   * tela já usa (`criarCategoria`, `salvarProduto`, `ingerirTexto`), então
+   * aprovar continua sendo igual a digitar lá.
+   *
+   * O que NÃO entrou, e está escrito em `proposta.ts`: apagar qualquer coisa.
+   */
+  const prod = (extra) => lerPropostas([{
+    tipo: 'produto', titulo: 'Cadastrar pão', porque: 'o cliente pergunta preço',
+    nome: 'Pão francês', preco: '18,90', unidade: 'kg', categoria: 'Padaria', ...extra,
+  }]);
+  chk('produto válido passa', prod({}).propostas.length === 1, JSON.stringify(prod({}).descartadas));
+  chk('...com o preço em reais, como se digita', prod({}).propostas[0]?.preco === '18,90');
+  chk('...e `alvo` nulo significa CRIAR', prod({}).propostas[0]?.alvo === null);
+  chk('`alvo` com nome significa ALTERAR aquele produto',
+    prod({ alvo: 'Pao frances' }).propostas[0]?.alvo === 'Pao frances');
+  chk('`disponivel` ausente vale como disponível', prod({}).propostas[0]?.disponivel === true);
+  chk('`disponivel: false` é respeitado', prod({ disponivel: false }).propostas[0]?.disponivel === false);
+
+  // As recusas usam o MESMO parser de preço e a MESMA lista de unidades da
+  // tela de catálogo: validar com regra própria aqui deixaria passar o que a
+  // tela recusa, e o botão falharia depois de o cliente aprovar.
+  const recusasProduto = [
+    ['preço que não é preço', { preco: 'barato' }],
+    ['preço vazio', { preco: '' }],
+    ['unidade inventada', { unidade: 'caixinha' }],
+    ['sem categoria', { categoria: '' }],
+    ['sem nome', { nome: '' }],
+    ['nome gigante', { nome: 'x'.repeat(MAX_NOME_PRODUTO + 1) }],
+    ['descrição gigante', { descricao: 'x'.repeat(MAX_DESCRICAO_PRODUTO + 1) }],
+  ];
+  for (const [nome, extra] of recusasProduto) {
+    chk(`produto recusado: ${nome}`, prod(extra).propostas.length === 0, JSON.stringify(prod(extra).propostas));
+  }
+  chk('e o motivo da recusa de preço explica', /preço inválido/i.test(prod({ preco: 'barato' }).descartadas[0]?.motivo ?? ''),
+    JSON.stringify(prod({ preco: 'barato' }).descartadas));
+
+  const cat = (nome) => lerPropostas([{ tipo: 'categoria', titulo: 'a', porque: 'b', nome }]);
+  chk('categoria com nome passa', cat('Padaria').propostas.length === 1);
+  chk('categoria sem nome é recusada', cat('  ').propostas.length === 0);
+
+  const base = (texto, nomeDoDocumento = 'Formas de pagamento') =>
+    lerPropostas([{ tipo: 'conhecimento', titulo: 'a', porque: 'b', nomeDoDocumento, texto }]);
+  chk('texto de base válido passa', base('x'.repeat(MIN_TEXTO_BASE + 5)).propostas.length === 1);
+  chk('texto curto demais é recusado (o mesmo piso de `ingerirTexto`)',
+    base('curto').propostas.length === 0);
+  chk('texto longo demais é recusado (o mesmo teto de `ingerirTexto`)',
+    base('x'.repeat(MAX_TEXTO_BASE + 1)).propostas.length === 0);
+  chk('...e o motivo sugere subir como arquivo',
+    /arquivo/i.test(base('x'.repeat(MAX_TEXTO_BASE + 1)).descartadas[0]?.motivo ?? ''),
+    JSON.stringify(base('x'.repeat(MAX_TEXTO_BASE + 1)).descartadas));
+  chk('documento sem título é recusado', base('x'.repeat(50), '').propostas.length === 0);
+
+  console.log('\n--- o que o assistente NÃO pode propor ---\n');
+  // A lista perigosa agora inclui apagar: `excluirProduto` e
+  // `excluirDocumento` existem como ações, e de propósito não há tipo que
+  // chegue nelas.
+  for (const proibido of ['excluir_produto', 'apagar_produto', 'excluir_documento', 'remover_categoria', 'contratar']) {
+    chk(`não existe o tipo \`${proibido}\``, !(proibido in TIPOS));
+  }
+
   console.log('\n--- o dia da semana vem por NOME ---\n');
 
   /*
@@ -240,16 +308,55 @@ try {
     { tipo: 'prompt', titulo: 'Tirar marcador', porque: 'b', mudanca: 'tire o marcador' },
     { tipo: 'horario', titulo: 'Abrir sábado', porque: 'c', janelas: [{ dias: [6], inicio: '08:00', fim: '12:00' }] },
   ]);
-  chk('duas intenções do MESMO tipo viram uma', duas.intencoes.filter((i) => i.tipo === 'prompt').length === 1,
-    JSON.stringify(duas.intencoes.map((i) => i.tipo)));
+  // O tipo REAL de uma intenção: `prompt` fica como está; o resto vira
+  // `pronta` e carrega a proposta dentro.
+  const tipoReal = (i) => (i.tipo === 'pronta' ? i.valor.tipo : i.tipo);
+  chk('duas intenções do MESMO tipo viram uma', duas.intencoes.filter((i) => tipoReal(i) === 'prompt').length === 1,
+    JSON.stringify(duas.intencoes.map(tipoReal)));
   chk('...a primeira é a que fica', duas.intencoes[0]?.titulo === 'Encurtar', JSON.stringify(duas.intencoes[0]));
   chk('...a segunda vira descarte com motivo',
     /uma mudança de prompt por vez/i.test(duas.descartadas[0]?.motivo ?? ''), JSON.stringify(duas.descartadas));
   // CONTRAPROVA: tipos DIFERENTES continuam convivendo — eles não disputam o
-  // mesmo texto, e recusar os dois juntos tiraria metade do valor do turno.
+  // mesmo estado, e recusar os dois juntos tiraria metade do valor do turno.
   chk('CONTRAPROVA: tipos diferentes convivem no mesmo turno',
-    duas.intencoes.length === 2 && duas.intencoes[1]?.tipo === 'horario',
-    JSON.stringify(duas.intencoes.map((i) => i.tipo)));
+    duas.intencoes.length === 2 && tipoReal(duas.intencoes[1]) === 'horario',
+    JSON.stringify(duas.intencoes.map(tipoReal)));
+  // E o caminho que o catálogo exige: criar a categoria E o produto no mesmo
+  // turno, porque um produto sem categoria o painel recusa.
+  const catMaisProd = lerIntencoes([
+    { tipo: 'categoria', titulo: 'Criar Padaria', porque: 'a', nome: 'Padaria' },
+    { tipo: 'produto', titulo: 'Cadastrar pão', porque: 'b', nome: 'Pão', preco: '18,90', unidade: 'kg', categoria: 'Padaria' },
+  ]);
+  chk('categoria e produto convivem no mesmo turno (é o caminho do catálogo)',
+    catMaisProd.intencoes.length === 2, JSON.stringify(catMaisProd.descartadas));
+
+  /*
+   * A TRAVA VALE SÓ PARA QUEM BRIGA, e isso saiu de medir. Em 15/10 o pedido
+   * "aceito pix, fica na rua X, encomenda leva 2 dias — põe na base" gerou
+   * TRÊS documentos e a trava, que era por tipo, matou dois: o dono disse três
+   * fatos e recebeu um documento de 48 caracteres.
+   *
+   * Duas propostas de prompt brigam (mesmo `baseHash`) e duas de horário
+   * brigam (as janelas substituem todas). Dois documentos, dois produtos e
+   * duas categorias não brigam com nada.
+   */
+  const tresDocs = lerIntencoes([1, 2, 3].map((n) => ({
+    tipo: 'conhecimento', titulo: `Doc ${n}`, porque: 'b',
+    nomeDoDocumento: `Documento ${n}`, texto: 'x'.repeat(MIN_TEXTO_BASE + 5),
+  })));
+  chk('TRÊS documentos de base passam juntos', tresDocs.intencoes.length === 3,
+    JSON.stringify(tresDocs.descartadas));
+  const doisProd = lerIntencoes([
+    { tipo: 'produto', titulo: 'Pão', porque: 'a', nome: 'Pão', preco: '1,00', unidade: 'un', categoria: 'P' },
+    { tipo: 'produto', titulo: 'Bolo', porque: 'b', nome: 'Bolo', preco: '45,00', unidade: 'un', categoria: 'P' },
+  ]);
+  chk('DOIS produtos passam juntos', doisProd.intencoes.length === 2, JSON.stringify(doisProd.descartadas));
+  // CONTRAPROVA: os que BRIGAM continuam travados.
+  const doisHorarios = lerIntencoes([1, 2].map(() => ({
+    tipo: 'horario', titulo: 'h', porque: 'b', janelas: [{ dias: ['seg'], inicio: '08:00', fim: '18:00' }],
+  })));
+  chk('CONTRAPROVA: dois horários continuam virando um', doisHorarios.intencoes.length === 1,
+    JSON.stringify(doisHorarios.intencoes.length));
 
   console.log('\n--- a guarda do marcador: a proposta não pode piorar isso ---\n');
 

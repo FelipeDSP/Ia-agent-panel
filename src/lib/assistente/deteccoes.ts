@@ -44,7 +44,9 @@ export type RetratoConta = {
   /** Tools contratadas E ativas. */
   toolsAtivas: string[];
   vendas: { pagamentos: string[]; retirada_fisica: boolean } | null;
-  produtos: { nome: string; preco_centavos: number; disponivel: boolean }[];
+  produtos: { nome: string; preco_centavos: number; disponivel: boolean; unidade?: string; categoria?: string | null }[];
+  /** Os nomes das categorias do catálogo, inclusive as vazias. */
+  categorias?: string[];
   /** Um por documento: o que o job disse e o que existe na tabela. */
   documentos: { nome: string; status: string; chunksJob: number; chunksTabela: number }[];
   /** Respostas que o portão barrou nos últimos 7 dias. */
