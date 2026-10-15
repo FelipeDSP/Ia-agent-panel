@@ -125,10 +125,27 @@ try {
       values ($1,'vendas',true,true), ($1,'busca_conhecimento',true,true)`, [tenantId]);
   await q(`insert into public.produtos (tenant_id, nome, preco_centavos, disponivel)
       values ($1,'Pão francês',100,true)`, [tenantId]);
-  // Horário configurado E horário escrito no prompt: é o defeito real do
-  // Empório, e é o que deve aparecer nos achados.
-  await q(`update public.tenants set horario_agente = $2::jsonb where id = $1`,
-    [tenantId, JSON.stringify({ timezone: 'America/Sao_Paulo', janelas: [{ dias: [1, 2, 3, 4, 5], inicio: '07:00', fim: '19:00' }] })]);
+  /*
+   * Horário configurado E horário escrito no prompt: é o defeito real do
+   * Empório, e é o que deve aparecer nos achados.
+   *
+   * A CLAIM DE SUPER É NECESSÁRIA desde a migração 89: `horario_agente` passou
+   * a exigir ser admin da conta, e uma conexão direta não tem identidade
+   * nenhuma — `auth.uid()` é nulo e não há claim. É a mesma armadilha que o
+   * `teste:anti-loop` documenta para os tetos de token, e o conserto é o dele:
+   * arranjar o estado com a claim, em vez de contar com a ausência de guarda.
+   */
+  /*
+   * Tudo numa instrução só, sem parâmetros: o `q` usa um POOL de três
+   * conexões, e `set`/`update`/`reset` em chamadas separadas podem cair em
+   * conexões diferentes — a claim ficaria numa e o update noutra, e o teste
+   * falharia de vez em quando, que é o pior tipo de falha. Uma string, uma
+   * conexão. O `tenantId` é um UUID que este teste acabou de gerar.
+   */
+  const janelaSeg = JSON.stringify({ timezone: 'America/Sao_Paulo', janelas: [{ dias: [1, 2, 3, 4, 5], inicio: '07:00', fim: '19:00' }] });
+  await q(`set request.jwt.claims = '{"app_metadata":{"papel":"super_admin"}}';
+    update public.tenants set horario_agente = '${janelaSeg}'::jsonb where id = '${tenantId}';
+    reset request.jwt.claims;`);
 
   // =======================================================================
   console.log('\n=== 1. O turno do assistente NÃO escreve ===\n');

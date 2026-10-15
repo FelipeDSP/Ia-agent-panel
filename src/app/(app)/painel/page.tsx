@@ -8,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { exigirMembro } from '@/lib/auth';
+import { exigirMembro, membroPode } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
 
 function Metrica({ rotulo, valor }: { rotulo: string; valor: number | string }) {
@@ -24,6 +24,10 @@ function Metrica({ rotulo, valor }: { rotulo: string; valor: number | string }) 
 
 export default async function PaginaPainel() {
   const usuario = await exigirMembro();
+  // `membroPode` responde na hora para quem pode tudo (admin) e só consulta o
+  // banco para o agente — é a mesma função que a Server Action usa, então a
+  // tela e a ação não têm como divergir.
+  const podeEditarPrompt = await membroPode(usuario, 'editar_prompt');
   const supabase = await criarClienteServidor();
 
   /*
@@ -102,21 +106,35 @@ export default async function PaginaPainel() {
         <Metrica rotulo="Conversas pausadas" valor={conversasPausadas.count ?? 0} />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Prompt do agente</CardTitle>
-          <CardDescription>
-            Edite e salve. Cada alteração fica no histórico e pode ser revertida.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <PromptEditor
-            tenantId={usuario.tenantId}
-            promptAtual={tenant.system_prompt ?? ''}
-            versoes={versoes}
-          />
-        </CardContent>
-      </Card>
+      {/*
+        O EDITOR DE PROMPT SÓ PARA QUEM PODE EDITAR (15/10).
+        Esta tela é a primeira que todo membro da conta abre, e até aqui ela
+        mostrava o prompt com o botão "Salvar" para QUALQUER UM — inclusive um
+        atendente, que deveria só acompanhar o atendimento. Não era caminho
+        escondido de API: era a tela inicial.
+
+        Quem barra de verdade é a ação (`salvarPrompt` exige `editar_prompt`) e,
+        desde a migração 89, o guard de colunas no banco. Esconder aqui é a
+        terceira camada, e é a que evita o atendente clicar num botão que vai
+        recusar. Falha fecha, como no menu: sem a capacidade, o card some.
+      */}
+      {podeEditarPrompt ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Prompt do agente</CardTitle>
+            <CardDescription>
+              Edite e salve. Cada alteração fica no histórico e pode ser revertida.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <PromptEditor
+              tenantId={usuario.tenantId}
+              promptAtual={tenant.system_prompt ?? ''}
+              versoes={versoes}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/*
         O card "Configuração" (Modelo + Debounce) saiu daqui.
