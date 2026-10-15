@@ -37,6 +37,8 @@ import { createClient } from '@supabase/supabase-js';
 import pg from 'pg';
 
 import { carregarEnv } from '../scripts/lib/env.mjs';
+import { formularioDeHorario } from '../src/lib/assistente/aplicar-horario.ts';
+import { validarHorarioAgente } from '../src/lib/tenants/horario-agente.ts';
 import { diferencas, retratoDoTenant, tabelasDoTenant } from './lib/retrato-tenant.mjs';
 import { conversar, MAX_HISTORICO } from '../src/lib/assistente/conversar.ts';
 import { contexto, instrucoes, instrucoesDeReescrita, separarPropostas } from '../src/lib/assistente/contexto.ts';
@@ -186,6 +188,7 @@ try {
     ['faixa que fecha antes de abrir', { tipo: 'horario', titulo: 'a', janelas: [{ dias: [1], inicio: '19:00', fim: '07:00' }] }],
     ['faixa sem dia', { tipo: 'horario', titulo: 'a', janelas: [{ dias: [], inicio: '07:00', fim: '19:00' }] }],
     ['dia que não existe', { tipo: 'horario', titulo: 'a', janelas: [{ dias: [9], inicio: '07:00', fim: '19:00' }] }],
+    ['dia com nome inventado', { tipo: 'horario', titulo: 'a', janelas: [{ dias: ['terçou'], inicio: '07:00', fim: '19:00' }] }],
     ['hora inventada', { tipo: 'horario', titulo: 'a', janelas: [{ dias: [1], inicio: '25:00', fim: '26:00' }] }],
   ];
   for (const [nome, p] of casos) {
@@ -201,6 +204,28 @@ try {
   chk('CONTRAPROVA: proposta válida passa, dos dois tipos', bom.propostas.length === 2, JSON.stringify(bom.descartadas));
   chk('...e a proposta NÃO tem campo de tenant (não há como apontar para outra conta)',
     bom.propostas.every((x) => !('tenantId' in x) && !('tenant_id' in x)), JSON.stringify(bom.propostas[0]));
+
+  console.log('\n--- o dia da semana vem por NOME ---\n');
+
+  /*
+   * Medido no painel local, 15/10: pedi "passei a abrir também aos sábados" e
+   * a proposta veio com `dias: [5]`, que é SEXTA — com a instrução dizendo
+   * "0=domingo a 6=sábado" em letras. Numerar a semana erra por um com
+   * facilidade (metade do mundo começa na segunda), e o expediente errado quem
+   * sente é o cliente da conta. Nome não tem off-by-one, e quem sabe a
+   * numeração passa a ser o código.
+   */
+  const porNome = (dias) => lerPropostas([{ tipo: 'horario', titulo: 'a', porque: 'b', janelas: [{ dias, inicio: '07:00', fim: '13:00' }] }]).propostas[0];
+  chk('"sab" vira 6 (sábado), que foi o erro real', porNome(['sab'])?.janelas[0]?.dias[0] === 6,
+    JSON.stringify(porNome(['sab'])?.janelas));
+  chk('"sábado" com acento também', porNome(['sábado'])?.janelas[0]?.dias[0] === 6);
+  chk('"Segunda-Feira", com maiúscula e sufixo', porNome(['Segunda-Feira'])?.janelas[0]?.dias[0] === 1);
+  chk('a semana inteira por nome, em ordem',
+    JSON.stringify(porNome(['sex', 'dom', 'ter'])?.janelas[0]?.dias) === '[0,2,5]',
+    JSON.stringify(porNome(['sex', 'dom', 'ter'])?.janelas[0]?.dias));
+  chk('número continua aceito (proposta que acertou a convenção não cai)',
+    porNome([6])?.janelas[0]?.dias[0] === 6);
+  chk('nome inventado não vira dia nenhum', porNome(['terçou']) === undefined);
 
   console.log('\n--- uma proposta por tipo, por turno ---\n');
 
@@ -461,6 +486,56 @@ try {
   // TIPOS, não repetido: tipo novo sem caminho de aplicação reprova aqui.
   const semCaminho = tipos.filter((x) => !new RegExp(`proposta\\.tipo === '${x}'|TIPOS\\.${x}`).test(semComentario));
   chk('todo tipo de proposta tem caminho de aplicação', semCaminho.length === 0, JSON.stringify(semCaminho));
+
+  console.log('\n=== 8. Aprovar o horário não apaga o que a proposta não toca ===\n');
+
+  /*
+   * ACHADO RODANDO O PAINEL, 15/10. `salvarHorarioAgente` monta o jsonb
+   * INTEIRO a partir do formulário, e o que não vem assume o padrão. A
+   * primeira versão mandava só as janelas: aprovar "configure meu horário"
+   * gravava `fora_horario: 'aviso'` por cima da escolha do cliente e apagaria
+   * as datas de feriado e a mensagem dele, cadastradas noutra tela.
+   *
+   * O teste EXERCITA: monta o formulário como a aprovação monta e passa pelo
+   * `validarHorarioAgente` de verdade. Comparar código com código deixaria
+   * passar de novo.
+   */
+  const horarioAtual = {
+    timezone: 'America/Porto_Velho',
+    dias_semana: [1, 2, 3], hora_inicio: 8, hora_fim: 18,
+    janelas: [{ dias: [1, 2, 3], inicio: '08:00', fim: '18:00' }],
+    fechados: ['2026-12-25', '2027-01-01'],
+    fora_horario: 'silencio',
+    mensagem: 'Voltamos amanhã, deixe seu recado.',
+  };
+  const novas = [{ dias: [1, 2, 3, 4, 5], inicio: '07:00', fim: '19:00' }, { dias: [6], inicio: '07:00', fim: '13:00' }];
+  const v = validarHorarioAgente(formularioDeHorario(novas, horarioAtual));
+  chk('o horário proposto é aceito pela validação da tela', v.ok === true, JSON.stringify(v.erros ?? {}));
+  chk('as FAIXAS passam a ser as propostas', JSON.stringify(v.valor?.janelas) === JSON.stringify(novas),
+    JSON.stringify(v.valor?.janelas));
+  chk('o FUSO do cliente é preservado', v.valor?.timezone === 'America/Porto_Velho', String(v.valor?.timezone));
+  chk('a POSTURA fora do horário é preservada', v.valor?.fora_horario === 'silencio', String(v.valor?.fora_horario));
+  chk('as DATAS FECHADAS são preservadas',
+    JSON.stringify(v.valor?.fechados) === JSON.stringify(horarioAtual.fechados), JSON.stringify(v.valor?.fechados));
+  chk('a MENSAGEM é preservada', v.valor?.mensagem === horarioAtual.mensagem, String(v.valor?.mensagem));
+  // CONTRAPROVA: sem o arranjo, o padrão realmente SOBRESCREVE. Sem isto, as
+  // asserções acima passariam também numa validação que ignorasse os campos.
+  const cru = new FormData();
+  cru.set('horario_ativo', 'on');
+  cru.set('timezone', 'America/Sao_Paulo');
+  cru.set('janelas', JSON.stringify(novas));
+  const vCru = validarHorarioAgente(cru);
+  chk('CONTRAPROVA: mandando SÓ as janelas, a postura vira o padrão e as datas somem',
+    vCru.ok === true && vCru.valor?.fora_horario === 'aviso' && (vCru.valor?.fechados ?? []).length === 0,
+    JSON.stringify({ postura: vCru.valor?.fora_horario, fechados: vCru.valor?.fechados }));
+
+  // Conta que nunca teve horário: o padrão vale, e é isso que a mensagem de
+  // sucesso avisa ao cliente.
+  const vNovo = validarHorarioAgente(formularioDeHorario(novas, null));
+  chk('conta sem horário aceita a proposta', vNovo.ok === true, JSON.stringify(vNovo.erros ?? {}));
+  chk('...com o fuso padrão', vNovo.valor?.timezone === 'America/Sao_Paulo', String(vNovo.valor?.timezone));
+  chk('...e a aplicação AVISA que a postura padrão entrou',
+    /Fora do horário o agente avisa/.test(fs.readFileSync(path.join(RAIZ, 'src/lib/assistente/acoes.ts'), 'utf8')));
 
   console.log('\n--- a bolha só existe para quem é dono da conta ---\n');
   /*

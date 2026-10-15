@@ -84,11 +84,46 @@ export const TIPOS: Record<TipoDeProposta, { rotulo: string; onde: string }> = {
 
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+/**
+ * O DIA VEM POR NOME, não por número — e isto saiu de um erro medido.
+ *
+ * Em 15/10, no painel local, pedi "passei a abrir também aos sábados" e a
+ * proposta veio com `dias: [5]`, que é SEXTA. A instrução dizia, com todas as
+ * letras, "0=domingo a 6=sábado", e o modelo errou mesmo assim: metade do
+ * mundo numera a semana começando na segunda (ISO), e a convenção é uma
+ * daquelas coisas em que errar por um é o caso comum.
+ *
+ * Nome não tem off-by-one. O modelo é bom em "sábado" e ruim em "6", e quem
+ * sabe a numeração é o código — que é onde ela deve morar. Número continua
+ * aceito para não derrubar uma proposta que acertou a convenção, e o cartão da
+ * tela mostra os dias POR EXTENSO, que é o que deixou este erro visível antes
+ * de virar expediente errado na conta de alguém.
+ */
+const NOME_DO_DIA: Record<string, number> = {
+  domingo: 0, dom: 0,
+  segunda: 1, 'segunda-feira': 1, seg: 1,
+  terca: 2, 'terca-feira': 2, ter: 2,
+  quarta: 3, 'quarta-feira': 3, qua: 3,
+  quinta: 4, 'quinta-feira': 4, qui: 4,
+  sexta: 5, 'sexta-feira': 5, sex: 5,
+  sabado: 6, sab: 6,
+};
+
+function umDia(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isInteger(v) && v >= 0 && v <= 6 ? v : null;
+  const t = String(v ?? '').trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (t in NOME_DO_DIA) return NOME_DO_DIA[t]!;
+  // String numérica ("5") continua valendo: é o mesmo caso do número.
+  if (/^[0-6]$/.test(t)) return Number(t);
+  return null;
+}
+
 function lerJanela(v: unknown): Janela | null {
   if (!v || typeof v !== 'object') return null;
   const o = v as Record<string, unknown>;
   const dias = Array.isArray(o['dias'])
-    ? [...new Set(o['dias'].map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort()
+    ? [...new Set(o['dias'].map(umDia).filter((d): d is number => d !== null))].sort((a, b) => a - b)
     : [];
   const inicio = String(o['inicio'] ?? '');
   const fim = String(o['fim'] ?? '');

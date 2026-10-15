@@ -6,6 +6,7 @@ import { lerHorarioAgente } from '@/lib/tenants/horario-agente';
 import { salvarHorarioAgente } from '@/app/(app)/painel/acoes';
 import { salvarPrompt } from '@/lib/tenants/prompt-acoes';
 
+import { formularioDeHorario } from './aplicar-horario';
 import { conversar, type Resultado } from './conversar';
 import { detectar, ordenar, type Achado } from './deteccoes';
 import { montarRetrato } from './snapshot';
@@ -171,21 +172,37 @@ export async function aplicar(
     return r.erro ? { erro: r.erro } : { sucesso: `${TIPOS.prompt.rotulo}: feito.` };
   }
 
-  // Horário: a proposta muda as FAIXAS, não o fuso. O fuso é escolha do cliente
-  // e fica onde está — mandar o modelo escolher fuso seria dar a ele uma decisão
-  // que ninguém pediu, e errá-la move o expediente inteiro.
-  // `lerHorarioAgente` é quem sabe normalizar o jsonb e qual é o fuso padrão;
-  // cavar o jsonb aqui criaria uma segunda opinião sobre isso.
+  /*
+   * Horário: a proposta muda as FAIXAS e MAIS NADA.
+   *
+   * `salvarHorarioAgente` recebe o horário INTEIRO num FormData e monta o jsonb
+   * do zero: fuso, postura fora do horário, datas fechadas e mensagem saem
+   * todos dos campos do formulário, e o que não vem assume o padrão. Mandar só
+   * as janelas, como a primeira versão fazia, não era "mudar as janelas" — era
+   * reescrever o horário todo com o resto em branco.
+   *
+   * Medido em 15/10, no painel local: aprovar uma proposta de horário gravou
+   * `fora_horario: 'aviso'` numa conta que não tinha horário — e teria apagado
+   * as datas de feriado e a mensagem de uma conta que tivesse. O cliente aprova
+   * "configurar o horário" e perde o que cadastrou em outra tela, sem aviso.
+   *
+   * Então tudo o que a proposta não toca é lido do que está gravado e
+   * devolvido igual. Decisão do cliente continua do cliente: o modelo não
+   * escolhe fuso (errá-lo move o expediente inteiro) nem postura.
+   */
   const atual = lerHorarioAgente(linha?.horario_agente ?? null);
-  const timezone = atual?.timezone ?? 'America/Sao_Paulo';
 
-  const f = new FormData();
-  f.set('horario_ativo', 'on');
-  f.set('timezone', timezone);
-  f.set('janelas', JSON.stringify(proposta.janelas));
+  const f = formularioDeHorario(proposta.janelas, atual);
   const r = await salvarHorarioAgente({}, f);
   if (r.erro) return { erro: r.erro };
   if (r.errosCampo) return { erro: Object.values(r.errosCampo)[0] ?? 'Horário inválido.' };
-  return { sucesso: `${TIPOS.horario.rotulo}: feito.` };
+  // Conta que não tinha horário ganha a postura padrão, e isso muda o que o
+  // cliente dela ouve fora do expediente. Dizer é mais barato que ele
+  // descobrir pela reclamação de um cliente.
+  return {
+    sucesso: atual
+      ? `${TIPOS.horario.rotulo}: feito.`
+      : `${TIPOS.horario.rotulo}: feito. Fora do horário o agente avisa que está fechado — você muda isso em Configurações → Horário.`,
+  };
 }
 
