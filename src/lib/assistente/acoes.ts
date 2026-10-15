@@ -7,6 +7,8 @@ import { salvarHorarioAgente } from '@/app/(app)/painel/acoes';
 import { salvarPrompt } from '@/lib/tenants/prompt-acoes';
 
 import { conversar, type Resultado } from './conversar';
+import { detectar, ordenar, type Achado } from './deteccoes';
+import { montarRetrato } from './snapshot';
 import { modeloDoAmbiente } from './modelo';
 import { hashPrompt } from './hash';
 import { lerPropostas, TIPOS } from './proposta';
@@ -31,6 +33,34 @@ export type EstadoAssistente =
   | { fase: 'vazio' }
   | { fase: 'ok'; resultado: Resultado }
   | { fase: 'erro'; erro: string };
+
+export type Abertura = {
+  achados: Achado[];
+  /** O prompt atual, para a tela conseguir mostrar a diferença de uma proposta. */
+  promptAtual: string;
+  errosDeLeitura: string[];
+};
+
+/**
+ * O que a bolha precisa saber quando ABRE — e só quando abre.
+ *
+ * A bolha vive em todas as telas do painel, então carregar o retrato junto com
+ * cada página custaria seis consultas em toda navegação, para um painel que a
+ * pessoa talvez nunca abra. Aqui ele é lido sob demanda, uma vez por abertura.
+ *
+ * Os achados são MECÂNICOS: nenhuma chamada a modelo acontece nesta ação. Abrir
+ * a bolha não custa um centavo; só perguntar custa.
+ */
+export async function abrir(): Promise<Abertura> {
+  const usuario = await exigirTenantAdmin();
+  const supabase = await criarClienteServidor();
+  const retrato = await montarRetrato(supabase, usuario.tenantId);
+  return {
+    achados: ordenar(detectar(retrato)),
+    promptAtual: retrato.prompt,
+    errosDeLeitura: retrato.erros,
+  };
+}
 
 /**
  * Uma pergunta ao assistente.

@@ -1,3 +1,4 @@
+import { AssistenteFlutuante } from '@/components/assistente-flutuante';
 import { Sidebar } from '@/components/sidebar';
 import { exigirUsuario, capacidadesDoUsuario } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
@@ -77,6 +78,16 @@ export default async function LayoutAplicacao({
       <main className="flex-1 overflow-x-hidden px-4 pb-8 pt-20 md:px-8 md:py-8">
         <div className="mx-auto w-full max-w-6xl">{children}</div>
       </main>
+      {/*
+        A bolha do assistente, em toda tela do painel (15/10). SO para
+        `tenant_admin`: ela muda prompt e horario, que e decisao de quem e dono
+        da conta — o agente da equipe nao reconfigura o agente que ele usa, e o
+        super_admin tem o /admin, que e outro contexto.
+
+        Fechada ela nao custa nada: nenhuma consulta, nenhum token. O retrato so
+        e lido quando alguem abre.
+      */}
+      {usuario.papel === 'tenant_admin' && usuario.tenantId ? <AssistenteFlutuante /> : null}
     </div>
   );
 }

@@ -461,6 +461,24 @@ try {
   // TIPOS, não repetido: tipo novo sem caminho de aplicação reprova aqui.
   const semCaminho = tipos.filter((x) => !new RegExp(`proposta\\.tipo === '${x}'|TIPOS\\.${x}`).test(semComentario));
   chk('todo tipo de proposta tem caminho de aplicação', semCaminho.length === 0, JSON.stringify(semCaminho));
+
+  console.log('\n--- a bolha só existe para quem é dono da conta ---\n');
+  /*
+   * Desde 15/10 o assistente é bolha flutuante montada pelo LAYOUT, que serve
+   * o painel e o /admin. Sem a condição de papel ela apareceria para o agente
+   * da equipe (que não reconfigura o agente que usa) e nas telas da agência.
+   *
+   * Esconder não é o mesmo que não poder — quem de fato barra são os
+   * `exigirTenantAdmin()` das três ações, já medidos acima. Esta asserção
+   * guarda a outra metade: não mostrar um painel que a ação vai recusar.
+   */
+  const layout = fs.readFileSync(path.join(RAIZ, 'src/app/(app)/layout.tsx'), 'utf8');
+  chk('o layout foi lido', layout.length > 500, `${layout.length} chars`);
+  chk('o layout monta a bolha', layout.includes('<AssistenteFlutuante />'));
+  const linhaBolha = layout.split(/\r?\n/).find((l) => l.includes('<AssistenteFlutuante />')) ?? '';
+  chk('...só para `tenant_admin`',
+    linhaBolha.includes("usuario.papel === 'tenant_admin'"), linhaBolha.trim().slice(0, 100));
+  chk('...e só com tenant resolvido', linhaBolha.includes('usuario.tenantId'), linhaBolha.trim().slice(0, 100));
 } finally {
   /*
    * A LIMPEZA REPROVA QUANDO NÃO LIMPA, e esta linha existe porque a primeira

@@ -292,11 +292,11 @@ export const ROTAS_SEMPRE_VISIVEIS = [
   // Não é tool: ninguém contrata "ter equipe"; o que a agência vende é o
   // número de assentos (`tenants.max_agentes`, migração 81).
   { href: '/painel/equipe', rotulo: 'Equipe', icone: 'Users', somenteAdmin: true },
-  // 14/10: o assistente de configuração. NÃO é tool e nunca vai ser — não há
-  // o que contratar, ele existe para toda conta e o custo do modelo é da
-  // agência (decisão do Felipe). `somenteAdmin` porque ele mexe em prompt e
-  // horário: quem atende pela conta não reconfigura o agente que ele usa.
-  { href: '/painel/assistente', rotulo: 'Assistente', icone: 'Sparkles', somenteAdmin: true },
+  // O assistente NÃO tem rota: desde 15/10 ele é uma bolha flutuante, montada
+  // pelo layout do painel e presente em toda tela (`AssistenteFlutuante`).
+  // Virou bolha porque, numa aba, ele é um lugar aonde se vai quando já se sabe
+  // que há um problema; na bolha, ele está ali no momento em que a dúvida
+  // aparece — mexendo no prompt, no catálogo, no horário.
   { href: '/painel/configuracoes', rotulo: 'Configurações', icone: 'Settings', somenteAdmin: true },
 ] as const;
 
