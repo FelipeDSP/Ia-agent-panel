@@ -806,6 +806,7 @@ export async function editarTenantSuper(
       temperatura: validado.valor.temperatura,
       debounce_segundos: validado.valor.debounce_segundos,
       memoria_silencio_minutos: validado.valor.memoria_silencio_minutos,
+      pausa_expira_minutos: validado.valor.pausa_expira_minutos,
       pagamento_formas: validado.valor.pagamento_formas,
     })
     .eq('id', tenantId);

@@ -45,6 +45,7 @@ export function FormConfigSuper({
   temperatura,
   debounce,
   memoriaSilencio,
+  pausaExpira,
   pagamentoFormas,
 }: {
   tenantId: string;
@@ -53,6 +54,7 @@ export function FormConfigSuper({
   temperatura: number;
   debounce: number;
   memoriaSilencio: number;
+  pausaExpira: number;
   pagamentoFormas: string[];
 }) {
   const [estado, acao] = useActionState<EstadoAcao, FormData>(editarTenantSuper, {});
@@ -124,6 +126,25 @@ export function FormConfigSuper({
           </p>
           <ErroCampo msg={estado.errosCampo?.['memoria_silencio_minutos']} />
         </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="pausa_expira_minutos">Retomar depois do atendente (min)</Label>
+          <Input
+            id="pausa_expira_minutos"
+            name="pausa_expira_minutos"
+            type="number"
+            min="1"
+            max="1440"
+            defaultValue={pausaExpira}
+          />
+          <p className="text-xs text-muted-foreground">
+            Quando um atendente escreve, o agente se cala por este tempo e volta sozinho. Padrão 30.
+            Pausar pelo botão da conversa não caduca.
+          </p>
+          <ErroCampo msg={estado.errosCampo?.['pausa_expira_minutos']} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <Label>Link de pagamento aceita</Label>
           <div className="flex flex-wrap gap-4 pt-1">

@@ -78,6 +78,12 @@ export type DadosConfigSuper = {
   debounce_segundos: number;
   /** 66: minutos de silêncio até o agente esquecer a conversa (1..1440). */
   memoria_silencio_minutos: number;
+  /**
+   * 47: minutos até a pausa por mensagem de atendente caducar (1..1440).
+   * A coluna existe desde a 47 e passou quase três meses sem campo na tela —
+   * mudar exigia SQL. O CHECK do banco é só `> 0`; o teto aqui é da tela.
+   */
+  pausa_expira_minutos: number;
   /** 66: formas do link de pagamento — subconjunto não vazio de FORMAS_PAGAMENTO. */
   pagamento_formas: FormaPagamento[];
 };
@@ -192,10 +198,16 @@ export function validarConfigTenantSuper(
   const pagamento_formas = fd.getAll('pagamento_formas').map(String).filter((f): f is FormaPagamento => (FORMAS_PAGAMENTO as readonly string[]).includes(f));
   if (pagamento_formas.length === 0) erros['pagamento_formas'] = 'Marque ao menos uma forma de pagamento.';
 
+  const pausaBruta = String(fd.get('pausa_expira_minutos') ?? '').trim();
+  const pausa_expira_minutos = pausaBruta === '' ? NaN : Number(pausaBruta);
+  if (!Number.isInteger(pausa_expira_minutos) || pausa_expira_minutos < 1 || pausa_expira_minutos > 1440) {
+    erros['pausa_expira_minutos'] = 'Retomada depois do atendente: inteiro entre 1 e 1440 minutos.';
+  }
+
   if (Object.keys(erros).length > 0) return { ok: false, erros };
 
   return {
     ok: true,
-    valor: { nome, modelo, temperatura, debounce_segundos: debounce, memoria_silencio_minutos, pagamento_formas },
+    valor: { nome, modelo, temperatura, debounce_segundos: debounce, memoria_silencio_minutos, pausa_expira_minutos, pagamento_formas },
   };
 }
