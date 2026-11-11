@@ -136,7 +136,8 @@
     "teste:assistente-conversa": "node --import ./tests/lib/ts.mjs tests/assistente-conversa.mjs",
     "teste:assistente-diferenca": "node --import ./tests/lib/ts.mjs tests/assistente-diferenca.mjs",
     "teste:guard-prompt": "node tests/migracao-guard-prompt.mjs",
-    "teste:personificacao": "node tests/personificacao.mjs"
+    "teste:personificacao": "node tests/personificacao.mjs",
+    "teste:panorama": "node --import ./tests/lib/ts.mjs tests/panorama-clientes.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

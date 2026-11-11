@@ -1,33 +1,28 @@
 import Link from 'next/link';
 
-import { EntrarNaConta } from '@/components/entrar-na-conta';
 import { Alert } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { exigirSuperAdmin } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
-import { formatarDataHora } from '@/lib/utils';
+import { ordenarPanorama, DIAS_RECENTE } from '@/lib/tenants/panorama';
+import { montarPanorama } from '@/lib/tenants/panorama.server';
 
-type LinhaTenant = {
-  id: string;
-  slug: string;
-  nome: string;
-  ativo: boolean;
-  agente_ativo: boolean;
-  chatwoot_account_id: number | null;
-  chatwoot_inbox_id: number | null;
-  criado_em: string;
-};
+import { ListaClientes } from './lista-clientes';
 
+/**
+ * A lista de clientes da agência.
+ *
+ * ELA RESPONDE "COMO AS CONTAS ESTÃO", e antes não respondia. Mostrava
+ * documentos e conversas ACUMULADOS desde sempre (669 contra 2) e um selo
+ * "ativo" repetido em onze linhas iguais — com isso, um cliente conectado e
+ * parado há um mês era indistinguível de um que atendeu hoje de manhã. Em
+ * 19/10 o Felipe pediu esse retrato e ele saiu de SQL escrito à mão, porque a
+ * tela não tinha.
+ *
+ * O inventário ("o que esta conta tem") continua na ficha do cliente. Aqui vai
+ * o que muda sozinho e precisa de olho: atividade da semana, falhas, custo do
+ * mês e quando foi a última conversa.
+ */
 export default async function PaginaTenants() {
   await exigirSuperAdmin();
 
@@ -51,39 +46,15 @@ export default async function PaginaTenants() {
     );
   }
 
-  const lista = (tenants ?? []) as LinhaTenant[];
+  const { linhas, erros } = await montarPanorama(supabase, tenants ?? []);
+  const ordenadas = ordenarPanorama(linhas);
 
-  /*
-   * Contagens por tenant.
-   *
-   * `head: true` com `count` traz so o numero, sem as linhas — carregar 12 mil
-   * chunks para exibir "12" seria caro a toa. Uma chamada por tenant e
-   * aceitavel com poucos clientes; quando passar de algumas dezenas, vira uma
-   * view materializada ou uma RPC agregando de uma vez.
-   */
-  const metricas = await Promise.all(
-    lista.map(async (tenant) => {
-      const [documentos, conversas] = await Promise.all([
-        supabase
-          .from('kb_documentos')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenant.id)
-          .is('deletado_em', null),
-        supabase
-          .from('conversas')
-          .select('id', { count: 'exact', head: true })
-          .eq('tenant_id', tenant.id),
-      ]);
-
-      return {
-        id: tenant.id,
-        documentos: documentos.count ?? 0,
-        conversas: conversas.count ?? 0,
-      };
-    }),
-  );
-
-  const porId = new Map(metricas.map((m) => [m.id, m]));
+  // Os números do topo saem das MESMAS linhas da tabela: um resumo que não
+  // fecha com a lista abaixo dele é pior que resumo nenhum.
+  const atendendo = ordenadas.filter((l) => l.situacao.chave === 'ativo').length;
+  const pedemAtencao = ordenadas.filter((l) => l.situacao.gravidade === 'erro' || l.situacao.gravidade === 'alerta').length;
+  const conversas = ordenadas.reduce((n, l) => n + l.conversas7d, 0);
+  const falhas = ordenadas.reduce((n, l) => n + l.falhas7d, 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -91,7 +62,8 @@ export default async function PaginaTenants() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Clientes</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {lista.length} {lista.length === 1 ? 'cliente cadastrado' : 'clientes cadastrados'}
+            {ordenadas.length} {ordenadas.length === 1 ? 'cliente' : 'clientes'} · {atendendo} atendendo
+            {pedemAtencao > 0 ? ` · ${pedemAtencao} ${pedemAtencao === 1 ? 'pede' : 'pedem'} atenção` : ''}
           </p>
         </div>
         {/*
@@ -104,97 +76,29 @@ export default async function PaginaTenants() {
         </Link>
       </header>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Chatwoot</TableHead>
-                <TableHead className="text-right">Documentos</TableHead>
-                <TableHead className="text-right">Conversas</TableHead>
-                <TableHead>Situação</TableHead>
-                <TableHead>Criado em</TableHead>
-                <TableHead className="text-right">Conta</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {lista.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                    Nenhum cliente cadastrado.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                lista.map((tenant) => {
-                  const m = porId.get(tenant.id);
-                  return (
-                    <TableRow key={tenant.id}>
-                      <TableCell>
-                        <Link
-                          href={`/admin/tenants/${tenant.id}`}
-                          className="font-medium underline-offset-4 hover:underline"
-                        >
-                          {tenant.nome}
-                        </Link>
-                        <div className="text-xs text-muted-foreground">{tenant.slug}</div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {/*
-                          A CAIXA APARECE JUNTO. Com dois agentes cabendo na
-                          mesma conta, a coluna "59" repetida em duas linhas
-                          seria indistinguível — e a pergunta que se faz olhando
-                          esta lista é exatamente "quem atende o quê".
-                        */}
-                        {tenant.chatwoot_account_id ? (
-                          <span className="tabular-nums">
-                            {tenant.chatwoot_account_id}
-                            <span className="text-xs text-muted-foreground">
-                              {' / caixa '}
-                              {tenant.chatwoot_inbox_id}
-                            </span>
-                          </span>
-                        ) : (
-                          <span className="text-xs">não conectado</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {m?.documentos ?? 0}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {m?.conversas ?? 0}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1.5">
-                          <Badge variant={tenant.ativo ? 'success' : 'secondary'}>
-                            {tenant.ativo ? 'ativo' : 'suspenso'}
-                          </Badge>
-                          {tenant.ativo && !tenant.agente_ativo ? (
-                            <Badge variant="warning">agente desligado</Badge>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatarDataHora(tenant.criado_em)}
-                      </TableCell>
-                      {/*
-                        ENTRAR NA CONTA, daqui mesmo. A pergunta que traz
-                        alguém a esta lista quase sempre é "preciso arrumar
-                        algo para o fulano" — obrigar a abrir a ficha antes é
-                        um clique a mais em todas as vezes.
-                      */}
-                      <TableCell className="text-right">
-                        <EntrarNaConta tenantId={tenant.id} />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      {/* Falha de leitura vira aviso, não tela vazia: a lista continua útil
+          sem o custo, e esconder que faltou dado é o que faz alguém confiar
+          num número que não existe. */}
+      {erros.length > 0 ? (
+        <Alert>Parte dos números não carregou ({erros.join('; ')}). A lista abaixo está completa.</Alert>
+      ) : null}
 
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Resumo rotulo={`Conversas (${DIAS_RECENTE} dias)`} valor={conversas} />
+        <Resumo rotulo={`Falhas (${DIAS_RECENTE} dias)`} valor={falhas} alerta={falhas > 0} />
+        <Resumo rotulo="Precisam de atenção" valor={pedemAtencao} alerta={pedemAtencao > 0} />
+      </div>
+
+      <ListaClientes linhas={ordenadas} />
+    </div>
+  );
+}
+
+function Resumo({ rotulo, valor, alerta = false }: { rotulo: string; valor: number; alerta?: boolean }) {
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <p className="text-sm text-muted-foreground">{rotulo}</p>
+      <p className={`mt-1 text-2xl font-semibold tabular-nums ${alerta ? 'text-destructive' : ''}`}>{valor}</p>
     </div>
   );
 }

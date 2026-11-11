@@ -120,7 +120,14 @@ chk('o `PromptEditor` saiu da ficha do cliente', !/PromptEditor/.test(ficha));
 chk('...e a consulta de `prompt_versoes` saiu junto (não sobrou ida ao banco órfã)',
   !/prompt_versoes/.test(semComentario(ficha)));
 chk('no lugar dele está a porta de entrada na conta', /<EntrarNaConta/.test(ficha));
-chk('a lista de clientes também tem a porta', /<EntrarNaConta/.test(ler('src/app/(app)/admin/tenants/page.tsx')));
+/*
+ * A porta da LISTA mudou de arquivo em 11/11, junto com a reforma da tela: a
+ * tabela virou componente de cliente (`lista-clientes.tsx`) para a busca
+ * responder enquanto se digita. A asserção procura nos dois, porque o que
+ * importa é a porta existir na lista — não em qual arquivo ela mora.
+ */
+const naLista = ler('src/app/(app)/admin/tenants/lista-clientes.tsx') + ler('src/app/(app)/admin/tenants/page.tsx');
+chk('a lista de clientes também tem a porta', /<EntrarNaConta/.test(naLista));
 
 console.log(`\n${falhas.length ? 'FALHOU' : 'passaram'}: ${ok} ok, ${falhas.length} falhas`);
 if (falhas.length) { for (const f of falhas) console.log('  - ' + f); process.exit(1); }
