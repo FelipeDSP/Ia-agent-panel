@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { EntrarNaConta } from '@/components/entrar-na-conta';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
@@ -114,12 +115,13 @@ export default async function PaginaTenants() {
                 <TableHead className="text-right">Conversas</TableHead>
                 <TableHead>Situação</TableHead>
                 <TableHead>Criado em</TableHead>
+                <TableHead className="text-right">Conta</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {lista.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                     Nenhum cliente cadastrado.
                   </TableCell>
                 </TableRow>
@@ -174,6 +176,15 @@ export default async function PaginaTenants() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatarDataHora(tenant.criado_em)}
+                      </TableCell>
+                      {/*
+                        ENTRAR NA CONTA, daqui mesmo. A pergunta que traz
+                        alguém a esta lista quase sempre é "preciso arrumar
+                        algo para o fulano" — obrigar a abrir a ficha antes é
+                        um clique a mais em todas as vezes.
+                      */}
+                      <TableCell className="text-right">
+                        <EntrarNaConta tenantId={tenant.id} />
                       </TableCell>
                     </TableRow>
                   );

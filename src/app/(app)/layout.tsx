@@ -1,4 +1,5 @@
 import { AssistenteFlutuante } from '@/components/assistente-flutuante';
+import { FaixaPersonificacao } from '@/components/faixa-personificacao';
 import { Sidebar } from '@/components/sidebar';
 import { exigirUsuario, capacidadesDoUsuario } from '@/lib/auth';
 import { criarClienteServidor } from '@/lib/supabase/server';
@@ -61,7 +62,15 @@ export default async function LayoutAplicacao({
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen flex-col">
+      {/*
+        A faixa fica ACIMA de tudo, inclusive da sidebar, e empurra a página
+        para baixo. Flutuar sobre o conteúdo deixaria a tela igual à de sempre
+        a um scroll de distância — e a tela igual à de sempre é exatamente o
+        que faz alguém esquecer em qual conta está.
+      */}
+      {usuario.personificando ? <FaixaPersonificacao nome={usuario.personificando.nome} /> : null}
+      <div className="flex flex-1">
       <Sidebar
         papel={usuario.papel}
         nome={usuario.nome}
@@ -78,6 +87,7 @@ export default async function LayoutAplicacao({
       <main className="flex-1 overflow-x-hidden px-4 pb-8 pt-20 md:px-8 md:py-8">
         <div className="mx-auto w-full max-w-6xl">{children}</div>
       </main>
+      </div>
       {/*
         A bolha do assistente, em toda tela do painel (15/10). SO para
         `tenant_admin`: ela muda prompt e horario, que e decisao de quem e dono

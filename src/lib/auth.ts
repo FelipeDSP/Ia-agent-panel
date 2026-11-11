@@ -3,6 +3,7 @@ import 'server-only';
 import { notFound, redirect } from 'next/navigation';
 
 import { criarClienteServidor } from './supabase/server';
+import { lerPersonificacao } from './personificacao';
 import { CHAVES_CAPACIDADES, podeTudo, type Capacidade } from './usuarios/capacidades';
 
 export type Papel = 'super_admin' | 'tenant_admin' | 'tenant_agente';
@@ -14,6 +15,13 @@ export type UsuarioAtual = {
   papel: Papel;
   /** NULL para super_admin: ele nao pertence a tenant nenhum. */
   tenantId: string | null;
+  /**
+   * Preenchido SO quando um super_admin esta dentro da conta de um cliente.
+   * Quem le isto esta vendo a verdade por tras do papel efetivo: `papel` diz
+   * `tenant_admin` para o painel funcionar, e este campo diz quem de fato esta
+   * ali. Ver `src/lib/personificacao.ts`.
+   */
+  personificando?: { tenantId: string; nome: string } | undefined;
 };
 
 /**
@@ -68,13 +76,60 @@ export async function obterUsuarioAtual(): Promise<UsuarioAtual | null> {
 
   const nomeMeta = (user.user_metadata as Record<string, unknown>)['nome'];
 
-  return {
+  const base: UsuarioAtual = {
     id: user.id,
     email: user.email ?? '',
     nome: typeof nomeMeta === 'string' && nomeMeta ? nomeMeta : (user.email ?? ''),
     papel,
     tenantId: typeof tenantId === 'string' ? tenantId : null,
   };
+
+  /*
+   * PERSONIFICACAO: so depois de o JWT ter dito `super_admin`.
+   *
+   * A ordem importa e e a unica coisa que sustenta isto: o cookie nunca e lido
+   * antes do papel. Para tenant_admin e tenant_agente ele e inerte, e mesmo que
+   * fosse lido a RLS recusaria o tenant alheio — o JWT deles nao casa.
+   *
+   * O tenant personificado e CONFERIDO no banco: nao-existente, soft-deletado
+   * ou inativo derruba a personificacao em vez de virar um filtro que nao casa
+   * com nada (que apareceria como "o painel do cliente ficou vazio").
+   */
+  if (papel !== 'super_admin') return base;
+
+  const alvo = await lerPersonificacao();
+  if (!alvo) return base;
+
+  const { data: cliente } = await supabase
+    .from('tenants')
+    .select('id, nome, deletado_em, ativo')
+    .eq('id', alvo)
+    .maybeSingle();
+
+  if (!cliente || cliente.deletado_em !== null || cliente.ativo === false) return base;
+
+  return {
+    ...base,
+    // O papel EFETIVO e o do dono da conta: e o que faz `exigirTenantAdmin` e
+    // `exigirMembro` do painel inteiro funcionarem sem excecao espalhada.
+    papel: 'tenant_admin',
+    tenantId: cliente.id as string,
+    personificando: { tenantId: cliente.id as string, nome: (cliente.nome as string) ?? '(sem nome)' },
+  };
+}
+
+/**
+ * A identidade REAL, atravessando a personificacao.
+ *
+ * Existe para duas coisas e so para elas: o botao de sair da conta (que precisa
+ * saber que quem esta ali e super_admin, senao a agencia entra e nao volta) e
+ * qualquer rastro que queira registrar quem de fato agiu.
+ */
+export async function obterUsuarioReal(): Promise<UsuarioAtual | null> {
+  const u = await obterUsuarioAtual();
+  if (!u) return null;
+  if (!u.personificando) return u;
+  return { ...u, papel: 'super_admin', tenantId: null, personificando: undefined };
 }
 
 /** Exige sessao valida. Redireciona para /login se nao houver. */

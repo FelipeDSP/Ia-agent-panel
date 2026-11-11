@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { PromptEditor, type VersaoPrompt } from '@/components/prompt-editor';
+import { EntrarNaConta } from '@/components/entrar-na-conta';
 import { Ajuda } from '@/components/ui/ajuda';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -102,7 +102,6 @@ export default async function PaginaDetalheTenant({
   if (!tenant) notFound();
 
   const [
-    { data: versoesRaw },
     { data: admins },
     { count: conversasNaJanela },
     { data: pausadas },
@@ -112,11 +111,10 @@ export default async function PaginaDetalheTenant({
     { data: credAsaas },
     { data: toolVendas },
   ] = await Promise.all([
-    supabase
-      .from('prompt_versoes')
-      .select('id, conteudo, criado_em, criado_por')
-      .eq('tenant_id', id)
-      .order('criado_em', { ascending: false }),
+    // A consulta de `prompt_versoes` saiu junto com o editor: o histórico do
+    // prompt tem tela própria, dentro da conta, e carregá-lo aqui era uma ida
+    // ao banco em toda abertura da ficha para alimentar um card que não existe
+    // mais.
     supabase.from('usuarios_painel').select('id, nome, email, papel, ativo').eq('tenant_id', id),
     // 06/10: a lista de 30 conversas saiu. Ela ocupava a maior parte da aba e
     // só repetia, com nome e telefone, o que a página de turnos já mostra
@@ -223,13 +221,6 @@ export default async function PaginaDetalheTenant({
   const modulos = todosModulos.filter((m) => m.grupo === 'contratavel');
   const modulosPadrao = todosModulos.filter((m) => m.grupo !== 'contratavel');
 
-  const versoes: VersaoPrompt[] = (versoesRaw ?? []).map((v) => ({
-    id: v.id,
-    conteudo: v.conteudo,
-    criado_em: v.criado_em,
-    autor: null, // criado_por é uuid; nome do autor não é crítico aqui
-  }));
-
   const equipe = (admins ?? []).map((a) => ({ id: a.id, email: a.email, nome: a.nome, papel: a.papel, ativo: a.ativo }));
   const donos = equipe.filter((u) => u.papel === 'tenant_admin');
   const agentes = equipe.filter((u) => u.papel === 'tenant_agente');
@@ -242,29 +233,43 @@ export default async function PaginaDetalheTenant({
   const paineis: Record<Aba, React.ReactNode> = {
     prompt: (
       <>
+        {/*
+          O EDITOR DE PROMPT SAIU DAQUI (11/11), e no lugar dele ficou a porta
+          de entrada na conta.
+
+          Era uma segunda cópia do editor do cliente, e cópia de tela envelhece
+          sozinha: quando o painel do cliente ganhou o aviso de marcador, a
+          contagem de caracteres e o assistente, nada disso chegou aqui — a
+          agência editava o mesmo campo numa tela pior, sem as proteções que o
+          dono da conta tem. E só cobria o que alguém lembrou de duplicar:
+          horário, catálogo e base nunca tiveram cópia nenhuma.
+
+          Entrar na conta cobre tudo, inclusive o que ainda não existe, sem
+          segunda tela para manter.
+        */}
         <Card>
           <CardHeader>
             <CardTitle className="flex flex-wrap items-center gap-1.5">
-              Prompt
-              <Ajuda titulo="Prompt">
-                <strong>Aqui vai QUEM o agente é e COMO ele se comporta:</strong> tom de voz, regras e o
-                que ele nunca deve fazer.
+              Mexer na conta do cliente
+              <Ajuda titulo="Entrar na conta">
+                Você entra no painel DELE, com as telas dele: prompt, horário, catálogo, base de
+                conhecimento e o assistente.
                 <br />
                 <br />
-                Preço, horário, endereço, entrega e pagamento ficam melhor na base de conhecimento — lá
-                o cliente atualiza sem mexer no prompt, e o agente busca quando precisa.
+                Uma faixa no topo lembra em qual conta você está, e o que você mudar lá muda para o
+                cliente de verdade.
                 <br />
                 <br />
-                Toda alteração vira uma versão no histórico e pode ser revertida.
+                O editor de prompt ficava aqui e saiu: era uma segunda tela para manter, sempre
+                atrasada em relação à do cliente.
               </Ajuda>
             </CardTitle>
+            <CardDescription>
+              Prompt, horário, catálogo e base se ajustam lá dentro, nas telas que o cliente usa.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <PromptEditor
-              tenantId={tenant.id}
-              promptAtual={tenant.system_prompt ?? ''}
-              versoes={versoes}
-            />
+            <EntrarNaConta tenantId={tenant.id} rotulo={`Entrar na conta de ${tenant.nome}`} />
           </CardContent>
         </Card>
 

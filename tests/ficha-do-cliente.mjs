@@ -127,7 +127,20 @@ const DEVEM_SOBREVIVER = [
   ['descontratar não apaga dado', /nunca apaga dado/],
   ['o prompt não é lugar de preço e horário', /base de conhecimento/],
 ];
-for (const [nome, re] of DEVEM_SOBREVIVER) chk(`o aviso sobrevive: ${nome}`, re.test(PAGINA));
+/*
+ * ESPAÇO NÃO É CONTEÚDO. O texto do aviso mora em JSX e o editor quebra a
+ * linha onde couber: em 11/11 a frase ficou "...catálogo, base de
+
+ * conhecimento..." e o regex, que não atravessa a quebra, declarou o aviso
+ * morto — com ele visível na tela, em bom português. Falso vermelho da mesma
+ * família do CRLF que derrubou o `teste:comparacoes-tipo` em agosto: o
+ * varredor media formatação achando que media presença.
+ *
+ * Normalizar não afrouxa nada — apagar o aviso continua reprovando, e é isso
+ * que estas três linhas existem para pegar.
+ */
+const SEM_QUEBRA = PAGINA.replace(/\s+/g, ' ');
+for (const [nome, re] of DEVEM_SOBREVIVER) chk(`o aviso sobrevive: ${nome}`, re.test(SEM_QUEBRA));
 
 console.log('\n=== 5. O componente de ajuda ===\n');
 
