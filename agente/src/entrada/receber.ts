@@ -28,11 +28,14 @@ import { log, erroTexto } from '../log.ts';
 
 export interface Recebido {
   evento: 'cliente' | 'humano' | 'descartar';
-  resultado: 'enfileirada' | 'ignorada' | 'pausada_na_entrada' | 'pausou' | 'nota_interna' | 'caixa_divergente' | 'tenant' | 'descartada' | 'escutada';
+  resultado: 'enfileirada' | 'ignorada' | 'pausada_na_entrada' | 'pausou' | 'abertura' | 'nota_interna' | 'caixa_divergente' | 'tenant' | 'descartada' | 'escutada';
   motivo?: string;
   filaId?: string;
   descartadas?: number;
   tenantSlug?: string;
+  conversationId?: number;
+  /** 01/10: se a fala do atendente (ou a abertura) entrou em `mensagens_log`. */
+  registrou?: boolean;
   extraido?: Extraido;
 }
 
@@ -44,7 +47,25 @@ export async function receber(deps: Deps, inboxDaUrl: number | null, body: Webho
 
   if (evento === 'humano') {
     const r = await humanoAssumiu(deps.db, body as Parameters<typeof humanoAssumiu>[1]);
-    return { evento, resultado: r.acao === 'pausou' ? 'pausou' : r.acao === 'nota_interna' ? 'nota_interna' : 'tenant', motivo: r.acao, ...(r.descartadas ? { descartadas: r.descartadas } : {}) };
+    /*
+     * 12/11 — O QUE ESTE RAMO SABIA E JOGAVA FORA. Até hoje ele devolvia só
+     * `resultado` e `motivo`: o log saía `{"evento":"humano","resultado":
+     * "pausou"}`, sem tenant, sem conversa e sem `registrou` — que
+     * `humanoAssumiu` calcula desde 01/10. Com 345 dessas acumuladas não havia
+     * como responder "este cliente foi pausado?" nem "a fala do atendente
+     * entrou na memória?" lendo o log. Repassar não custa nada e era o que
+     * faltava para diagnosticar o `infoco` em 12/11.
+     */
+    const resultado = r.acao === 'pausou' ? 'pausou'
+      : r.acao === 'abertura' ? 'abertura'
+        : r.acao === 'nota_interna' ? 'nota_interna' : 'tenant';
+    return {
+      evento, resultado, motivo: r.acao,
+      ...(r.descartadas ? { descartadas: r.descartadas } : {}),
+      ...(r.tenantSlug ? { tenantSlug: r.tenantSlug } : {}),
+      ...(r.conversationId ? { conversationId: r.conversationId } : {}),
+      ...(r.registrou === undefined ? {} : { registrou: r.registrou }),
+    };
   }
 
   const ex = extrair(deps.regrasDir, body);

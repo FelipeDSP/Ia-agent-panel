@@ -74,6 +74,8 @@ const M72 = leia('20260917220000_72_nome_de_quem_retira.sql');
 const R72 = leia('20260917220000_72_nome_de_quem_retira_rollback.sql');
 const M74 = leia('20260918120000_74_horario_do_agente.sql');
 const R74 = leia('20260918120000_74_horario_do_agente_rollback.sql');
+const M90 = leia('20261112140000_90_abertura_externa.sql');
+const R90 = leia('20261112140000_90_abertura_externa_rollback.sql');
 // 05/10: a pasta `n8n/` foi apagada. As três comparações que liam o workflow
 // perderam o outro lado e viraram o que sempre deveriam ter sido: o CONTRATO
 // declarado aqui (§1 e §2) e o arquivo que o serviço executa (§3).
@@ -164,7 +166,7 @@ const webhook = (p) => ({
   event: 'message_created', id: p.id ?? 555, content: p.content ?? 'oi', message_type: p.tipo ?? 'incoming', private: p.private ?? false,
   sender: p.sender === null ? undefined : (p.sender ?? { type: 'contact', name: 'Fulano', phone_number: '+5511999990000', identifier: '5511999990000@c.us' }),
   account: { id: p.account }, inbox: { id: p.inbox },
-  conversation: { id: p.conv, inbox_id: p.inbox, meta: { sender: { name: 'Fulano' } } },
+  conversation: { id: p.conv, inbox_id: p.inbox, meta: { sender: { name: 'Fulano', phone_number: p.telefoneContato ?? '+5511999990000' } } },
   attachments: p.attachments,
 });
 const PAR = { a: [990001, 9901], b: [990002, 9902], c: [990003, 9903] };
@@ -181,6 +183,7 @@ try {
     await c.query(`update public.tenants set agente_runtime = 'n8n' where agente_runtime = 'codigo'`);
   }
   if ((await um(`select to_regclass('public.agente_turnos') r`)).r) await c.query(`delete from public.agente_turnos`);
+  await c.query(semTx(R90));
   await c.query(semTx(R74));
   await c.query(semTx(R72));
   await c.query(semTx(R71));
@@ -203,6 +206,7 @@ try {
   await c.query(semTx(M71));
   await c.query(semTx(M72));
   await c.query(semTx(M74));
+  await c.query(semTx(M90));
   await c.query(`select set_config('request.jwt.claims', '{"app_metadata":{"papel":"super_admin"}}', true)`);
   for (const s of ['a', 'b', 'c']) {
     T[s] = (await um(`insert into public.tenants (slug, nome, chatwoot_account_id, chatwoot_inbox_id, chatwoot_url, debounce_segundos, agente_runtime, msg_midia_nao_suportada, msg_fora_escopo, system_prompt, modelo, temperatura)
@@ -307,6 +311,150 @@ try {
     chk('humano assumiu -> pausou, conversa pausada, pendente descartada', rh.resultado === 'pausou' && (await um(`select status from public.conversas where tenant_id=$1 and conversation_id=100`, [T.a])).status === 'pausado' && (await um(`select estado from public.agente_fila where id=$1`, [r.filaId])).estado === 'descartada');
     chk('cliente na conversa pausada -> pausada_na_entrada', (await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: 100 }))).resultado === 'pausada_na_entrada');
     chk('humano na conta de B -> runtime_n8n (não pausamos o que é do n8n)', (await receber(deps, PAR.b[1], webhook({ account: PAR.b[0], inbox: PAR.b[1], conv: 100, tipo: 'outgoing', content: 'Oi', sender: { type: 'user' } }))).motivo === 'runtime_n8n');
+  }
+
+  // =========================================================================
+  console.log('\n== 4b. abertura externa (90): a saída que NÃO é atendente ==\n');
+  // =========================================================================
+  {
+    /*
+     * A PROPRIEDADE CENTRAL, e é a que protege emporio/ceejaar/acqua: SEM
+     * RESERVA, NADA MUDA. A §4 logo acima já provou o caminho de hoje (pausou,
+     * conversa pausada, pendente descartada) — e ela roda com a 90 APLICADA,
+     * então ela também é a contraprova desta seção: se a 90 mudasse o caminho
+     * sem reserva, aquela asserção estaria vermelha.
+     *
+     * Aqui mede-se o caminho COM reserva, que é inteiro novo.
+     */
+    const TEL = '5569993775932';
+    const CONV = 350;
+    const reservar = (texto, tel = TEL) => um(
+      `select public.api_agente_abertura_reservar($1,$2,$3,$4) id`, [T.a, tel, texto, null]);
+
+    // --- idempotência: o job do outro lado tem retry com backoff ------------
+    const r1 = await reservar('Oi, tudo bem? Vi a sua empresa aqui.');
+    const r2 = await reservar('Oi, tudo bem? Vi a sua empresa aqui.');
+    chk('reservar duas vezes o MESMO texto devolve a MESMA reserva (retry é no-op)',
+      r1.id && r1.id === r2.id, `${r1.id} vs ${r2.id}`);
+    chk('...e existe UMA linha, não duas',
+      (await um(`select count(*)::int n from public.aberturas_externas where tenant_id=$1 and telefone=$2`, [T.a, TEL])).n === 1);
+
+    // --- a abertura chega: não pausa, não descarta, GRAVA o texto da reserva -
+    const fila = await receber(deps, PAR.a[1], webhook({ account: PAR.a[0], inbox: PAR.a[1], conv: CONV, content: 'me conta mais', telefoneContato: `+${TEL}` }));
+    chk('arranjo: há uma pendente na fila desta conversa', fila.resultado === 'enfileirada', JSON.stringify(fila));
+
+    const ab = await receber(deps, PAR.a[1], webhook({
+      account: PAR.a[0], inbox: PAR.a[1], conv: CONV, tipo: 'outgoing', content: '', id: 901,
+      sender: { type: 'user' }, telefoneContato: `+${TEL}`,
+    }));
+    chk('saída com reserva -> resultado "abertura", não "pausou"', ab.resultado === 'abertura', JSON.stringify(ab));
+    chk('...a conversa NÃO ficou pausada',
+      (await um(`select status from public.conversas where tenant_id=$1 and conversation_id=$2`, [T.a, CONV])).status !== 'pausado');
+    chk('...e a pendente do lead NÃO foi descartada (é o que o agente tem de atender)',
+      (await um(`select estado from public.agente_fila where id=$1`, [fila.filaId])).estado !== 'descartada');
+
+    /*
+     * O TEXTO VEM DA RESERVA, NÃO DO ECO — e o webhook acima foi mandado com
+     * `content: ''` de propósito: é a suspeita que abriu este trabalho (o eco
+     * do fromMe chegando sem conteúdo). Gravar a partir do eco falharia aqui.
+     */
+    const logAb = await logDe(T.a, CONV);
+    const saida = logAb.filter((m) => m.direcao === 'saida');
+    chk('o texto gravado é o da RESERVA, mesmo com o eco vindo sem content',
+      saida.length === 1 && saida[0].conteudo === 'Oi, tudo bem? Vi a sua empresa aqui.', JSON.stringify(saida));
+    chk('o `registrou` chega ao chamador (era calculado e jogado fora)', ab.registrou === true, JSON.stringify(ab));
+    chk('o ramo diz o TENANT e a CONVERSA (o log era cego a isso)',
+      ab.tenantSlug === 'z-teste-ag2-a' && ab.conversationId === CONV, JSON.stringify(ab));
+
+    /*
+     * `fonte = 'abertura'` e não `'humano'`: `api_agente_aprendizado_pendentes`
+     * seleciona por `fonte_tokens = 'humano'`, e o pitch de prospecção virando
+     * base de conhecimento sozinho seria o defeito mais caro desta entrega.
+     */
+    chk('a fonte é "abertura" — fora do funil do aprendizado automático',
+      saida[0].fonte_tokens === 'abertura', String(saida[0]?.fonte_tokens));
+
+    // --- a SEGUNDA parte da abertura ---------------------------------------
+    const ab2 = await receber(deps, PAR.a[1], webhook({
+      account: PAR.a[0], inbox: PAR.a[1], conv: CONV, tipo: 'outgoing', content: 'segunda parte', id: 902,
+      sender: { type: 'user' }, telefoneContato: `+${TEL}`,
+    }));
+    chk('a 2ª parte também NÃO pausa (a reserva cobre a janela, não uma mensagem)',
+      ab2.resultado === 'abertura', JSON.stringify(ab2));
+    chk('...e NÃO grava de novo: uma abertura, uma linha',
+      (await logDe(T.a, CONV)).filter((m) => m.direcao === 'saida').length === 1);
+    /*
+     * AS DUAS ASSERÇÕES ABAIXO EXISTEM PORQUE A DE CIMA PASSAVA PELO MOTIVO
+     * ERRADO. Sabotagem: fiz `api_agente_abertura_consumir` devolver o texto
+     * SEMPRE, e "uma abertura, uma linha" continuou verde — quem barrava a
+     * segunda gravação era o índice `uq_mensagens_log_execucao` (o
+     * `execucao_id` é o mesmo nas duas partes, `abertura:<id>`), não o `v_nova`
+     * do SQL. Duas guardas, e a asserção media só a que eu não tinha escrito.
+     *
+     * Elas não são redundantes entre si: o índice protege a TABELA, o `v_nova`
+     * protege o `registrou` — sem ele a 2ª parte diria "gravei" depois de um
+     * ON CONFLICT DO NOTHING, que é mentira num campo que existe para auditar.
+     */
+    chk('a 2ª chamada de `consumir` devolve texto NULO (é o SQL, não o índice)',
+      ab2.registrou === false, JSON.stringify(ab2));
+    const segunda = await um(
+      `select texto from public.api_agente_abertura_consumir($1,$2,$3,10)`, [T.a, TEL, CONV]);
+    chk('...medido direto na função, sem passar pelo serviço',
+      segunda !== undefined && segunda.texto === null, JSON.stringify(segunda));
+
+    // --- telefone de OUTRO lead, mesmo tenant ------------------------------
+    const ab3 = await receber(deps, PAR.a[1], webhook({
+      account: PAR.a[0], inbox: PAR.a[1], conv: 351, tipo: 'outgoing', content: 'Oi', id: 903,
+      sender: { type: 'user' }, telefoneContato: '+5511888887777',
+    }));
+    chk('telefone SEM reserva volta a pausar (a reserva não é um interruptor global)',
+      ab3.resultado === 'pausou', JSON.stringify(ab3));
+
+    // --- isolamento: a reserva é DO TENANT ---------------------------------
+    // SRF no FROM, não na lista do select: zero linhas é o resultado esperado,
+    // e `select f(...)` devolveria ZERO LINHAS (não uma linha nula), fazendo o
+    // teste estourar em vez de medir. Contar é o que distingue 0 de 1.
+    const abB = await um(`select count(*)::int n from public.api_agente_abertura_consumir($1,$2,$3,10)`, [T.c, TEL, 999]);
+    chk('a reserva de A não é alcançada pelo tenant C (mesmo telefone)', abB.n === 0, JSON.stringify(abB));
+
+    // --- a janela ----------------------------------------------------------
+    await c.query(`update public.aberturas_externas set criado_em = now() - interval '2 hours' where tenant_id=$1`, [T.a]);
+    const velha = await um(`select count(*)::int n from public.api_agente_abertura_consumir($1,$2,$3,10)`, [T.a, TEL, CONV]);
+    chk('reserva velha (fora da janela) não vale mais', velha.n === 0, JSON.stringify(velha));
+    const ab4 = await receber(deps, PAR.a[1], webhook({
+      account: PAR.a[0], inbox: PAR.a[1], conv: CONV, tipo: 'outgoing', content: 'Oi', id: 904,
+      sender: { type: 'user' }, telefoneContato: `+${TEL}`,
+    }));
+    chk('...e com ela vencida a saída volta a pausar', ab4.resultado === 'pausou', JSON.stringify(ab4));
+
+    // --- FALHA FECHADA ------------------------------------------------------
+    /*
+     * Se a consulta estourar (banco fora, migração não aplicada no serviço que
+     * subiu antes), o ramo tem de PAUSAR — o comportamento de hoje. Falhar
+     * aberto deixaria o agente respondendo por cima de um atendente humano, que
+     * é pior do que a pausa indevida que esta funcionalidade existe para
+     * evitar. Arranjado dropando a função dentro da transação.
+     */
+    /*
+     * A falha é injetada no CHAMADOR, não dropando a função: aqui tudo roda numa
+     * transação só, e um erro de verdade do Postgres a aborta (25P02) — o teste
+     * morreria antes de medir. Em produção cada chamada é sua própria
+     * transação, então o drop não reproduz o que se quer provar; o que se quer
+     * provar é o `catch` de `consultar`, e é nele que esta db falsa bate.
+     */
+    const dbQuebrado = {
+      query: (sql, params) => (String(sql).includes('api_agente_abertura_consumir')
+        ? Promise.reject(new Error('banco fora'))
+        : c.query(sql, params)),
+    };
+    const semFn = await receber({ ...deps, db: dbQuebrado }, PAR.a[1], webhook({
+      account: PAR.a[0], inbox: PAR.a[1], conv: 352, tipo: 'outgoing', content: 'Oi', id: 905,
+      sender: { type: 'user' }, telefoneContato: `+${TEL}`,
+    }));
+    chk('consulta de abertura estourando -> o ramo PAUSA (falha fechada) e não propaga',
+      semFn.resultado === 'pausou', JSON.stringify(semFn));
+    chk('...e a conversa fica mesmo pausada, não só o resultado diz isso',
+      (await um(`select status from public.conversas where tenant_id=$1 and conversation_id=352`, [T.a])).status === 'pausado');
   }
 
   // =========================================================================

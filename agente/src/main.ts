@@ -42,6 +42,7 @@ let parando = false;
 const servidor = criarServidor({
   db: pool, waha, regrasDir: cfg.regrasDir,
   webhookToken: cfg.webhookToken, limpezaSecret: cfg.limpezaSecret, testeSecret: cfg.testeSecret,
+  aberturaSecret: cfg.aberturaSecret,
   versaoCodigo: cfg.versaoCodigo, chatwoot,
   // O ensaio recebe as MESMAS dependencias do laco da fila, menos o Chatwoot —
   // esse ele troca por um mudo. E o que faz o teste medir o agente de verdade

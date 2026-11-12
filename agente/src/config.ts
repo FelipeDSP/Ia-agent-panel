@@ -18,6 +18,8 @@ export interface Config {
   limpezaSecret: string;
   /** Segredo do `POST /testar` (o ensaio). `null` = ensaio desligado, e o endpoint diz isso. */
   testeSecret: string | null;
+  /** Segredo do `POST /abertura` (90). `null` = rota desligada, e o endpoint diz isso. */
+  aberturaSecret: string | null;
   /** OpenAI: modelo, embeddings (KB) e transcrição. */
   openaiApiKey: string;
   /** O `x-foto-secret` da Edge Function `foto-produto`; sem ele a tool de foto recusa com motivo próprio. */
@@ -93,6 +95,10 @@ export function lerConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // por uma coisa que ninguem estava usando. Sem ela, o `POST /testar`
     // responde 503 dizendo o que falta; o resto do servico nem percebe.
     testeSecret: env.TESTE_SECRET?.trim() || null,
+    // 12/11 — OPCIONAL pelo mesmo motivo do TESTE_SECRET logo acima: a rota
+    // nova responde 503 dizendo o que falta, em vez de o serviço inteiro
+    // recusar subir e derrubar o atendimento de quem nem usa isto.
+    aberturaSecret: env.ABERTURA_SECRET?.trim() || null,
     fotoSecret: env.FOTO_SECRET?.trim() || null,
     supabaseUrl: env.SUPABASE_URL?.trim() || null,
     ingestaoSecret: env.INGESTAO_SECRET?.trim() || null,

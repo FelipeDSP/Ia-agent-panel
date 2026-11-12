@@ -7,6 +7,9 @@
  *                                                validado no banco por tenant; 200 SEMPRE)
  *   POST /limpar-memoria                         o botão do painel (header x-limpeza-secret,
  *                                                body { tenant_id, escopo, conversation_ids? })
+ *   POST /abertura                               a reserva de abertura externa (header
+ *                                                x-abertura-secret; body { chatwoot_account_id,
+ *                                                chatwoot_inbox_id, telefone, texto, contexto? })
  *
  * O `<token>` na URL é o que o n8n não tinha: o bot do Chatwoot não manda
  * header nenhum, então a única forma de a URL não ser adivinhável é ela
@@ -18,7 +21,8 @@
  */
 import http from 'node:http';
 import { receber, type Deps as DepsReceber } from './receber.ts';
-import { fnValor } from '../db.ts';
+import { JANELA_MIN, digitos, reservar as reservarAbertura } from '../abertura/externa.ts';
+import { fnUma, fnValor } from '../db.ts';
 import { log, erroTexto } from '../log.ts';
 import { receberWebhookAsaas } from '../pagamento/webhook.ts';
 
@@ -27,6 +31,8 @@ export interface DepsHttp extends DepsReceber {
   limpezaSecret: string;
   /** `null` desliga o `POST /testar` — e o endpoint DIZ que esta desligado. */
   testeSecret: string | null;
+  /** `null` desliga o `POST /abertura` (90) — mesmo motivo do `testeSecret`. */
+  aberturaSecret: string | null;
   /** O que o ensaio precisa para rodar o turno (tudo menos o Chatwoot, que ele troca). */
   depsTurno?: Omit<import('../turno/executar.ts').Deps, 'chatwoot'>;
   /** Diz se o worker está vivo (última passada há menos de N s). */
@@ -78,7 +84,13 @@ export function criarServidor(deps: DepsHttp): http.Server {
       try { body = JSON.parse(await lerCorpo(req)); } catch { return responder(res, 200, { ok: false, motivo: 'corpo_invalido' }); }
       try {
         const r = await receber(deps, inbox, body as Parameters<typeof receber>[2]);
-        log('info', 'webhook', { inbox, evento: r.evento, resultado: r.resultado, motivo: r.motivo, tenant: r.tenantSlug, fila: r.filaId });
+        log('info', 'webhook', {
+          inbox, evento: r.evento, resultado: r.resultado, motivo: r.motivo,
+          tenant: r.tenantSlug, fila: r.filaId,
+          // 12/11: a conversa e o `registrou` do ramo `humano`, que o log não
+          // mostrava. `undefined` some do JSON, então nada muda nas outras linhas.
+          conversa: r.conversationId, registrou: r.registrou,
+        });
         return responder(res, 200, { ok: true, resultado: r.resultado });
       } catch (e) {
         log('erro', 'webhook.falhou', { inbox, erro: erroTexto(e) });
@@ -99,6 +111,45 @@ export function criarServidor(deps: DepsHttp): http.Server {
       } catch (e) {
         log('erro', 'asaas.webhook.falhou', { erro: erroTexto(e) });
         return responder(res, 200, { reconhecido: false, motivo: 'erro_interno' });
+      }
+    }
+
+    /*
+     * A RESERVA DE ABERTURA (90). Um sistema externo avisa, ANTES de enviar
+     * pelo WhatsApp, que a próxima saída para aquele telefone é dele.
+     *
+     * Segredo em header, no formato do `/limpar-memoria` — e OPCIONAL no
+     * config pelo mesmo motivo do `TESTE_SECRET`: um serviço que se recusa a
+     * subir por falta de variável de uma funcionalidade nova derruba o
+     * atendimento de todo mundo. Sem o segredo, esta rota responde 503 dizendo
+     * o que falta e o resto do serviço nem percebe.
+     *
+     * O tenant NÃO vem do corpo por conta própria: ele é resolvido pelo par
+     * (conta, caixa) do Chatwoot, que é como o tenant sempre foi resolvido
+     * aqui. Aceitar `tenant_id` cru seria a regra 1 do CLAUDE.md pelo avesso.
+     */
+    if (req.method === 'POST' && partes[0] === 'abertura') {
+      if (!deps.aberturaSecret) return responder(res, 503, { ok: false, motivo: 'abertura_nao_configurada', falta: 'ABERTURA_SECRET' });
+      if (req.headers['x-abertura-secret'] !== deps.aberturaSecret) return responder(res, 401, { ok: false });
+      let body: { chatwoot_account_id?: number; chatwoot_inbox_id?: number; telefone?: string; texto?: string; contexto?: unknown };
+      try { body = JSON.parse(await lerCorpo(req)); } catch { return responder(res, 400, { ok: false, motivo: 'corpo_invalido' }); }
+      const conta = Number(body.chatwoot_account_id);
+      const caixa = Number(body.chatwoot_inbox_id);
+      if (!Number.isInteger(conta) || !Number.isInteger(caixa)) {
+        return responder(res, 400, { ok: false, motivo: 'chatwoot_account_id e chatwoot_inbox_id sao obrigatorios' });
+      }
+      const telefone = digitos(body.telefone);
+      if (!telefone) return responder(res, 400, { ok: false, motivo: 'telefone ausente ou sem digitos' });
+      if (!body.texto?.trim()) return responder(res, 400, { ok: false, motivo: 'texto ausente' });
+      try {
+        const t = await fnUma<{ tenant_id: string; slug?: string }>(deps.db, 'api_n8n_tenant_por_chatwoot', [conta, caixa]);
+        if (!t?.tenant_id) return responder(res, 404, { ok: false, motivo: 'tenant_desconhecido' });
+        const id = await reservarAbertura(deps.db, { tenantId: t.tenant_id, telefone, texto: body.texto, contexto: body.contexto });
+        log('info', 'abertura.reservada', { tenant: t.slug, telefone, reserva: id });
+        return responder(res, 200, { ok: true, reserva: id, janela_min: JANELA_MIN });
+      } catch (e) {
+        log('erro', 'abertura.reserva_falhou', { conta, caixa, erro: erroTexto(e) });
+        return responder(res, 500, { ok: false, motivo: 'erro_interno' });
       }
     }
 
